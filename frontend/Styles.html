@@ -1,0 +1,355 @@
+<style>
+  /* ===========================
+   * SISTEMA NEUROTEA - ESTILOS CSS
+   * Google Apps Script Version
+   * =========================== */
+
+  /* Variables CSS */
+  :root {
+    --primary-color: #3B82F6;
+    --secondary-color: #6B7280;
+    --success-color: #10B981;
+    --warning-color: #F59E0B;
+    --danger-color: #EF4444;
+    --info-color: #06B6D4;
+  }
+
+  /* Scrollbar personalizada */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Cards */
+  .card {
+    @apply bg-white dark:bg-gray-800 rounded-lg shadow-md p-6;
+  }
+
+  .card-title {
+    @apply text-lg font-semibold text-gray-800 dark:text-white mb-4 flex items-center;
+  }
+
+  /* Form Elements */
+  .form-label {
+    @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1;
+  }
+
+  .form-input {
+    @apply w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md
+           bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+           focus:ring-2 focus:ring-blue-500 focus:border-transparent
+           placeholder-gray-400 dark:placeholder-gray-500
+           transition duration-200;
+  }
+
+  .form-select {
+    @apply form-input cursor-pointer;
+  }
+
+  .form-checkbox {
+    @apply w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply px-4 py-2 rounded-md font-medium transition duration-200
+           flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700 text-white;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600
+           text-gray-800 dark:text-white;
+  }
+
+  .btn-success {
+    @apply bg-green-600 hover:bg-green-700 text-white;
+  }
+
+  .btn-warning {
+    @apply bg-yellow-500 hover:bg-yellow-600 text-white;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-700 text-white;
+  }
+
+  .btn-sm {
+    @apply px-2 py-1 text-sm;
+  }
+
+  /* Tabs */
+  .tab-btn {
+    @apply px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400
+           hover:text-blue-600 dark:hover:text-blue-400
+           border-b-2 border-transparent hover:border-blue-600
+           transition duration-200 flex items-center whitespace-nowrap;
+  }
+
+  .tab-btn.active {
+    @apply text-blue-600 dark:text-blue-400 border-blue-600;
+  }
+
+  .tab-content {
+    @apply animate-fadeIn;
+  }
+
+  /* Stat Cards */
+  .stat-card {
+    @apply rounded-lg p-4 text-white flex flex-col items-center justify-center text-center;
+  }
+
+  .stat-value {
+    @apply text-2xl font-bold;
+  }
+
+  .stat-label {
+    @apply text-sm opacity-90;
+  }
+
+  /* Table */
+  .table-header {
+    @apply px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider;
+  }
+
+  .table-cell {
+    @apply px-4 py-3 text-sm text-gray-700 dark:text-gray-300;
+  }
+
+  /* Badges */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300;
+  }
+
+  .badge-warning {
+    @apply bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300;
+  }
+
+  .badge-danger {
+    @apply bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300;
+  }
+
+  .badge-info {
+    @apply bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300;
+  }
+
+  .badge-secondary {
+    @apply bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300;
+  }
+
+  /* Session Item */
+  .session-item {
+    @apply bg-gray-50 dark:bg-gray-700 rounded-lg p-3 flex justify-between items-center
+           hover:bg-gray-100 dark:hover:bg-gray-600 transition;
+  }
+
+  .session-item-info {
+    @apply flex-1;
+  }
+
+  .session-item-patient {
+    @apply font-medium text-gray-800 dark:text-white;
+  }
+
+  .session-item-therapist {
+    @apply text-sm text-gray-500 dark:text-gray-400;
+  }
+
+  .session-item-amount {
+    @apply font-semibold text-green-600 dark:text-green-400;
+  }
+
+  /* Transfer Item */
+  .transfer-item {
+    @apply bg-gray-50 dark:bg-gray-700 rounded-lg p-3;
+  }
+
+  .transfer-status-btn {
+    @apply px-3 py-1 rounded-full text-xs font-medium cursor-pointer transition;
+  }
+
+  .transfer-status-btn.pending {
+    @apply bg-yellow-100 text-yellow-800 hover:bg-yellow-200;
+  }
+
+  .transfer-status-btn.confirmed {
+    @apply bg-green-100 text-green-800 hover:bg-green-200;
+  }
+
+  /* Rendicion Card */
+  .rendicion-card {
+    @apply bg-gray-50 dark:bg-gray-700 rounded-lg p-4 border-l-4;
+  }
+
+  .rendicion-card.saldado {
+    @apply border-gray-400;
+  }
+
+  .rendicion-card.dar-efectivo {
+    @apply border-green-500;
+  }
+
+  .rendicion-card.transferir {
+    @apply border-blue-500;
+  }
+
+  .rendicion-card.dar-transferir {
+    @apply border-yellow-500;
+  }
+
+  .rendicion-card.terapeuta-debe {
+    @apply border-red-500;
+  }
+
+  /* Package Item */
+  .package-item {
+    @apply bg-gray-50 dark:bg-gray-700 rounded-lg p-3;
+  }
+
+  .package-progress {
+    @apply h-2 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden mt-2;
+  }
+
+  .package-progress-bar {
+    @apply h-full bg-green-500 transition-all duration-300;
+  }
+
+  /* Group Item */
+  .group-item {
+    @apply bg-gray-50 dark:bg-gray-700 rounded-lg p-3;
+  }
+
+  /* Notification Toast */
+  .notification {
+    @apply px-4 py-3 rounded-lg shadow-lg flex items-center space-x-3 animate-slideIn;
+  }
+
+  .notification.success {
+    @apply bg-green-500 text-white;
+  }
+
+  .notification.error {
+    @apply bg-red-500 text-white;
+  }
+
+  .notification.warning {
+    @apply bg-yellow-500 text-white;
+  }
+
+  .notification.info {
+    @apply bg-blue-500 text-white;
+  }
+
+  /* Animations */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(100%); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .animate-fadeIn {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  .animate-slideIn {
+    animation: slideIn 0.3s ease-out;
+  }
+
+  /* Loading Spinner */
+  .spinner {
+    @apply animate-spin rounded-full border-b-2 border-blue-500;
+  }
+
+  /* Confirm Dialog */
+  .confirm-overlay {
+    @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50;
+  }
+
+  .confirm-dialog {
+    @apply bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl;
+  }
+
+  /* Payment Options */
+  .payment-option {
+    @apply border rounded-lg p-3 cursor-pointer transition
+           hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20;
+  }
+
+  .payment-option.selected {
+    @apply border-blue-500 bg-blue-50 dark:bg-blue-900/20;
+  }
+
+  /* Dark mode toggle */
+  .dark body {
+    @apply bg-gray-900;
+  }
+
+  /* Responsive */
+  @media (max-width: 640px) {
+    .tab-btn span {
+      display: none;
+    }
+    .tab-btn {
+      @apply px-3;
+    }
+  }
+
+  /* Print styles */
+  @media print {
+    .no-print {
+      display: none !important;
+    }
+  }
+
+  /* Custom scrollbar for content areas */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-gray-100 dark:bg-gray-800 rounded;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 dark:bg-gray-600 rounded hover:bg-gray-400 dark:hover:bg-gray-500;
+  }
+
+  /* Tooltip */
+  .tooltip {
+    @apply invisible absolute z-50 px-2 py-1 text-xs text-white bg-gray-900 rounded;
+  }
+
+  .has-tooltip:hover .tooltip {
+    @apply visible;
+  }
+
+  /* Focus states */
+  *:focus {
+    @apply outline-none;
+  }
+
+  /* Currency input */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+</style>
