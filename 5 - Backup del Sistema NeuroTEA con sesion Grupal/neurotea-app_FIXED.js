@@ -1,0 +1,10620 @@
+// ===========================
+// SISTEMA NEUROTEA - VERSIÓN CON FLUJO DE CAJA COMPLETO
+// Implementa confirmación/reversión y flujo de caja dinámico
+// MIGRADO A INDEXEDDB PARA MAYOR ESTABILIDAD
+// ===========================
+
+// Variables globales
+let therapists = [];
+let sessions = {};
+let egresos = {};
+let saldosReales = { efectivo: 0, banco: 0 };
+let saldosIniciales = {}; // Para almacenar saldo inicial por fecha
+let historialSaldos = {}; // Para almacenar historial de cambios por fecha
+// ✅ CORRECCIÓN: Usar fecha local (Paraguay) en lugar de UTC
+// toISOString() convierte a UTC, causando que a las 22:00 en Paraguay ya sea el día siguiente
+let fechaActual = (() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+})();
+let confirmaciones = {}; // Para tracking de confirmaciones de pago
+
+// ===========================
+// NUEVAS VARIABLES GLOBALES - SISTEMA DE CRÉDITOS Y PAQUETES
+// ===========================
+let patientCredits = {}; // Créditos por paciente y terapeuta específica
+let dailyPackagePurchases = {}; // Paquetes comprados por día
+
+// ===========================
+// VARIABLES GLOBALES - MINI CARRITO DE SESIONES FUTURAS
+// ===========================
+let sesionesFuturasTemp = []; // Array temporal para sesiones futuras antes de confirmar
+let transferConfirmationStates = {}; // Estados de confirmación por transferencia
+
+// ===========================
+// VARIABLES GLOBALES - SISTEMA DE SESIONES GRUPALES
+// ===========================
+let groupTherapy = {}; // Configuración de grupos de terapia
+let groupSessions = {}; // Sesiones grupales indexadas por fecha
+let groupSessionTemp = { // Variables temporales para formulario de sesión grupal
+    groupId: null,
+    attendance: [],
+    therapists: []
+};
+
+// ===========================
+// VARIABLES GLOBALES - HISTÓRICO DE PAQUETES COMPLETADOS
+// ===========================
+let packageHistory = []; // Array de paquetes que se usaron completamente
+
+// ===========================
+// FUNCIÓN AUXILIAR: Obtener fecha local en formato YYYY-MM-DD
+// ===========================
+function getLocalDateString(date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+// ===========================
+// FUNCIONES DE INDEXEDDB
+// ===========================
+
+let db = null;
+
+function initIndexedDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open('NeuroTEADB', 5); // v5: Agregado store packageHistory para histórico de paquetes
+        
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+            db = request.result;
+            resolve(db);
+        };
+        
+        request.onupgradeneeded = (event) => {
+            db = event.target.result;
+            
+            // Store para terapeutas (persistente)
+            if (!db.objectStoreNames.contains('therapists')) {
+                db.createObjectStore('therapists', { keyPath: 'id' });
+            }
+            
+            // Store para sesiones (con fecha para limpieza automática)
+            if (!db.objectStoreNames.contains('sessions')) {
+                const sessionStore = db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
+                sessionStore.createIndex('fecha', 'fecha', { unique: false });
+            }
+            
+            // Store para egresos (con fecha para limpieza automática)
+            if (!db.objectStoreNames.contains('egresos')) {
+                const egresoStore = db.createObjectStore('egresos', { keyPath: 'id', autoIncrement: true });
+                egresoStore.createIndex('fecha', 'fecha', { unique: false });
+            }
+            
+            // Store para confirmaciones (con fecha para limpieza automática)
+            if (!db.objectStoreNames.contains('confirmaciones')) {
+                const confStore = db.createObjectStore('confirmaciones', { keyPath: 'id', autoIncrement: true });
+                confStore.createIndex('fecha', 'fecha', { unique: false });
+            }
+            
+            // Store para saldos reales
+            if (!db.objectStoreNames.contains('saldos')) {
+                db.createObjectStore('saldos', { keyPath: 'tipo' });
+            }
+            
+            // Store para saldos iniciales (con fecha)
+            if (!db.objectStoreNames.contains('saldosIniciales')) {
+                const saldoInicialStore = db.createObjectStore('saldosIniciales', { keyPath: 'fecha' });
+            }
+            
+            // Store para historial de saldos (con fecha para limpieza automática)
+            if (!db.objectStoreNames.contains('historialSaldos')) {
+                const historialStore = db.createObjectStore('historialSaldos', { keyPath: 'id', autoIncrement: true });
+                historialStore.createIndex('fecha', 'fecha', { unique: false });
+            }
+            
+            // ===========================
+            // NUEVOS STORES - SISTEMA DE CRÉDITOS Y PAQUETES
+            // ===========================
+            
+            // Store para créditos de pacientes (con fecha para limpieza automática)
+            if (!db.objectStoreNames.contains('patientCredits')) {
+                const creditsStore = db.createObjectStore('patientCredits', { keyPath: 'id', autoIncrement: true });
+                creditsStore.createIndex('patient', 'patient', { unique: false });
+                creditsStore.createIndex('therapist', 'therapist', { unique: false });
+                creditsStore.createIndex('purchaseDate', 'purchaseDate', { unique: false });
+            }
+            
+            // Store para paquetes comprados diariamente (con fecha para limpieza automática)
+            if (!db.objectStoreNames.contains('dailyPackagePurchases')) {
+                const packagesStore = db.createObjectStore('dailyPackagePurchases', { keyPath: 'id', autoIncrement: true });
+                packagesStore.createIndex('fecha', 'fecha', { unique: false });
+                packagesStore.createIndex('patientName', 'patientName', { unique: false });
+                packagesStore.createIndex('therapist', 'therapist', { unique: false });
+            }
+            
+            // Store para estados de confirmación de transferencias
+            if (!db.objectStoreNames.contains('transferConfirmationStates')) {
+                db.createObjectStore('transferConfirmationStates', { keyPath: 'id' });
+            }
+
+            // ===========================
+            // NUEVOS STORES - SISTEMA DE SESIONES GRUPALES
+            // ===========================
+
+            // Store para configuración de grupos de terapia
+            if (!db.objectStoreNames.contains('groupTherapy')) {
+                db.createObjectStore('groupTherapy', { keyPath: 'id' });
+            }
+
+            // Store para sesiones grupales (con fecha para limpieza automática)
+            if (!db.objectStoreNames.contains('groupSessions')) {
+                const groupSessionStore = db.createObjectStore('groupSessions', { keyPath: 'id' });
+                groupSessionStore.createIndex('fecha', 'fecha', { unique: false });
+                groupSessionStore.createIndex('groupId', 'groupId', { unique: false });
+            }
+
+            // Store para historial de cambios en grupos
+            if (!db.objectStoreNames.contains('groupTherapyHistory')) {
+                const historyStore = db.createObjectStore('groupTherapyHistory', { keyPath: 'id', autoIncrement: true });
+                historyStore.createIndex('groupId', 'groupId', { unique: false });
+            }
+
+            // ===========================
+            // NUEVO STORE - HISTÓRICO DE PAQUETES COMPLETADOS
+            // ===========================
+            if (!db.objectStoreNames.contains('packageHistory')) {
+                const packageHistoryStore = db.createObjectStore('packageHistory', { keyPath: 'id' });
+                packageHistoryStore.createIndex('patientName', 'patientName', { unique: false });
+                packageHistoryStore.createIndex('therapist', 'therapist', { unique: false });
+                packageHistoryStore.createIndex('completedDate', 'completedDate', { unique: false });
+            }
+        };
+    });
+}
+
+function saveToIndexedDB(storeName, data) {
+    return new Promise((resolve, reject) => {
+        if (!db) {
+            reject(new Error('Database not initialized'));
+            return;
+        }
+        
+        const transaction = db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        
+        if (Array.isArray(data)) {
+            data.forEach(item => store.put(item));
+        } else {
+            store.put(data);
+        }
+    });
+}
+
+function loadFromIndexedDB(storeName) {
+    return new Promise((resolve, reject) => {
+        if (!db) {
+            reject(new Error('Database not initialized'));
+            return;
+        }
+        
+        const transaction = db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        const request = store.getAll();
+        
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+function deleteFromIndexedDB(storeName, key) {
+    return new Promise((resolve, reject) => {
+        if (!db) {
+            reject(new Error('Database not initialized'));
+            return;
+        }
+
+        const transaction = db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        const request = store.delete(key);
+
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+    });
+}
+
+/**
+ * Limpia todo el store y guarda los nuevos datos atómicamente
+ * Esto evita duplicados cuando los IDs cambian
+ */
+function clearAndSaveToIndexedDB(storeName, data) {
+    return new Promise((resolve, reject) => {
+        if (!db) {
+            reject(new Error('Database not initialized'));
+            return;
+        }
+
+        const transaction = db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+
+        // Primero limpiar todo el store
+        const clearRequest = store.clear();
+
+        clearRequest.onsuccess = () => {
+            // Luego guardar los nuevos datos
+            if (Array.isArray(data) && data.length > 0) {
+                data.forEach(item => store.put(item));
+            }
+        };
+
+        transaction.oncomplete = () => {
+            console.log(`✅ Store ${storeName} limpiado y guardado: ${Array.isArray(data) ? data.length : 1} registros`);
+            resolve();
+        };
+        transaction.onerror = () => reject(transaction.error);
+    });
+}
+
+// ===========================
+// FUNCIONES DE UTILIDAD DE INDEXEDDB
+// ===========================
+
+/**
+ * Elimina duplicados de un array basándose en el campo 'id'
+ * Mantiene la primera ocurrencia de cada ID
+ * @param {Array} dataArray - Array de objetos con campo 'id'
+ * @param {string} label - Etiqueta para el log (ej: 'paquetes', 'sesiones grupales')
+ * @returns {Array} Array sin duplicados
+ */
+function deduplicateById(dataArray, label = 'registros') {
+    if (!Array.isArray(dataArray)) {
+        return dataArray;
+    }
+
+    const seen = new Set();
+    const deduplicated = [];
+    let duplicateCount = 0;
+
+    dataArray.forEach(item => {
+        const itemId = item.id || JSON.stringify(item);
+        if (!seen.has(itemId)) {
+            seen.add(itemId);
+            deduplicated.push(item);
+        } else {
+            duplicateCount++;
+        }
+    });
+
+    if (duplicateCount > 0) {
+        console.warn(`⚠️ Se encontraron ${duplicateCount} ${label} duplicados y fueron eliminados`);
+    }
+
+    return deduplicated;
+}
+
+/**
+ * Elimina duplicados de un array de paquetes basándose en el campo 'id'
+ * Mantiene la primera ocurrencia de cada ID
+ * @param {Array} packagesArray - Array de paquetes
+ * @returns {Array} Array sin duplicados
+ */
+function deduplicatePackages(packagesArray) {
+    if (!Array.isArray(packagesArray)) {
+        return packagesArray;
+    }
+    
+    const seen = new Set();
+    const deduplicated = [];
+    let duplicateCount = 0;
+    
+    packagesArray.forEach(pkg => {
+        const pkgId = pkg.id || JSON.stringify(pkg);
+        if (!seen.has(pkgId)) {
+            seen.add(pkgId);
+            deduplicated.push(pkg);
+        } else {
+            duplicateCount++;
+        }
+    });
+    
+    if (duplicateCount > 0) {
+        console.warn(`⚠️ Se encontraron ${duplicateCount} paquetes duplicados y fueron eliminados`);
+    }
+    
+    return deduplicated;
+}
+
+/**
+ * Valida la integridad de los datos de paquetes en memoria
+ * Detecta y reporta duplicados
+ * @returns {Object} Reporte de validación
+ */
+function validatePackageIntegrity() {
+    const report = {
+        totalFechas: 0,
+        totalPaquetes: 0,
+        duplicados: 0,
+        porFecha: {}
+    };
+    
+    Object.keys(dailyPackagePurchases).forEach(fecha => {
+        const paquetes = dailyPackagePurchases[fecha];
+        const ids = new Set();
+        let duplicadosEnFecha = 0;
+        
+        paquetes.forEach(pkg => {
+            if (ids.has(pkg.id)) {
+                duplicadosEnFecha++;
+            } else {
+                ids.add(pkg.id);
+            }
+        });
+        
+        report.totalFechas++;
+        report.totalPaquetes += paquetes.length;
+        report.duplicados += duplicadosEnFecha;
+        report.porFecha[fecha] = {
+            total: paquetes.length,
+            duplicados: duplicadosEnFecha
+        };
+    });
+    
+    if (report.duplicados > 0) {
+        console.warn(`⚠️ VALIDACIÓN: Se encontraron ${report.duplicados} paquetes duplicados en total`);
+        console.warn('Detalles por fecha:', report.porFecha);
+    } else {
+        console.log('✅ VALIDACIÓN: No hay paquetes duplicados');
+    }
+    
+    return report;
+}
+
+// ===========================
+// FUNCIONES DE ELIMINACIÓN ESPECÍFICAS DE INDEXEDDB
+// ===========================
+
+// Función para eliminar historial de saldos de una fecha específica
+// NOTA: Esta función es necesaria porque historialSaldos usa saveToIndexedDB (PUT)
+function deleteHistorialSaldosByDate(fecha) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const historialSaldos = await loadFromIndexedDB('historialSaldos');
+            for (const entrada of historialSaldos) {
+                if (entrada.fecha === fecha) {
+                    await deleteFromIndexedDB('historialSaldos', entrada.id);
+                }
+            }
+            resolve();
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+// ===========================
+// SISTEMA DE SESIONES GRUPALES - CRUD DE GRUPOS
+// ===========================
+
+/**
+ * Crea un nuevo grupo con numeración automática
+ * @returns {string} ID del grupo creado
+ */
+function createGroup() {
+    // Obtener valores del formulario
+    const nameInput = document.getElementById('new-group-name');
+    const percentageInput = document.getElementById('new-group-percentage');
+
+    const groupName = nameInput?.value?.trim() || '';
+    const neuroteaPercentage = parseInt(percentageInput?.value || 30);
+
+    if (!groupName) {
+        alert('Por favor ingrese un nombre para el grupo');
+        return null;
+    }
+
+    // Calcular siguiente número de grupo
+    const existingNumbers = Object.keys(groupTherapy)
+        .map(id => parseInt(id.replace('grupo-', '')))
+        .filter(n => !isNaN(n));
+    const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
+
+    const groupId = `grupo-${nextNumber}`;
+
+    groupTherapy[groupId] = {
+        id: groupId,
+        name: groupName,
+        children: [],
+        totalMaxValue: 0,
+        neuroteaPercentage: neuroteaPercentage,
+        createdAt: fechaActual,
+        status: 'active'
+    };
+
+    saveGroupTherapyToStorage();
+
+    // Limpiar formulario
+    if (nameInput) nameInput.value = '';
+    if (percentageInput) percentageInput.value = '30';
+
+    // Actualizar lista
+    renderGroupList();
+
+    return groupId;
+}
+
+/**
+ * Crea un grupo desde la pestaña de Gestionar Grupos
+ */
+function createGroupFromTab() {
+    const nameInput = document.getElementById('new-group-name-tab');
+    const percentageInput = document.getElementById('new-group-percentage-tab');
+
+    const groupName = nameInput?.value?.trim() || '';
+    const neuroteaPercentage = parseInt(percentageInput?.value || 30);
+
+    if (!groupName) {
+        alert('Por favor ingrese un nombre para el grupo');
+        return null;
+    }
+
+    // Calcular siguiente número de grupo
+    const existingNumbers = Object.keys(groupTherapy)
+        .map(id => parseInt(id.replace('grupo-', '')))
+        .filter(n => !isNaN(n));
+    const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
+
+    const groupId = `grupo-${nextNumber}`;
+
+    groupTherapy[groupId] = {
+        id: groupId,
+        name: groupName,
+        children: [],
+        totalMaxValue: 0,
+        neuroteaPercentage: neuroteaPercentage,
+        createdAt: fechaActual,
+        status: 'active'
+    };
+
+    saveGroupTherapyToStorage();
+
+    // Limpiar formulario
+    if (nameInput) nameInput.value = '';
+    if (percentageInput) percentageInput.value = '30';
+
+    // Actualizar listas
+    renderGroupsListTab();
+    renderGroupList();
+
+    return groupId;
+}
+
+/**
+ * Renderiza la lista de grupos en la pestaña de Gestionar Grupos
+ */
+function renderGroupsListTab() {
+    const container = document.getElementById('grupos-list-tab');
+    const counter = document.getElementById('grupos-counter');
+    if (!container) return;
+
+    const activeGroups = getActiveGroups();
+
+    if (counter) {
+        counter.textContent = `${activeGroups.length} grupo${activeGroups.length !== 1 ? 's' : ''}`;
+    }
+
+    if (activeGroups.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-8">No hay grupos configurados. Cree uno nuevo para comenzar.</p>';
+        return;
+    }
+
+    // SVG icons inline para evitar delay de lucide.createIcons()
+    const editIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
+    const trashIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`;
+    const userPlusIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>`;
+
+    container.innerHTML = activeGroups.map(group => {
+        const childrenCount = group.children?.length || 0;
+
+        return `
+            <div class="border rounded-lg p-4 bg-gray-50 dark:bg-gray-700">
+                <div class="flex justify-between items-start mb-3">
+                    <div>
+                        <h4 class="font-semibold text-lg">${group.name}</h4>
+                        <p class="text-sm text-gray-500">${group.neuroteaPercentage}% aporte NeuroTEA</p>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button onclick="openEditGroupModal('${group.id}')" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm flex items-center gap-1">
+                            ${editIcon} Editar
+                        </button>
+                        <button onclick="deleteGroup('${group.id}')" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm">
+                            ${trashIcon}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                    <span class="font-medium">${childrenCount}</span> paciente${childrenCount !== 1 ? 's' : ''}
+                </div>
+
+                ${childrenCount > 0 ? `
+                    <div class="border-t dark:border-gray-600 pt-3 mt-2">
+                        <p class="text-xs font-medium text-gray-500 mb-2">Pacientes:</p>
+                        <div class="flex flex-wrap gap-2">
+                            ${group.children.map(child => `
+                                <span class="text-sm bg-white dark:bg-gray-800 px-2 py-1 rounded">${child.name}</span>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : `
+                    <div class="text-center py-3 text-gray-400 text-sm border-t dark:border-gray-600 mt-2 flex items-center justify-center gap-1">
+                        ${userPlusIcon}
+                        Click en "Editar" para agregar pacientes
+                    </div>
+                `}
+            </div>
+        `;
+    }).join('');
+}
+
+/**
+ * Agrega un niño a un grupo existente
+ * @param {string} groupId - ID del grupo
+ * @param {string} childName - Nombre del niño
+ * @param {number} amount - Monto acordado
+ */
+function addChildToGroup(groupId, childName, amount) {
+    if (!groupTherapy[groupId]) {
+        console.error('Grupo no encontrado:', groupId);
+        return false;
+    }
+
+    childName = childName.trim();
+    amount = parseNumber(amount);
+
+    // Validaciones
+    if (!childName) {
+        alert('El nombre del niño es requerido');
+        return false;
+    }
+
+    // NOTA: El monto se ingresa al momento de registrar la sesión grupal, no al crear el grupo
+    // Por eso no se valida que amount > 0 aquí
+
+    // Verificar duplicados
+    const exists = groupTherapy[groupId].children.some(
+        c => c.name.toLowerCase() === childName.toLowerCase()
+    );
+    if (exists) {
+        alert('Este niño ya está en el grupo');
+        return false;
+    }
+
+    const childId = `child-${Date.now()}`;
+
+    groupTherapy[groupId].children.push({
+        id: childId,
+        name: childName,
+        amount: amount
+    });
+
+    // Recalcular total máximo
+    groupTherapy[groupId].totalMaxValue = groupTherapy[groupId].children
+        .reduce((sum, child) => sum + child.amount, 0);
+
+    saveGroupTherapyToStorage();
+    renderGroupList(); // Actualizar lista de grupos inmediatamente
+    return true;
+}
+
+/**
+ * Elimina un niño de un grupo
+ * @param {string} groupId - ID del grupo
+ * @param {string} childId - ID del niño
+ */
+function removeChildFromGroup(groupId, childId) {
+    if (!groupTherapy[groupId]) return false;
+
+    const child = groupTherapy[groupId].children.find(c => c.id === childId);
+    if (!child) return false;
+
+    // Confirmar eliminación
+    if (!confirm(`¿Está seguro de eliminar a ${child.name} del grupo?`)) {
+        return false;
+    }
+
+    groupTherapy[groupId].children = groupTherapy[groupId].children
+        .filter(c => c.id !== childId);
+
+    // Recalcular total máximo
+    groupTherapy[groupId].totalMaxValue = groupTherapy[groupId].children
+        .reduce((sum, c) => sum + c.amount, 0);
+
+    saveGroupTherapyToStorage();
+    renderGroupList();
+    return true;
+}
+
+/**
+ * Edita el monto de un niño en un grupo
+ * @param {string} groupId - ID del grupo
+ * @param {string} childId - ID del niño
+ * @param {number} newAmount - Nuevo monto
+ */
+function editChildInGroup(groupId, childId, newAmount) {
+    if (!groupTherapy[groupId]) return false;
+
+    const child = groupTherapy[groupId].children.find(c => c.id === childId);
+    if (!child) return false;
+
+    const oldAmount = child.amount;
+    newAmount = parseNumber(newAmount);
+
+    if (oldAmount === newAmount) return true; // Sin cambios
+
+    // Actualizar monto
+    child.amount = newAmount;
+
+    // Recalcular total máximo
+    groupTherapy[groupId].totalMaxValue = groupTherapy[groupId].children
+        .reduce((sum, c) => sum + c.amount, 0);
+
+    saveGroupTherapyToStorage();
+    return true;
+}
+
+/**
+ * Elimina un grupo (soft delete si tiene sesiones)
+ * @param {string} groupId - ID del grupo
+ */
+function deleteGroup(groupId) {
+    if (!groupTherapy[groupId]) return false;
+
+    const group = groupTherapy[groupId];
+
+    // Verificar si tiene sesiones registradas
+    const hasActiveSessions = Object.values(groupSessions)
+        .flat()
+        .some(session => session.groupId === groupId);
+
+    if (hasActiveSessions) {
+        // Preguntar si desea eliminar también las sesiones
+        if (!confirm(`El grupo "${group.name}" tiene sesiones registradas.\n\n¿Desea eliminar el grupo Y sus sesiones?\n\n(Seleccione "Cancelar" para mantener el grupo)`)) {
+            return false;
+        }
+
+        // ✅ REVERSIBILIDAD COMPLETA: Limpiar confirmaciones de terapeutas de las sesiones a eliminar
+        Object.keys(groupSessions).forEach(fecha => {
+            const sessionsToDelete = groupSessions[fecha].filter(s => s.groupId === groupId);
+
+            // Para cada sesión a eliminar, limpiar confirmaciones de sus terapeutas
+            sessionsToDelete.forEach(session => {
+                if (session.therapists && confirmaciones[fecha]) {
+                    session.therapists.forEach(therapist => {
+                        // Verificar si tiene otras sesiones (de otros grupos o individuales)
+                        const otherGroupSessions = (groupSessions[fecha] || [])
+                            .filter(gs => gs.groupId !== groupId && gs.therapists?.includes(therapist));
+                        const individualSessions = (sessions[fecha] || [])
+                            .filter(s => s.therapist === therapist);
+
+                        // Si no tiene otras sesiones, eliminar su confirmación
+                        if (otherGroupSessions.length === 0 && individualSessions.length === 0) {
+                            if (confirmaciones[fecha][therapist]) {
+                                console.log(`🔄 Eliminando confirmación de ${therapist} (grupo eliminado)`);
+                                delete confirmaciones[fecha][therapist];
+                            }
+                        }
+                    });
+
+                    // Limpiar objeto de confirmaciones si quedó vacío
+                    if (confirmaciones[fecha] && Object.keys(confirmaciones[fecha]).length === 0) {
+                        delete confirmaciones[fecha];
+                    }
+                }
+            });
+
+            // Eliminar las sesiones grupales asociadas
+            groupSessions[fecha] = groupSessions[fecha].filter(session => session.groupId !== groupId);
+            if (groupSessions[fecha].length === 0) {
+                delete groupSessions[fecha];
+            }
+        });
+    } else {
+        // Confirmación normal
+        if (!confirm(`¿Está seguro de eliminar "${group.name}"?\n\nEsta acción no se puede deshacer.`)) {
+            return false;
+        }
+    }
+
+    // Eliminar de memoria
+    delete groupTherapy[groupId];
+
+    // ✅ PATRÓN CORRECTO: Solo saveToStorageAsync - clearAndSaveToIndexedDB sincroniza todo
+    // NO usar deleteFromIndexedDB (redundante y puede causar conflictos de transacción)
+    saveToStorageAsync();
+
+    renderGroupList();
+    renderGroupsListTab();
+
+    // Actualizar vistas si había sesiones eliminadas
+    if (hasActiveSessions) {
+        updateAllViews(fechaActual);
+    }
+
+    alert(`Grupo "${group.name}" eliminado exitosamente`);
+    return true;
+}
+
+/**
+ * Obtiene todos los grupos activos
+ * @returns {Array} Lista de grupos activos
+ */
+function getActiveGroups() {
+    return Object.values(groupTherapy)
+        .filter(group => group.status === 'active')
+        .sort((a, b) => {
+            const numA = parseInt(a.id.replace('grupo-', ''));
+            const numB = parseInt(b.id.replace('grupo-', ''));
+            return numA - numB;
+        });
+}
+
+/**
+ * Guarda la configuración de grupos en IndexedDB
+ */
+async function saveGroupTherapyToStorage() {
+    try {
+        const groupData = Object.values(groupTherapy);
+        await saveToIndexedDB('groupTherapy', groupData);
+        console.log('✅ Grupos guardados:', groupData.length);
+    } catch (error) {
+        console.error('❌ Error guardando grupos:', error);
+    }
+}
+
+// ===========================
+// SISTEMA DE SESIONES GRUPALES - REGISTRO DE SESIONES
+// ===========================
+
+/**
+ * Inicializa el formulario de sesión grupal al seleccionar un grupo
+ * @param {string} groupId - ID del grupo seleccionado
+ */
+function initGroupSessionForm(groupId) {
+    if (!groupId) {
+        // Limpiar formulario si no hay grupo seleccionado
+        groupSessionTemp = { groupId: null, attendance: [], therapists: [] };
+        renderGroupAttendanceList();
+        renderGroupTherapistsList();
+        calculateGroupSessionValues();
+        return;
+    }
+
+    if (!groupTherapy[groupId]) {
+        console.error('Grupo no encontrado:', groupId);
+        return;
+    }
+
+    const group = groupTherapy[groupId];
+
+    // Inicializar datos temporales
+    groupSessionTemp.groupId = groupId;
+    groupSessionTemp.attendance = group.children.map(child => ({
+        ...child,
+        present: true  // Por defecto todos presentes
+    }));
+    groupSessionTemp.therapists = [];
+
+    // Renderizar lista de asistencia
+    renderGroupAttendanceList();
+    renderGroupTherapistsList();
+
+    // Actualizar cálculos
+    calculateGroupSessionValues();
+}
+
+// renderGroupAttendanceList se define más adelante con soporte para argumentos opcionales
+
+/**
+ * Actualiza el estado de asistencia de un niño
+ * @param {number} index - Índice del niño en el array
+ * @param {string} value - 'true' o 'false'
+ */
+function updateChildAttendance(index, value) {
+    groupSessionTemp.attendance[index].present = value === 'true';
+
+    // Actualizar estilo visual del select
+    const select = document.getElementById(`attendance-${index}`);
+    if (select) {
+        if (value === 'true') {
+            select.className = 'p-1 border rounded text-sm bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
+        } else {
+            select.className = 'p-1 border rounded text-sm bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
+        }
+    }
+
+    // Recalcular valores
+    calculateGroupSessionValues();
+}
+
+// renderGroupTherapistsList se define más adelante con UI de checkboxes
+
+/**
+ * Calcula los valores de la sesión grupal
+ * @returns {Object} Valores calculados
+ */
+function calculateGroupSessionValues() {
+    // Contar presentes
+    const presentChildren = groupSessionTemp.attendance.filter(child => child.present);
+    const presentCount = presentChildren.length;
+
+    // Calcular totales de pagos (igual que sesiones individuales)
+    const totalCash = presentChildren.reduce((sum, child) => sum + (child.cashToNeurotea || 0), 0);
+    const totalTransferNeurotea = presentChildren.reduce((sum, child) => sum + (child.transferToNeurotea || 0), 0);
+
+    // El valor total de la sesión = suma de todos los pagos (igual que sesiones individuales)
+    const totalValue = totalCash + totalTransferNeurotea;
+
+    // Obtener porcentaje de aporte del grupo (default 30%)
+    const group = groupTherapy[groupSessionTemp.groupId];
+    const percentage = group?.neuroteaPercentage || 30;
+    const contributionType = String(percentage);
+
+    // Calcular aporte a NeuroTEA
+    const neuroteaContribution = Math.round(totalValue * (percentage / 100));
+
+    // Calcular honorarios totales
+    const totalFee = Math.max(0, totalValue - neuroteaContribution);
+    const therapistCount = groupSessionTemp.therapists.length;
+
+    // Calcular honorarios por terapeuta con manejo de residuo
+    // Ejemplo: 100,000 / 3 = 33,333 por terapeuta, residuo = 1
+    // La primera terapeuta recibe 33,334, las demás 33,333
+    let feePerTherapist = 0;
+    let feeResidue = 0;
+    if (therapistCount > 0) {
+        feePerTherapist = Math.floor(totalFee / therapistCount);
+        feeResidue = totalFee - (feePerTherapist * therapistCount);
+    }
+
+    // Validar botón de registro
+    validateGroupSessionButton();
+
+    return {
+        presentCount,
+        totalValue,
+        contributionType,
+        neuroteaContribution,
+        totalFee,
+        therapistCount,
+        feePerTherapist,
+        feeResidue, // Residuo para asignar a la primera terapeuta
+        // Campos de pagos consolidados (solo Efectivo y Transf. NeuroTEA)
+        totalCash,
+        totalTransferNeurotea
+    };
+}
+
+/**
+ * Valida si se puede registrar la sesión grupal
+ */
+function validateGroupSessionButton() {
+    const btn = document.getElementById('register-group-btn');
+    if (!btn) return;
+
+    const hasGroup = groupSessionTemp.groupId !== null;
+    const hasPresent = groupSessionTemp.attendance.some(child => child.present);
+    const hasTherapists = groupSessionTemp.therapists.length > 0;
+
+    // Calcular total de pagos desde los niños presentes (solo Efectivo y Transf. NeuroTEA)
+    const presentChildren = groupSessionTemp.attendance.filter(child => child.present);
+    const totalPagos = presentChildren.reduce((sum, child) => {
+        return sum + (child.cashToNeurotea || 0) + (child.transferToNeurotea || 0);
+    }, 0);
+    const hasPayment = totalPagos > 0;
+
+    const isValid = hasGroup && hasPresent && hasTherapists && hasPayment;
+
+    btn.disabled = !isValid;
+}
+
+/**
+ * Registra la sesión grupal
+ */
+function registerGroupSession() {
+    // Validaciones
+    if (!groupSessionTemp.groupId) {
+        alert('Debe seleccionar un grupo');
+        return;
+    }
+
+    const presentChildren = groupSessionTemp.attendance.filter(child => child.present);
+    if (presentChildren.length === 0) {
+        alert('Debe haber al menos un niño presente');
+        return;
+    }
+
+    if (groupSessionTemp.therapists.length === 0) {
+        alert('Debe asignar al menos una terapeuta');
+        return;
+    }
+
+    // Calcular valores finales (incluye totales de pagos individuales)
+    const values = calculateGroupSessionValues();
+
+    // Calcular total de pagos desde los niños presentes (solo Efectivo y Transf. NeuroTEA)
+    const totalPago = values.totalCash + values.totalTransferNeurotea;
+
+    if (totalPago <= 0) {
+        alert('Debe ingresar el desglose del pago de al menos un niño');
+        return;
+    }
+
+    // Verificar que el pago coincida con el total
+    if (totalPago !== values.totalValue) {
+        if (!confirm(`El total de pagos (${formatCurrency(totalPago)}) no coincide con el valor de presentes (${formatCurrency(values.totalValue)}). ¿Desea continuar?`)) {
+            return;
+        }
+    }
+
+    // Crear objeto de sesión grupal
+    const fecha = document.getElementById('session-date')?.value || fechaActual;
+    const group = groupTherapy[groupSessionTemp.groupId];
+
+    const groupSession = {
+        id: Date.now(),
+        fecha: fecha,
+        isGroupSession: true,
+
+        groupId: groupSessionTemp.groupId,
+        groupName: group.name,
+
+        // Guardar asistencia con pagos individuales de cada niño (solo Efectivo y Transf. NeuroTEA)
+        attendance: groupSessionTemp.attendance.map(child => ({
+            childId: child.childId,
+            childName: child.childName,
+            amount: child.amount,
+            present: child.present,
+            cashToNeurotea: child.cashToNeurotea || 0,
+            transferToNeurotea: child.transferToNeurotea || 0
+        })),
+
+        therapists: [...groupSessionTemp.therapists],
+        therapistCount: groupSessionTemp.therapists.length,
+
+        presentCount: values.presentCount,
+        totalValue: values.totalValue,
+
+        contributionType: values.contributionType,
+        neuroteaPercentage: parseInt(values.contributionType) || 30,
+        neuroteaContribution: values.neuroteaContribution,
+
+        totalFee: values.totalFee,
+        feePerTherapist: values.feePerTherapist,
+        feeResidue: values.feeResidue || 0, // Residuo de división para la primera terapeuta
+
+        // Totales consolidados de pagos (solo Efectivo y Transf. NeuroTEA)
+        cashToNeurotea: values.totalCash,
+        transferToNeurotea: values.totalTransferNeurotea,
+
+        registeredAt: new Date().toISOString()
+    };
+
+    // Guardar en groupSessions
+    if (!groupSessions[fecha]) {
+        groupSessions[fecha] = [];
+    }
+    groupSessions[fecha].push(groupSession);
+
+    // Guardar en storage
+    saveToStorageAsync();
+
+    // Cerrar modal y limpiar formulario
+    closeGroupSessionModal();
+
+    // Actualizar todas las vistas
+    updateDashboard(fecha);
+    updateDailySessionsList(fecha);
+    updateTransferDetails(fecha);
+}
+
+/**
+ * Elimina una sesión grupal
+ * @param {string} fecha - Fecha de la sesión
+ * @param {number} sessionId - ID de la sesión
+ */
+async function deleteGroupSession(fecha, sessionId) {
+    // Confirmar eliminación
+    if (!confirm('¿Está seguro de eliminar esta sesión grupal? Esto revertirá los cálculos de rendición de los terapeutas asociados.')) return;
+
+    // Buscar la sesión
+    if (!groupSessions[fecha]) return;
+
+    // Convertir sessionId a número para comparación correcta (viene como string desde onclick)
+    const sessionIdNum = typeof sessionId === 'string' ? parseInt(sessionId, 10) : sessionId;
+    const sessionIndex = groupSessions[fecha].findIndex(s => s.id === sessionIdNum);
+    if (sessionIndex === -1) return;
+
+    const session = groupSessions[fecha][sessionIndex];
+
+    console.log(`🗑️ Eliminando sesión grupal: ${session.groupName || session.groupId}`);
+
+    // ✅ REVERSIBILIDAD COMPLETA: Limpiar confirmaciones de terapeutas asociados a esta sesión grupal
+    if (session.therapists && session.therapists.length > 0 && confirmaciones[fecha]) {
+        session.therapists.forEach(therapist => {
+            // Verificar si el terapeuta tiene otras sesiones (individuales o grupales) en este día
+            const otherGroupSessions = (groupSessions[fecha] || [])
+                .filter(gs => gs.id !== sessionIdNum && gs.therapists && gs.therapists.includes(therapist));
+            const otherIndividualSessions = (sessions[fecha] || [])
+                .filter(s => s.therapist === therapist);
+
+            // Si no tiene otras sesiones, eliminar su confirmación
+            if (otherGroupSessions.length === 0 && otherIndividualSessions.length === 0) {
+                if (confirmaciones[fecha][therapist]) {
+                    console.log(`🔄 Eliminando confirmación de ${therapist} (sesión grupal eliminada, sin otras sesiones)`);
+                    delete confirmaciones[fecha][therapist];
+                }
+            } else {
+                console.log(`ℹ️ ${therapist} tiene otras sesiones, manteniendo confirmación para recálculo`);
+            }
+        });
+
+        // Limpiar objeto de confirmaciones si quedó vacío
+        if (Object.keys(confirmaciones[fecha]).length === 0) {
+            delete confirmaciones[fecha];
+        }
+    }
+
+    // Eliminar de memoria
+    groupSessions[fecha].splice(sessionIndex, 1);
+
+    if (groupSessions[fecha].length === 0) {
+        delete groupSessions[fecha];
+    }
+
+    // ✅ PATRÓN CORRECTO: Solo saveToStorageAsync - clearAndSaveToIndexedDB sincroniza todo
+    // NO usar deleteFromIndexedDB (redundante y puede causar conflictos de transacción)
+    await saveToStorageAsync();
+
+    // ✅ Actualizar TODAS las vistas (incluyendo rendiciones)
+    updateAllViews(fecha);
+
+    console.log(`✅ Sesión grupal eliminada. Cálculos revertidos dinámicamente.`);
+}
+
+// ===========================
+// SISTEMA DE SESIONES GRUPALES - VALIDACIÓN E INTEGRIDAD
+// ===========================
+
+/**
+ * Valida integridad de datos de grupos al cargar
+ */
+function validateGroupTherapyIntegrity() {
+    let corrected = false;
+
+    Object.keys(groupTherapy).forEach(groupId => {
+        const group = groupTherapy[groupId];
+
+        // Validar que tenga estructura correcta
+        if (!group.children) {
+            group.children = [];
+            corrected = true;
+        }
+
+        // Validar que totalMaxValue sea correcto
+        const calculatedTotal = group.children.reduce((sum, child) => sum + (child.amount || 0), 0);
+        if (group.totalMaxValue !== calculatedTotal) {
+            group.totalMaxValue = calculatedTotal;
+            corrected = true;
+            console.warn(`⚠️ Corregido totalMaxValue de ${groupId}`);
+        }
+
+        // Validar status
+        if (!group.status) {
+            group.status = 'active';
+            corrected = true;
+        }
+
+        // Validar que cada niño tenga ID
+        group.children.forEach((child, index) => {
+            if (!child.id) {
+                child.id = `child-${Date.now()}-${index}`;
+                corrected = true;
+            }
+        });
+    });
+
+    // Validar sesiones grupales
+    Object.keys(groupSessions).forEach(fecha => {
+        groupSessions[fecha].forEach(session => {
+            // Validar que el grupo exista
+            if (!groupTherapy[session.groupId]) {
+                console.warn(`⚠️ Sesión grupal huérfana: ${session.id} (grupo ${session.groupId} no existe)`);
+                session._orphaned = true;
+            }
+        });
+    });
+
+    if (corrected) {
+        console.log('✅ Datos de grupos validados y corregidos');
+        saveGroupTherapyToStorage();
+    }
+}
+
+// ===========================
+// SISTEMA DE SESIONES GRUPALES - UI HELPERS
+// ===========================
+
+/**
+ * Llena el select de grupos con los grupos activos
+ */
+function populateGroupSelect() {
+    const select = document.getElementById('group-select');
+    if (!select) return;
+
+    const activeGroups = getActiveGroups();
+
+    select.innerHTML = '<option value="">Seleccionar grupo...</option>' +
+        activeGroups.map(group =>
+            `<option value="${group.id}">${group.name} (${group.children.length} niños)</option>`
+        ).join('');
+}
+
+/**
+ * Llena el select de terapeutas para sesiones grupales
+ */
+function populateGroupTherapistSelect() {
+    const select = document.getElementById('group-therapist-select');
+    if (!select) return;
+
+    select.innerHTML = '<option value="">Seleccionar terapeuta...</option>' +
+        therapists.map(name =>
+            `<option value="${name}">${name}</option>`
+        ).join('');
+}
+
+/**
+ * Renderiza la lista de grupos en administración
+ */
+function renderGroupList() {
+    const container = document.getElementById('groups-list-container');
+    if (!container) return;
+
+    const activeGroups = getActiveGroups();
+
+    if (activeGroups.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-8 text-gray-500">
+                <p>No hay grupos configurados</p>
+                <p class="text-sm mt-2">Haga clic en "Crear Nuevo Grupo" para comenzar</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = activeGroups.map(group => `
+        <div class="bg-white dark:bg-gray-800 border rounded-lg p-4 mb-4">
+            <div class="flex justify-between items-center mb-3">
+                <h4 class="font-bold text-lg">${group.name}</h4>
+                <div class="flex space-x-2">
+                    <button onclick="openEditGroupModal('${group.id}')"
+                            class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-sm">
+                        Editar
+                    </button>
+                    <button onclick="deleteGroup('${group.id}')"
+                            class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-sm">
+                        Eliminar
+                    </button>
+                </div>
+            </div>
+            <div class="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                ${group.children.length} niño${group.children.length !== 1 ? 's' : ''}
+            </div>
+            ${group.children.length > 0 ? `
+                <div class="flex flex-wrap gap-2">
+                    ${group.children.map(child => `
+                        <span class="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-sm">${child.name}</span>
+                    `).join('')}
+                </div>
+            ` : ''}
+        </div>
+    `).join('');
+}
+
+// Variables para el modal de edición de grupo
+let currentEditingGroupId = null;
+
+/**
+ * Abre el modal de edición de grupo
+ */
+function openEditGroupModal(groupId) {
+    const modal = document.getElementById('edit-group-modal');
+    if (!modal || !groupTherapy[groupId]) return;
+
+    currentEditingGroupId = groupId;
+    const group = groupTherapy[groupId];
+
+    // Prellenar campos con datos actuales del grupo
+    document.getElementById('edit-group-id').value = groupId;
+    document.getElementById('edit-group-name').value = group.name;
+    document.getElementById('edit-group-percentage').value = group.neuroteaPercentage || 30;
+    document.getElementById('edit-group-title').textContent = group.name;
+
+    renderEditGroupChildrenList();
+
+    modal.classList.remove('hidden');
+}
+
+/**
+ * Cierra el modal de edición de grupo
+ */
+function closeEditGroupModal() {
+    const modal = document.getElementById('edit-group-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    currentEditingGroupId = null;
+
+    // Limpiar campos
+    document.getElementById('new-child-name').value = '';
+}
+
+/**
+ * Renderiza la lista de niños en el modal de edición
+ */
+function renderEditGroupChildrenList() {
+    const container = document.getElementById('edit-group-children-list');
+    if (!container || !currentEditingGroupId) return;
+
+    const group = groupTherapy[currentEditingGroupId];
+
+    if (!group || group.children.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-sm italic">No hay niños en el grupo</p>';
+        return;
+    }
+
+    // Renderizar lista de niños usando SVG inline para evitar delay de lucide.createIcons()
+    const trashIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`;
+
+    container.innerHTML = group.children.map(child => `
+        <div class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded mb-2">
+            <div class="flex-1">
+                <span class="font-medium">${child.name}</span>
+            </div>
+            <div class="flex items-center">
+                <button onclick="removeChildFromGroup('${currentEditingGroupId}', '${child.id}'); renderEditGroupChildrenList();"
+                        class="text-red-500 hover:text-red-700 p-1">
+                    ${trashIcon}
+                </button>
+            </div>
+        </div>
+    `).join('');
+
+    // Mostrar cantidad de niños
+    container.innerHTML += `
+        <div class="mt-3 pt-3 border-t dark:border-gray-600 flex justify-between items-center">
+            <span class="font-medium">Total de niños:</span>
+            <span class="font-bold text-lg">${group.children.length}</span>
+        </div>
+    `;
+}
+
+/**
+ * Agrega niño al grupo actualmente en edición
+ */
+function addChildToCurrentGroup() {
+    if (!currentEditingGroupId) return;
+
+    const nameInput = document.getElementById('new-child-name');
+    if (!nameInput) return;
+
+    const name = nameInput.value.trim();
+    if (!name) {
+        alert('El nombre del niño es requerido');
+        return;
+    }
+
+    // Verificar duplicados antes de agregar
+    const group = groupTherapy[currentEditingGroupId];
+    if (group) {
+        const exists = group.children.some(c => c.name.toLowerCase() === name.toLowerCase());
+        if (exists) {
+            alert('Este niño ya está en el grupo');
+            return;
+        }
+    }
+
+    // Agregar niño directamente sin pasar por addChildToGroup para evitar alerts duplicados
+    const childId = `child-${Date.now()}`;
+    groupTherapy[currentEditingGroupId].children.push({
+        id: childId,
+        name: name,
+        amount: 0
+    });
+
+    // Limpiar input y actualizar vista inmediatamente
+    nameInput.value = '';
+    renderEditGroupChildrenList();
+
+    // Guardar en segundo plano (sin bloquear UI)
+    saveGroupTherapyToStorage();
+
+    // Actualizar lista de grupos para reflejar nuevo conteo de pacientes
+    renderGroupsListTab();
+}
+
+/**
+ * Abre el modal de gestión de grupos
+ */
+function openGroupManagement() {
+    const modal = document.getElementById('group-management-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        renderGroupList();
+        lucide.createIcons();
+    }
+}
+
+/**
+ * Cierra el modal de gestión de grupos
+ */
+function closeGroupManagementModal() {
+    const modal = document.getElementById('group-management-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    // Actualizar el select de grupos en el formulario
+    populateGroupSelect();
+}
+
+/**
+ * Abre el modal de registro de sesión grupal
+ */
+function openGroupSessionModal() {
+    const modal = document.getElementById('group-session-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        populateGroupSelect();
+        clearGroupSessionForm();
+        lucide.createIcons();
+    }
+}
+
+/**
+ * Cierra el modal de registro de sesión grupal
+ */
+function closeGroupSessionModal() {
+    const modal = document.getElementById('group-session-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    clearGroupSessionForm();
+}
+
+/**
+ * Limpia el formulario de sesión grupal
+ */
+function clearGroupSessionForm() {
+    groupSessionTemp.groupId = null;
+    groupSessionTemp.attendance = [];
+    groupSessionTemp.therapists = [];
+
+    const groupSelect = document.getElementById('group-select');
+    if (groupSelect) groupSelect.value = '';
+
+    // Ocultar secciones
+    const sections = ['group-attendance-section', 'group-therapists-section', 'group-values-section', 'group-payment-section'];
+    sections.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+
+    // Limpiar campos de pago
+    const cashInput = document.getElementById('group-cash-neurotea');
+    const transferInput = document.getElementById('group-transfer-neurotea');
+    if (cashInput) cashInput.value = '';
+    if (transferInput) transferInput.value = '';
+
+    // Deshabilitar botón
+    const btn = document.getElementById('register-group-btn');
+    if (btn) btn.disabled = true;
+}
+
+/**
+ * Maneja el cambio de grupo seleccionado
+ */
+function onGroupSelectChange() {
+    const groupId = document.getElementById('group-select')?.value;
+
+    if (!groupId) {
+        // Ocultar todo si no hay grupo seleccionado
+        const sections = ['group-attendance-section', 'group-therapists-section', 'group-values-section', 'group-payment-section'];
+        sections.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
+        return;
+    }
+
+    const group = groupTherapy[groupId];
+    if (!group) return;
+
+    groupSessionTemp.groupId = groupId;
+
+    // Mostrar secciones
+    const sections = ['group-attendance-section', 'group-therapists-section', 'group-values-section', 'group-payment-section'];
+    sections.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('hidden');
+    });
+
+    // Renderizar lista de asistencia
+    renderGroupAttendanceList(group);
+
+    // Renderizar lista de terapeutas
+    renderGroupTherapistsList();
+
+    // Calcular valores iniciales
+    updateGroupSessionValues();
+}
+
+/**
+ * Renderiza la lista de asistencia de niños
+ * @param {Object} group - Grupo opcional. Si no se provee, usa groupSessionTemp.attendance
+ */
+function renderGroupAttendanceList(group) {
+    const container = document.getElementById('group-attendance-list');
+    if (!container) return;
+
+    // Si no hay grupo, usar los datos de groupSessionTemp
+    if (!group) {
+        if (groupSessionTemp.attendance.length === 0) {
+            container.innerHTML = '<p class="text-gray-500 text-sm">Seleccione un grupo primero</p>';
+            return;
+        }
+        // Re-render con datos actuales
+        group = { children: groupSessionTemp.attendance.map(a => ({ id: a.childId, name: a.childName, amount: a.amount })) };
+    }
+
+    if (!group.children || group.children.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-sm">Este grupo no tiene niños. Configure el grupo primero.</p>';
+        return;
+    }
+
+    // Renderizar cada niño con checkbox de asistencia y campos de pago
+    // SIMPLIFICADO: Solo Efectivo y Transferencia a NeuroTEA
+    // El valor de la sesión se calcula automáticamente como suma de pagos (igual que sesiones individuales)
+    container.innerHTML = group.children.map((child, index) => {
+        const attendance = groupSessionTemp.attendance[index];
+        const isPresent = attendance ? attendance.present : true;
+        const cashValue = attendance?.cashToNeurotea || 0;
+        const transferNeuroValue = attendance?.transferToNeurotea || 0;
+
+        return `
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-3 border ${isPresent ? 'border-green-300 dark:border-green-600' : 'border-gray-300 dark:border-gray-600 opacity-60'}">
+                <div class="flex items-center mb-2">
+                    <input type="checkbox" id="attendance-${index}" class="mr-3 w-5 h-5" ${isPresent ? 'checked' : ''} onchange="toggleChildAttendance(${index})">
+                    <label for="attendance-${index}" class="font-medium">${child.name}</label>
+                </div>
+
+                <div id="payment-fields-${index}" class="${isPresent ? '' : 'hidden'} space-y-2 mt-2">
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs text-green-600 font-medium mb-1">Efectivo</label>
+                            <input type="text" inputmode="numeric" pattern="[0-9]*" id="child-cash-${index}" class="w-full p-2 text-sm border rounded campo-efectivo" placeholder="0" value="${cashValue || ''}" oninput="updateGroupSessionValues()">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-blue-600 font-medium mb-1">Transf. NeuroTEA</label>
+                            <input type="text" inputmode="numeric" pattern="[0-9]*" id="child-transfer-neurotea-${index}" class="w-full p-2 text-sm border rounded campo-transferencia-neurotea" placeholder="0" value="${transferNeuroValue || ''}" oninput="updateGroupSessionValues()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Inicializar asistencia si es un nuevo grupo
+    if (!groupSessionTemp.attendance || groupSessionTemp.attendance.length !== group.children.length) {
+        groupSessionTemp.attendance = group.children.map(child => ({
+            childId: child.id,
+            childName: child.name,
+            amount: child.amount || 0,
+            present: true,
+            cashToNeurotea: 0,
+            transferToNeurotea: 0
+        }));
+    }
+}
+
+/**
+ * Alterna la asistencia de un niño y muestra/oculta sus campos de pago
+ */
+function toggleChildAttendance(index) {
+    const checkbox = document.getElementById(`attendance-${index}`);
+    const paymentFields = document.getElementById(`payment-fields-${index}`);
+
+    if (groupSessionTemp.attendance[index]) {
+        groupSessionTemp.attendance[index].present = checkbox.checked;
+
+        // Si está ausente, limpiar los valores de pago
+        if (!checkbox.checked) {
+            groupSessionTemp.attendance[index].cashToNeurotea = 0;
+            groupSessionTemp.attendance[index].transferToNeurotea = 0;
+        }
+    }
+
+    // Mostrar/ocultar campos de pago
+    if (paymentFields) {
+        paymentFields.classList.toggle('hidden', !checkbox.checked);
+    }
+
+    // Actualizar estilo visual del contenedor
+    const container = checkbox.closest('.bg-white, .dark\\:bg-gray-800');
+    if (container) {
+        if (checkbox.checked) {
+            container.classList.remove('opacity-60', 'border-gray-300', 'dark:border-gray-600');
+            container.classList.add('border-green-300', 'dark:border-green-600');
+        } else {
+            container.classList.add('opacity-60', 'border-gray-300', 'dark:border-gray-600');
+            container.classList.remove('border-green-300', 'dark:border-green-600');
+        }
+    }
+
+    updateGroupSessionValues();
+}
+
+/**
+ * Renderiza el selector de terapeutas con desplegable y botón agregar
+ */
+function renderGroupTherapistsList() {
+    const container = document.getElementById('group-therapists-list');
+    if (!container) return;
+
+    if (!therapists || therapists.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-sm">No hay terapeutas registradas. Agregue terapeutas primero.</p>';
+        return;
+    }
+
+    // Obtener terapeutas disponibles (no seleccionadas aún)
+    const availableTherapists = therapists.filter(t => !groupSessionTemp.therapists.includes(t));
+
+    // SVG icons inline para evitar delay
+    const plusIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
+    const xIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+
+    // Renderizar selector + lista de seleccionadas
+    // NOTA: Usar ID único para evitar conflicto con el selector de sesiones individuales
+    container.innerHTML = `
+        <!-- Selector de terapeuta -->
+        <div class="flex gap-2 mb-3">
+            <select id="group-session-therapist-select" class="flex-1 p-2 border rounded-md dark:bg-gray-600 dark:border-gray-500 text-sm">
+                <option value="">-- Seleccionar terapeuta --</option>
+                ${availableTherapists.map(t => `<option value="${t}">${t}</option>`).join('')}
+            </select>
+            <button type="button" id="btn-add-group-therapist" class="bg-blue-400 hover:bg-blue-500 text-white px-3 py-2 rounded-md flex items-center text-sm" ${availableTherapists.length === 0 ? 'disabled' : ''}>
+                ${plusIcon}
+                <span class="ml-1">Agregar</span>
+            </button>
+        </div>
+
+        <!-- Lista de terapeutas seleccionadas -->
+        <div id="selected-therapists-list" class="flex flex-wrap gap-2">
+            ${groupSessionTemp.therapists.length === 0
+                ? '<p class="text-gray-400 text-sm italic">No hay terapeutas asignadas a esta sesión</p>'
+                : groupSessionTemp.therapists.map((t, idx) => `
+                    <div class="flex items-center bg-blue-100 dark:bg-blue-800/40 text-blue-800 dark:text-blue-200 px-3 py-1 rounded-full text-sm">
+                        <span>${t}</span>
+                        <button type="button" class="btn-remove-therapist ml-2 hover:text-red-500" data-therapist="${t}">
+                            ${xIcon}
+                        </button>
+                    </div>
+                `).join('')
+            }
+        </div>
+
+        ${groupSessionTemp.therapists.length > 0 ? `
+            <div class="mt-2 text-xs text-gray-500">
+                ${groupSessionTemp.therapists.length} terapeuta(s) asignada(s) - Honorarios se dividirán en partes iguales
+            </div>
+        ` : ''}
+    `;
+
+    // Agregar event listeners después de renderizar
+    const btnAdd = document.getElementById('btn-add-group-therapist');
+    if (btnAdd) {
+        btnAdd.addEventListener('click', addTherapistToGroupSession);
+    }
+
+    // Event listeners para botones de eliminar
+    document.querySelectorAll('.btn-remove-therapist').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const therapist = this.getAttribute('data-therapist');
+            removeTherapistFromGroupSession(therapist);
+        });
+    });
+}
+
+/**
+ * Agrega una terapeuta a la sesión grupal
+ */
+function addTherapistToGroupSession() {
+    const select = document.getElementById('group-session-therapist-select');
+    if (!select || !select.value) return;
+
+    const therapist = select.value;
+    if (!groupSessionTemp.therapists.includes(therapist)) {
+        groupSessionTemp.therapists.push(therapist);
+        renderGroupTherapistsList();
+        updateGroupSessionValues();
+    }
+}
+
+/**
+ * Elimina una terapeuta de la sesión grupal
+ */
+function removeTherapistFromGroupSession(therapist) {
+    groupSessionTemp.therapists = groupSessionTemp.therapists.filter(t => t !== therapist);
+    renderGroupTherapistsList();
+    updateGroupSessionValues();
+}
+
+/**
+ * Actualiza los valores calculados de la sesión grupal
+ */
+function updateGroupSessionValues() {
+    const groupId = groupSessionTemp.groupId;
+    if (!groupId) return;
+
+    const group = groupTherapy[groupId];
+    if (!group) return;
+
+    // NOTA: La lista de terapeutas ahora se maneja con addTherapistToGroupSession/removeTherapistFromGroupSession
+    // Ya no se usan checkboxes
+
+    // Actualizar asistencia y pagos desde checkboxes e inputs
+    // El monto de cada niño = Efectivo + Transf. NeuroTEA (igual que sesiones individuales)
+    if (group.children) {
+        groupSessionTemp.attendance = group.children.map((child, index) => {
+            const checkbox = document.getElementById(`attendance-${index}`);
+            const cashInput = document.getElementById(`child-cash-${index}`);
+            const transferNeuroInput = document.getElementById(`child-transfer-neurotea-${index}`);
+
+            const cashToNeurotea = parseNumber(cashInput?.value || 0);
+            const transferToNeurotea = parseNumber(transferNeuroInput?.value || 0);
+            // El monto es la suma de pagos (igual que sessionValue en sesiones individuales)
+            const amount = cashToNeurotea + transferToNeurotea;
+
+            return {
+                childId: child.id,
+                childName: child.name,
+                amount: amount,
+                present: checkbox?.checked || false,
+                cashToNeurotea: cashToNeurotea,
+                transferToNeurotea: transferToNeurotea
+            };
+        });
+    }
+
+    // NOTA: Ya no es necesario re-renderizar cuando cambian las terapeutas del grupo
+    // porque el selector ahora muestra TODAS las terapeutas registradas
+
+    // Calcular valores
+    const values = calculateGroupSessionValues();
+
+    // Actualizar UI - Resumen principal
+    const totalEl = document.getElementById('group-total-value');
+    const neuroteaEl = document.getElementById('group-neurotea-value');
+    const therapistFeeEl = document.getElementById('group-therapist-fee');
+    const childrenCountEl = document.getElementById('group-children-count');
+
+    if (totalEl) totalEl.textContent = formatCurrency(values.totalValue);
+    if (neuroteaEl) neuroteaEl.textContent = formatCurrency(values.neuroteaContribution);
+    if (therapistFeeEl) therapistFeeEl.textContent = formatCurrency(values.feePerTherapist);
+    if (childrenCountEl) childrenCountEl.textContent = values.presentCount;
+
+    // Actualizar UI - Desglose de pagos consolidados (solo Efectivo y Transf. NeuroTEA)
+    const totalCashEl = document.getElementById('group-total-cash');
+    const totalTransferNeuroEl = document.getElementById('group-total-transfer-neurotea');
+
+    if (totalCashEl) totalCashEl.textContent = formatCurrency(values.totalCash);
+    if (totalTransferNeuroEl) totalTransferNeuroEl.textContent = formatCurrency(values.totalTransferNeurotea);
+
+    // Validar si el total de pagos coincide con el valor de sesión
+    const warningEl = document.getElementById('group-payment-warning');
+    const totalPagos = values.totalCash + values.totalTransferNeurotea;
+    if (warningEl) {
+        if (values.presentCount > 0 && totalPagos !== values.totalValue) {
+            warningEl.classList.remove('hidden');
+            warningEl.textContent = `El total de pagos (${formatCurrency(totalPagos)}) no coincide con el valor de la sesión (${formatCurrency(values.totalValue)})`;
+        } else {
+            warningEl.classList.add('hidden');
+        }
+    }
+
+    // Validar botón de registro
+    validateGroupSessionButton();
+}
+
+/**
+ * Actualiza los totales de pago y valida (función legacy para compatibilidad)
+ */
+function updateGroupPaymentTotals() {
+    updateGroupSessionValues();
+}
+
+/**
+ * Guarda los cambios del grupo editado
+ */
+function saveGroupChanges() {
+    const groupId = document.getElementById('edit-group-id').value;
+    const newName = document.getElementById('edit-group-name').value.trim();
+    const newPercentage = parseInt(document.getElementById('edit-group-percentage').value) || 30;
+
+    if (!groupId || !groupTherapy[groupId]) {
+        alert('Error: Grupo no encontrado');
+        return;
+    }
+
+    if (!newName) {
+        alert('Por favor ingrese un nombre para el grupo');
+        return;
+    }
+
+    // Actualizar datos del grupo
+    groupTherapy[groupId].name = newName;
+    groupTherapy[groupId].neuroteaPercentage = newPercentage;
+    groupTherapy[groupId].updatedAt = new Date().toISOString();
+
+    // Guardar en IndexedDB
+    saveGroupTherapyToStorage();
+
+    closeEditGroupModal();
+    renderGroupList();
+    renderGroupsListTab();
+}
+
+// ===========================
+// UTILIDADES
+// ===========================
+
+function parseNumber(value) {
+    // Limpiar separadores de miles y convertir a número
+    // Soporta formatos: 200000, 200.000, 200,000
+    const cleaned = String(value).replace(/[,\.]/g, '');
+    const num = parseInt(cleaned, 10) || 0;
+    return isNaN(num) ? 0 : Math.round(num);
+}
+
+function formatNumber(number) {
+    return new Intl.NumberFormat('es-PY').format(number);
+}
+
+function formatCurrency(amount) {
+    return `Gs ${formatNumber(amount)}`;
+}
+
+/**
+ * Formatea el indicador de porcentaje para mostrar en registros de sesión
+ * @param {object} item - Sesión o sesión grupal con contributionType o neuroteaPercentage
+ * @returns {string} - Texto del porcentaje, ej: "(30%)" o "(Fijo)"
+ */
+function formatContributionIndicator(item) {
+    if (!item) return '';
+
+    // Para sesiones individuales
+    if (item.contributionType) {
+        if (item.contributionType === 'fixed') {
+            return '(Fijo)';
+        }
+        return `(${item.contributionType}%)`;
+    }
+
+    // Para sesiones grupales - usar neuroteaPercentage del grupo
+    if (item.neuroteaPercentage !== undefined) {
+        return `(${item.neuroteaPercentage}%)`;
+    }
+
+    // Calcular porcentaje si no está guardado (para datos antiguos)
+    if (item.sessionValue && item.neuroteaContribution) {
+        const calculatedPercentage = Math.round((item.neuroteaContribution / item.sessionValue) * 100);
+        return `(${calculatedPercentage}%)`;
+    }
+
+    if (item.totalValue && item.neuroteaContribution) {
+        const calculatedPercentage = Math.round((item.neuroteaContribution / item.totalValue) * 100);
+        return `(${calculatedPercentage}%)`;
+    }
+
+    return '';
+}
+
+// Función auxiliar única para calcular saldo real de Cuenta NeuroTEA
+function calcularSaldoCuentaNeuroTEA(fecha) {
+    const daySessions = sessions[fecha] || [];
+    const dayPackages = dailyPackagePurchases[fecha] || [];
+    const dayGroupSessions = groupSessions[fecha] || [];
+
+    // IMPORTANTE: Incluir paquetes del histórico que fueron COMPRADOS ese día
+    const historyPackagesForDate = (packageHistory || []).filter(p => p.purchaseDate === fecha);
+    const allDayPackages = [...dayPackages, ...historyPackagesForDate];
+
+    let saldoTotal = 0;
+
+    // Sumar todas las transferencias a NeuroTEA de las sesiones del día
+    daySessions.forEach(session => {
+        saldoTotal += session.transferToNeurotea;
+    });
+
+    // Sumar transferencias de paquetes (incluyendo los del histórico comprados ese día)
+    allDayPackages.forEach(pkg => {
+        saldoTotal += pkg.transferToNeurotea || 0;
+    });
+
+    // Sumar transferencias de sesiones grupales
+    dayGroupSessions.forEach(gs => {
+        saldoTotal += gs.transferToNeurotea || 0;
+    });
+
+    // Considerar confirmaciones de pago que afectan la cuenta NeuroTEA
+    if (confirmaciones[fecha]) {
+        Object.values(confirmaciones[fecha]).forEach(conf => {
+            if (conf.flujo) {
+                // Restar transferencias confirmadas (dinero que salió de la cuenta)
+                // bancoUsado > 0 significa dinero que SALE de la cuenta
+                // bancoUsado < 0 (negativo) significa dinero que ENTRA (ej: terapeuta transfiere por rendición)
+                if (conf.flujo.bancoUsado) {
+                    saldoTotal -= conf.flujo.bancoUsado;
+                }
+                // Vueltos por transferencia (terapeuta devuelve vuelto a cuenta NeuroTEA)
+                // Campo específico: vueltoTransferencia
+                if (conf.flujo.vueltoTransferencia) {
+                    saldoTotal += conf.flujo.vueltoTransferencia;
+                }
+            }
+        });
+    }
+
+    return Math.max(0, saldoTotal);
+}
+
+// ===========================
+// FUNCIÓN CENTRAL: CÁLCULO DINÁMICO DE SALDO EN CAJA
+// ===========================
+// Esta función calcula el saldo de caja de forma DINÁMICA basándose en los datos actuales
+// NO depende de variables acumulativas como saldosReales.efectivo
+function calcularSaldoCajaReal(fecha) {
+    const daySessions = sessions[fecha] || [];
+    const dayPackages = dailyPackagePurchases[fecha] || [];
+    const dayGroupSessions = groupSessions[fecha] || [];
+    const dayEgresos = egresos[fecha] || [];
+
+    // IMPORTANTE: Incluir paquetes del histórico que fueron COMPRADOS ese día
+    const historyPackagesForDate = (packageHistory || []).filter(p => p.purchaseDate === fecha);
+    const allDayPackages = [...dayPackages, ...historyPackagesForDate];
+
+    // 1. SALDO INICIAL del día
+    const saldoInicial = getInitialBalance(fecha) || 0;
+
+    // 2. EFECTIVO INGRESADO (sesiones + paquetes + grupales)
+    const efectivoSesiones = daySessions.reduce((sum, s) => sum + (s.cashToNeurotea || 0), 0);
+    const efectivoPaquetes = allDayPackages.reduce((sum, p) => sum + (p.cashToNeurotea || 0), 0);
+    const efectivoGrupales = dayGroupSessions.reduce((sum, gs) => sum + (gs.cashToNeurotea || 0), 0);
+    const totalEfectivoIngresado = efectivoSesiones + efectivoPaquetes + efectivoGrupales;
+
+    // 3. EGRESOS (adelantos + gastos NeuroTEA)
+    const totalEgresos = dayEgresos.reduce((sum, e) => sum + (e.monto || 0), 0);
+
+    // 4. PAGOS CONFIRMADOS EN EFECTIVO a terapeutas
+    let pagosConfirmadosEfectivo = 0;
+    if (confirmaciones[fecha]) {
+        Object.values(confirmaciones[fecha]).forEach(conf => {
+            if (conf.flujo) {
+                // Efectivo que salió de caja
+                if (conf.flujo.efectivoUsado) {
+                    pagosConfirmadosEfectivo += conf.flujo.efectivoUsado;
+                }
+                // Si hubo vuelto en efectivo, se suma (regresó a caja)
+                if (conf.flujo.vueltoEfectivo) {
+                    pagosConfirmadosEfectivo -= conf.flujo.vueltoEfectivo;
+                }
+                // Si la terapeuta entregó efectivo, se suma a caja
+                if (conf.type === 'LA TERAPEUTA DEBE DAR' && conf.flujo.efectivoRecibido) {
+                    pagosConfirmadosEfectivo -= conf.flujo.efectivoRecibido;
+                }
+            }
+        });
+    }
+
+    // Saldo = Inicial + Ingresos - Egresos - Pagos a terapeutas
+    const saldoFinal = saldoInicial + totalEfectivoIngresado - totalEgresos - pagosConfirmadosEfectivo;
+    return Math.max(0, saldoFinal);
+}
+
+async function saveToStorageAsync() {
+    try {
+        // Guardar terapeutas - LIMPIAR TODO Y REGUARDAR para sincronizar eliminaciones
+        const therapistData = therapists.map((name, index) => ({ id: index, name }));
+        await clearAndSaveToIndexedDB('therapists', therapistData);
+        
+        // Guardar sesiones con fecha - LIMPIAR TODO Y REGUARDAR para sincronizar eliminaciones
+        const sessionData = [];
+        Object.keys(sessions).forEach(fecha => {
+            sessions[fecha].forEach(session => {
+                sessionData.push({ ...session, fecha });
+            });
+        });
+        await clearAndSaveToIndexedDB('sessions', sessionData);
+        
+        // Guardar egresos con fecha - LIMPIAR TODO Y REGUARDAR para sincronizar eliminaciones
+        const egresoData = [];
+        Object.keys(egresos).forEach(fecha => {
+            egresos[fecha].forEach(egreso => {
+                egresoData.push({ ...egreso, fecha });
+            });
+        });
+        await clearAndSaveToIndexedDB('egresos', egresoData);
+        
+        // Guardar confirmaciones con fecha
+        // IMPORTANTE: Usar clearAndSaveToIndexedDB para que los registros eliminados
+        // de memoria también se eliminen de IndexedDB (ej: al revertir un pago)
+        const confirmacionData = [];
+        Object.keys(confirmaciones).forEach(fecha => {
+            Object.keys(confirmaciones[fecha]).forEach(therapist => {
+                confirmacionData.push({
+                    fecha,
+                    therapist,
+                    ...confirmaciones[fecha][therapist]
+                });
+            });
+        });
+        await clearAndSaveToIndexedDB('confirmaciones', confirmacionData);
+        
+        // Guardar saldos reales
+        await saveToIndexedDB('saldos', [
+            { tipo: 'efectivo', valor: saldosReales.efectivo },
+            { tipo: 'banco', valor: saldosReales.banco }
+        ]);
+        
+        // Guardar saldos iniciales
+        const saldoInicialData = Object.keys(saldosIniciales).map(fecha => ({
+            fecha,
+            valor: saldosIniciales[fecha]
+        }));
+        if (saldoInicialData.length > 0) {
+            await saveToIndexedDB('saldosIniciales', saldoInicialData);
+        }
+        
+        // Guardar historial de saldos con fecha
+        const historialData = [];
+        Object.keys(historialSaldos).forEach(fecha => {
+            historialSaldos[fecha].forEach(entrada => {
+                historialData.push({ ...entrada, fecha });
+            });
+        });
+        if (historialData.length > 0) {
+            await saveToIndexedDB('historialSaldos', historialData);
+        }
+        
+        // ===========================
+        // GUARDAR NUEVAS ESTRUCTURAS - SISTEMA DE CRÉDITOS Y PAQUETES
+        // ===========================
+        
+        // Guardar créditos de pacientes - LIMPIAR TODO Y REGUARDAR para sincronizar eliminaciones
+        const creditsData = [];
+        Object.keys(patientCredits).forEach(patient => {
+            Object.keys(patientCredits[patient]).forEach(therapist => {
+                const credits = patientCredits[patient][therapist];
+                if (Array.isArray(credits)) {
+                    credits.forEach((credit, index) => {
+                        creditsData.push({
+                            id: `${patient}_${therapist}_${index}`,
+                            patient: patient,
+                            therapist: therapist,
+                            ...credit
+                        });
+                    });
+                } else {
+                    creditsData.push({
+                        id: `${patient}_${therapist}_0`,
+                        patient: patient,
+                        therapist: therapist,
+                        ...credits
+                    });
+                }
+            });
+        });
+        await clearAndSaveToIndexedDB('patientCredits', creditsData);
+        
+        // Guardar paquetes diarios - LIMPIAR TODO Y REGUARDAR para sincronizar eliminaciones
+        const packagesData = [];
+        Object.keys(dailyPackagePurchases).forEach(fecha => {
+            dailyPackagePurchases[fecha].forEach(pkg => {
+                packagesData.push({
+                    ...pkg,
+                    fecha: fecha
+                });
+            });
+        });
+        await clearAndSaveToIndexedDB('dailyPackagePurchases', packagesData);
+        
+        // Guardar estados de confirmación de transferencias
+        // CORREGIDO: Ahora transferConfirmationStates guarda objetos completos
+        const transferStatesData = Object.keys(transferConfirmationStates).map(transferId => {
+            const state = transferConfirmationStates[transferId];
+            // Manejar tanto formato antiguo (boolean) como nuevo (objeto)
+            if (typeof state === 'boolean') {
+                return {
+                    id: transferId,
+                    confirmed: state,
+                    timestamp: new Date().toISOString()
+                };
+            }
+            return {
+                id: state.id || transferId,
+                confirmed: state.confirmed || false,
+                timestamp: state.timestamp || new Date().toISOString()
+            };
+        });
+        if (transferStatesData.length > 0) {
+            await saveToIndexedDB('transferConfirmationStates', transferStatesData);
+        }
+
+        // ===========================
+        // GUARDAR DATOS - SISTEMA DE SESIONES GRUPALES
+        // ===========================
+
+        // Guardar configuración de grupos - LIMPIAR TODO Y REGUARDAR para sincronizar eliminaciones
+        const groupTherapyData = Object.values(groupTherapy);
+        await clearAndSaveToIndexedDB('groupTherapy', groupTherapyData);
+
+        // Guardar sesiones grupales - LIMPIAR TODO Y REGUARDAR para evitar duplicados
+        const groupSessionsData = [];
+        Object.keys(groupSessions).forEach(fecha => {
+            groupSessions[fecha].forEach(session => {
+                groupSessionsData.push({
+                    ...session,
+                    fecha: fecha
+                });
+            });
+        });
+
+        // Usar clearAndSaveToIndexedDB para evitar duplicados
+        await clearAndSaveToIndexedDB('groupSessions', groupSessionsData);
+
+        // NOTA: groupTherapyHistory eliminado - no se guarda historial
+
+        // Guardar histórico de paquetes completados
+        // IMPORTANTE: Siempre guardar, incluso si está vacío, para mantener IndexedDB sincronizado
+        await clearAndSaveToIndexedDB('packageHistory', packageHistory || []);
+
+    } catch (error) {
+        console.error('Error saving to IndexedDB:', error);
+        // Fallback a localStorage en caso de error
+        localStorage.setItem('neurotea_therapists', JSON.stringify(therapists));
+        localStorage.setItem('neurotea_sessions', JSON.stringify(sessions));
+        localStorage.setItem('neurotea_egresos', JSON.stringify(egresos));
+        localStorage.setItem('neurotea_saldos', JSON.stringify(saldosReales));
+        localStorage.setItem('neurotea_confirmaciones', JSON.stringify(confirmaciones));
+        localStorage.setItem('neurotea_saldosIniciales', JSON.stringify(saldosIniciales));
+        localStorage.setItem('neurotea_historialSaldos', JSON.stringify(historialSaldos));
+        // Nuevas estructuras - Sistema de créditos y paquetes
+        localStorage.setItem('neurotea_patientCredits', JSON.stringify(patientCredits));
+        localStorage.setItem('neurotea_dailyPackagePurchases', JSON.stringify(dailyPackagePurchases));
+        // Nuevas estructuras - Sistema de sesiones grupales
+        localStorage.setItem('neurotea_groupTherapy', JSON.stringify(groupTherapy));
+        localStorage.setItem('neurotea_groupSessions', JSON.stringify(groupSessions));
+        // Histórico de paquetes completados
+        localStorage.setItem('neurotea_packageHistory', JSON.stringify(packageHistory));
+    }
+}
+
+// Función wrapper para mantener compatibilidad
+function saveToStorage() {
+    saveToStorageAsync().catch(error => {
+        console.error('Error in saveToStorage:', error);
+    });
+}
+
+async function loadFromStorage() {
+    try {
+        // Cargar terapeutas
+        const therapistData = await loadFromIndexedDB('therapists');
+        therapists = therapistData.map(item => item.name).sort();
+
+        // Cargar sesiones
+        const sessionData = await loadFromIndexedDB('sessions');
+        sessions = {};
+        sessionData.forEach(session => {
+            const fecha = session.fecha;
+            if (!sessions[fecha]) sessions[fecha] = [];
+            const { fecha: _, ...sessionWithoutFecha } = session;
+            sessions[fecha].push(sessionWithoutFecha);
+        });
+        
+        // Cargar egresos
+        const egresoData = await loadFromIndexedDB('egresos');
+        egresos = {};
+        egresoData.forEach(egreso => {
+            const fecha = egreso.fecha;
+            if (!egresos[fecha]) egresos[fecha] = [];
+            const { fecha: _, ...egresoWithoutFecha } = egreso;
+            egresos[fecha].push(egresoWithoutFecha);
+        });
+        
+        // Cargar confirmaciones
+        const confirmacionData = await loadFromIndexedDB('confirmaciones');
+        confirmaciones = {};
+        confirmacionData.forEach(conf => {
+            const fecha = conf.fecha;
+            const therapist = conf.therapist;
+            if (!confirmaciones[fecha]) confirmaciones[fecha] = {};
+            const { fecha: _, therapist: __, ...confWithoutMeta } = conf;
+            confirmaciones[fecha][therapist] = confWithoutMeta;
+        });
+        
+        // Cargar saldos reales
+        const saldoData = await loadFromIndexedDB('saldos');
+        saldosReales = { efectivo: 0, banco: 0 };
+        saldoData.forEach(saldo => {
+            saldosReales[saldo.tipo] = saldo.valor;
+        });
+        
+        // Cargar saldos iniciales
+        const saldoInicialData = await loadFromIndexedDB('saldosIniciales');
+        saldosIniciales = {};
+        saldoInicialData.forEach(saldo => {
+            saldosIniciales[saldo.fecha] = saldo.valor;
+        });
+        
+        // Cargar historial de saldos
+        const historialData = await loadFromIndexedDB('historialSaldos');
+        historialSaldos = {};
+        historialData.forEach(entrada => {
+            const fecha = entrada.fecha;
+            if (!historialSaldos[fecha]) historialSaldos[fecha] = [];
+            const { fecha: _, ...entradaWithoutFecha } = entrada;
+            historialSaldos[fecha].push(entradaWithoutFecha);
+        });
+        
+        // ===========================
+        // CARGAR NUEVAS ESTRUCTURAS - SISTEMA DE CRÉDITOS Y PAQUETES
+        // ===========================
+        
+        // Cargar créditos de pacientes
+        const creditsData = await loadFromIndexedDB('patientCredits');
+        patientCredits = {};
+        creditsData.forEach(credit => {
+            const patient = credit.patient;
+            const therapist = credit.therapist;
+            
+            if (!patientCredits[patient]) {
+                patientCredits[patient] = {};
+            }
+            
+            // Remover campos de metadata para reconstruir estructura original
+            const { id, patient: _, therapist: __, ...creditWithoutMeta } = credit;
+            
+            // Manejar múltiples paquetes por paciente/terapeuta
+            if (patientCredits[patient][therapist]) {
+                // Ya existe, convertir a array si no lo es
+                if (!Array.isArray(patientCredits[patient][therapist])) {
+                    patientCredits[patient][therapist] = [patientCredits[patient][therapist]];
+                }
+                patientCredits[patient][therapist].push(creditWithoutMeta);
+            } else {
+                patientCredits[patient][therapist] = creditWithoutMeta;
+            }
+        });
+        
+        // Cargar paquetes diarios - CON DEDUPLICACION PARA EVITAR FANTASMAS
+        const packagesData = await loadFromIndexedDB('dailyPackagePurchases');
+        dailyPackagePurchases = {};
+        packagesData.forEach(package => {
+            const fecha = package.fecha;
+            if (!dailyPackagePurchases[fecha]) {
+                dailyPackagePurchases[fecha] = [];
+            }
+            const { fecha: _, ...packageWithoutFecha } = package;
+            dailyPackagePurchases[fecha].push(packageWithoutFecha);
+        });
+        
+        // Deduplicar paquetes por fecha para eliminar registros fantasma
+        Object.keys(dailyPackagePurchases).forEach(fecha => {
+            const original = dailyPackagePurchases[fecha].length;
+            dailyPackagePurchases[fecha] = deduplicatePackages(dailyPackagePurchases[fecha]);
+            const final = dailyPackagePurchases[fecha].length;
+            if (original > final) {
+                console.warn('CARGA: Se encontraron ' + (original - final) + ' paquetes duplicados en ' + fecha);
+            }
+        });
+        
+        // Cargar estados de confirmación de transferencias
+        // CORREGIDO: Guardar objeto completo con timestamp para poder filtrar por fecha
+        try {
+            const transferStatesData = await loadFromIndexedDB('transferConfirmationStates');
+            transferConfirmationStates = {};
+            transferStatesData.forEach(state => {
+                // Guardar objeto completo: { id, confirmed, timestamp }
+                transferConfirmationStates[state.id] = {
+                    id: state.id,
+                    confirmed: state.confirmed || false,
+                    timestamp: state.timestamp || new Date().toISOString()
+                };
+            });
+        } catch (error) {
+            console.log('No previous transfer states found');
+            transferConfirmationStates = {};
+        }
+
+        // ===========================
+        // CARGAR DATOS - SISTEMA DE SESIONES GRUPALES
+        // ===========================
+
+        // Cargar configuración de grupos
+        try {
+            const groupTherapyData = await loadFromIndexedDB('groupTherapy');
+            groupTherapy = {};
+            groupTherapyData.forEach(group => {
+                groupTherapy[group.id] = group;
+            });
+            console.log('✅ Grupos cargados:', Object.keys(groupTherapy).length);
+        } catch (error) {
+            console.log('No previous group therapy data found');
+            groupTherapy = {};
+        }
+
+        // Cargar sesiones grupales - CON DEDUPLICACION
+        try {
+            const groupSessionsData = await loadFromIndexedDB('groupSessions');
+            groupSessions = {};
+            groupSessionsData.forEach(session => {
+                const fecha = session.fecha;
+                if (!groupSessions[fecha]) {
+                    groupSessions[fecha] = [];
+                }
+                const { fecha: _, ...sessionWithoutFecha } = session;
+                groupSessions[fecha].push(sessionWithoutFecha);
+            });
+
+            // Deduplicar sesiones grupales por fecha
+            let totalDuplicados = 0;
+            Object.keys(groupSessions).forEach(fecha => {
+                const original = groupSessions[fecha].length;
+                groupSessions[fecha] = deduplicateById(groupSessions[fecha], 'sesiones grupales');
+                totalDuplicados += original - groupSessions[fecha].length;
+            });
+
+            console.log('✅ Sesiones grupales cargadas:', groupSessionsData.length - totalDuplicados, '(eliminados', totalDuplicados, 'duplicados)');
+        } catch (error) {
+            console.log('No previous group sessions found');
+            groupSessions = {};
+        }
+
+        // NOTA: groupTherapyHistory eliminado - no se carga historial
+
+        // Cargar histórico de paquetes completados
+        try {
+            packageHistory = await loadFromIndexedDB('packageHistory');
+            console.log('✅ Histórico de paquetes cargado:', packageHistory.length, 'paquetes');
+        } catch (error) {
+            console.log('No previous package history found');
+            packageHistory = [];
+        }
+
+        // Limpiar el store de historial de grupos si existe (limpieza única)
+        try {
+            await clearAndSaveToIndexedDB('groupTherapyHistory', []);
+        } catch (e) {
+            // Ignorar si no existe
+        }
+        
+    } catch (error) {
+        console.error('Error loading from IndexedDB, falling back to localStorage:', error);
+        // Fallback a localStorage
+        therapists = JSON.parse(localStorage.getItem('neurotea_therapists') || '[]');
+        sessions = JSON.parse(localStorage.getItem('neurotea_sessions') || '{}');
+        egresos = JSON.parse(localStorage.getItem('neurotea_egresos') || '{}');
+        saldosReales = JSON.parse(localStorage.getItem('neurotea_saldos') || '{"efectivo": 0, "banco": 0}');
+        confirmaciones = JSON.parse(localStorage.getItem('neurotea_confirmaciones') || '{}');
+        saldosIniciales = JSON.parse(localStorage.getItem('neurotea_saldosIniciales') || '{}');
+        historialSaldos = JSON.parse(localStorage.getItem('neurotea_historialSaldos') || '{}');
+        // Nuevas estructuras - Sistema de créditos y paquetes
+        patientCredits = JSON.parse(localStorage.getItem('neurotea_patientCredits') || '{}');
+        dailyPackagePurchases = JSON.parse(localStorage.getItem('neurotea_dailyPackagePurchases') || '{}');
+        // Nuevas estructuras - Sistema de sesiones grupales
+        groupTherapy = JSON.parse(localStorage.getItem('neurotea_groupTherapy') || '{}');
+        groupSessions = JSON.parse(localStorage.getItem('neurotea_groupSessions') || '{}');
+        // Histórico de paquetes completados
+        packageHistory = JSON.parse(localStorage.getItem('neurotea_packageHistory') || '[]');
+    }
+
+    // Validar integridad de paquetes después de cargar
+    validatePackageIntegrity();
+
+    // Validar integridad de grupos después de cargar
+    validateGroupTherapyIntegrity();
+    
+    // MIGRACIÓN: Limpiar datos corruptos del historial de saldos
+    migrarHistorialSaldos();
+    
+    // MIGRACIÓN: Migrar paquetes antiguos y validar datos
+    migrateLegacyPackages();
+    validateAllPackagesIntegrity();
+
+    updateAllViews(fechaActual);
+}
+
+// MIGRACIÓN: Función para limpiar datos corruptos del historial de saldos
+function migrarHistorialSaldos() {
+    let datosModificados = false;
+    
+    Object.keys(historialSaldos).forEach(fecha => {
+        const historialOriginal = historialSaldos[fecha];
+        
+        if (Array.isArray(historialOriginal)) {
+            // Filtrar entradas válidas
+            const historialLimpio = historialOriginal.filter(entrada => {
+                return entrada && 
+                       entrada.mensaje && 
+                       entrada.mensaje !== 'undefined' && 
+                       typeof entrada.mensaje === 'string' &&
+                       entrada.mensaje.trim() !== '' &&
+                       entrada.timestamp;
+            });
+            
+            // Si se eliminaron entradas, actualizar
+            if (historialLimpio.length !== historialOriginal.length) {
+                historialSaldos[fecha] = historialLimpio;
+                datosModificados = true;
+                console.log(`Migración: Limpiadas ${historialOriginal.length - historialLimpio.length} entradas corruptas para ${fecha}`);
+            }
+            
+            // Si no quedan entradas válidas, eliminar la fecha completa
+            if (historialLimpio.length === 0) {
+                delete historialSaldos[fecha];
+                datosModificados = true;
+            }
+        }
+    });
+    
+    // Guardar cambios si se modificaron datos
+    if (datosModificados) {
+        saveToStorage();
+        console.log('Migración de historial de saldos completada');
+    }
+}
+
+// ===========================
+// NAVEGACIÓN ENTRE PESTAÑAS
+// ===========================
+
+function switchTab(tabIndex) {
+    // Remover clase activa de todas las pestañas
+    document.querySelectorAll('.tab-button').forEach(tab => {
+        tab.classList.remove('active-tab');
+    });
+
+    // Agregar clase activa a la pestaña seleccionada
+    document.querySelectorAll('.tab-button')[tabIndex].classList.add('active-tab');
+
+    // Ocultar todas las vistas
+    const views = ['registro-view', 'resumen-view', 'transferencias-view', 'rendicion-cuentas-view', 'egresos-view', 'therapist-management-view', 'paquetes-view', 'grupos-view', 'administracion-view'];
+
+    views.forEach(viewId => {
+        const element = document.getElementById(viewId);
+        if (element) {
+            element.style.display = 'none';
+        }
+    });
+
+    // Mostrar la vista correspondiente basada en el índice del botón
+    let targetViewId = '';
+
+    switch(tabIndex) {
+        case 0:
+            targetViewId = 'registro-view';
+            // Reiniciar estado del formulario de sesiones al entrar a la pestaña
+            setTimeout(() => {
+                resetSessionFormState();
+            }, 100);
+            break;
+        case 1:
+            targetViewId = 'resumen-view';
+            break;
+        case 2:
+            targetViewId = 'transferencias-view';
+            break;
+        case 3:
+            targetViewId = 'rendicion-cuentas-view';
+            break;
+        case 4:
+            targetViewId = 'egresos-view';
+            break;
+        case 5:
+            targetViewId = 'therapist-management-view';
+            break;
+        case 6:
+            targetViewId = 'paquetes-view';
+            // Funciones específicas para la vista de paquetes
+            updateActivePackagesList();
+            populatePackageTherapistSelect();
+
+            // ⭐ AGREGAR: Inicializar estado de radio buttons y input de monto fijo
+            setTimeout(() => {
+                const defaultRadio = document.getElementById('package-contribution-30');
+                const fixedInput = document.getElementById('package-fixed-amount-input');
+
+                if (defaultRadio && !document.querySelector('input[name="package-neurotea-contribution"]:checked')) {
+                    defaultRadio.checked = true;
+                }
+
+                if (fixedInput) {
+                    const isFixed = document.querySelector('input[name="package-neurotea-contribution"]:checked')?.value === 'fixed';
+                    fixedInput.disabled = !isFixed;
+                    if (!isFixed) fixedInput.value = '';
+                }
+
+                updatePackageTotals();
+            }, 100);
+            break;
+        case 7:
+            targetViewId = 'grupos-view';
+            // Funciones específicas para la vista de gestión de grupos
+            setTimeout(() => {
+                if (typeof renderGroupsListTab === 'function') {
+                    renderGroupsListTab();
+                }
+            }, 100);
+            break;
+        case 8:
+            targetViewId = 'administracion-view';
+            // Funciones específicas para la vista de administración
+            setTimeout(() => {
+                if (typeof switchAdminModule === 'function') {
+                    switchAdminModule('gestion-datos');
+                }
+                if (typeof detectAvailableData === 'function') {
+                    detectAvailableData();
+                }
+                if (typeof updateSystemInfo === 'function') {
+                    updateSystemInfo();
+                }
+            }, 100);
+            break;
+        default:
+            console.error('Índice de pestaña no válido:', tabIndex);
+            return;
+    }
+    
+    // Mostrar la vista seleccionada
+    const targetView = document.getElementById(targetViewId);
+    if (targetView) {
+        targetView.style.display = 'block';
+    } else {
+        console.error('Vista no encontrada:', targetViewId);
+    }
+
+    // Actualizar datos en la vista seleccionada
+    updateAllViews(fechaActual);
+}
+
+// ===========================
+// GESTIÓN DE TERAPEUTAS
+// ===========================
+
+function updateTherapistList() {
+    const listContainer = document.getElementById('therapist-list-container');
+    const counter = document.getElementById('therapist-counter');
+    const select = document.getElementById('therapist-select');
+    
+    if (!listContainer || !counter || !select) return;
+
+    // Actualizar contador
+    counter.textContent = `${therapists.length} terapeutas disponibles`;
+
+    // Actualizar lista
+    if (therapists.length === 0) {
+        listContainer.innerHTML = '<p class="text-gray-500 text-center py-4">No hay terapeutas registradas</p>';
+    } else {
+        listContainer.innerHTML = therapists.map((therapist, index) => `
+            <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
+                <span class="font-medium cursor-pointer" onclick="editTherapist(${index})">${therapist}</span>
+                <button onclick="deleteTherapist(${index})" class="text-red-500 hover:text-red-700 p-1">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+            </div>
+        `).join('');
+    }
+
+    // Actualizar selector
+    select.innerHTML = '<option value="">Seleccionar terapeuta</option>' +
+        therapists.map(therapist => `<option value="${therapist}">${therapist}</option>`).join('');
+
+    // Actualizar selectores en otras pestañas
+    const egresoSelect = document.getElementById('egreso-therapist-select');
+    if (egresoSelect) {
+        egresoSelect.innerHTML = '<option value="">Seleccionar terapeuta</option>' +
+            therapists.map(therapist => `<option value="${therapist}">${therapist}</option>`).join('');
+    }
+
+    // Reinicializar iconos de Lucide
+    lucide.createIcons();
+    // NO llamar saveToStorage() aquí - las funciones que modifican datos deben guardarlo explícitamente
+}
+
+function addTherapist() {
+    const input = document.getElementById('new-therapist-name');
+    if (!input) return;
+
+    const name = input.value.trim();
+    if (!name) {
+        alert('Por favor ingrese un nombre');
+        return;
+    }
+
+    if (therapists.length >= 20) {
+        alert('No se pueden agregar más de 20 terapeutas');
+        return;
+    }
+
+    if (therapists.includes(name)) {
+        alert('Esta terapeuta ya está registrada');
+        return;
+    }
+
+    therapists.push(name);
+    therapists.sort();
+    input.value = '';
+    saveToStorage(); // Guardar cambios
+    updateAllViews(fechaActual);
+}
+
+function deleteTherapist(index) {
+    if (confirm(`¿Está seguro de eliminar a ${therapists[index]}?`)) {
+        therapists.splice(index, 1);
+        saveToStorage(); // Guardar cambios
+        updateAllViews(fechaActual);
+    }
+}
+
+function editTherapist(index) {
+    const newName = prompt('Nuevo nombre:', therapists[index]);
+    if (newName && newName.trim() && newName.trim() !== therapists[index]) {
+        const oldName = therapists[index];
+        const trimmedName = newName.trim();
+        
+        if (therapists.includes(trimmedName)) {
+            alert('Este nombre ya existe');
+            return;
+        }
+        
+        therapists[index] = trimmedName;
+        therapists.sort();
+        
+        // Actualizar sesiones existentes
+        Object.keys(sessions).forEach(fecha => {
+            sessions[fecha].forEach(session => {
+                if (session.therapist === oldName) {
+                    session.therapist = trimmedName;
+                }
+            });
+        });
+
+        saveToStorage(); // Guardar cambios
+        updateAllViews(fechaActual);
+    }
+}
+
+// ===========================
+// CÁLCULOS DE SESIÓN
+// ===========================
+
+function calculateSessionValues() {
+    const cashToNeurotea = parseNumber(document.getElementById('cash-to-neurotea')?.value || 0);
+    const transferToTherapist = parseNumber(document.getElementById('transfer-to-therapist')?.value || 0);
+    const transferToNeurotea = parseNumber(document.getElementById('transfer-to-neurotea')?.value || 0);
+
+    const sessionValue = cashToNeurotea + transferToTherapist + transferToNeurotea;
+
+    // Calcular aporte a NeuroTEA
+    let neuroteaContribution = 0;
+    const contributionType = document.querySelector('input[name="neurotea-contribution"]:checked')?.value;
+
+    if (contributionType === 'fixed') {
+        neuroteaContribution = parseNumber(document.getElementById('fixed-amount-input')?.value || 0);
+    } else {
+        const percentage = parseFloat(contributionType) || 30;
+        neuroteaContribution = Math.round(sessionValue * (percentage / 100));
+    }
+
+    const therapistFee = Math.round(Math.max(0, sessionValue - neuroteaContribution));
+    
+    // Actualizar displays
+    document.getElementById('session-value-display').textContent = formatCurrency(sessionValue);
+    document.getElementById('neurotea-contribution-display').textContent = formatCurrency(neuroteaContribution);
+    document.getElementById('therapist-fee-display').textContent = formatCurrency(therapistFee);
+    
+    // Validar botón de registro
+    validateRegisterButton();
+
+    return { sessionValue, neuroteaContribution, therapistFee, contributionType };
+}
+
+function validateRegisterButton() {
+    const therapist = document.getElementById('therapist-select')?.value;
+    const sessionValue = parseNumber(document.getElementById('session-value-display')?.textContent?.replace(/[^\d]/g, '') || 0);
+    const registerBtn = document.getElementById('register-btn');
+    
+    // Verificar si está en modo crédito (ID correcto)
+    const creditMode = document.getElementById('modo-usar-credito')?.checked;
+    const creditPatient = document.getElementById('paciente-credito-select')?.value;
+    
+    if (registerBtn) {
+        // Habilitar si: (tiene terapeuta Y sessionValue > 0) O (modo crédito con terapeuta y paciente seleccionado)
+        const normalModeValid = therapist && sessionValue > 0;
+        const creditModeValid = creditMode && therapist && creditPatient;
+        
+        if (normalModeValid || creditModeValid) {
+            registerBtn.disabled = false;
+            registerBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+            registerBtn.classList.add('bg-purple-600', 'hover:bg-purple-700');
+        } else {
+            registerBtn.disabled = true;
+            registerBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
+            registerBtn.classList.remove('bg-purple-600', 'hover:bg-purple-700');
+        }
+    }
+}
+
+function toggleFixedAmount() {
+    const fixedRadio = document.getElementById('contribution-fixed');
+    const fixedInput = document.getElementById('fixed-amount-input');
+    
+    if (fixedRadio && fixedInput) {
+        fixedInput.disabled = !fixedRadio.checked;
+        if (fixedRadio.checked) {
+            fixedInput.focus();
+        } else {
+            fixedInput.value = '';
+        }
+        calculateSessionValues();
+    }
+}
+
+// ===========================
+// REGISTRO DE SESIONES
+// ===========================
+function registerSession() {
+    // NUEVA LÓGICA: Verificar si hay sesiones futuras en el carrito
+    if (sesionesFuturasTemp.length > 0) {
+        // Si hay sesiones futuras, procesar todo junto
+        registerPaymentSession();
+    } else {
+        // FASE 3: Determinar el modo de registro
+        const paymentMode = document.querySelector('input[name="modo-registro"]:checked').value;
+        
+        if (paymentMode === 'usar-credito') {
+            registerCreditSession();
+        } else {
+            registerPaymentSession();
+        }
+    }
+}
+
+/**
+ * FASE 3: Registra una sesión usando créditos disponibles (valor $0)
+ */
+async function registerCreditSession() {
+    const therapist = document.getElementById('therapist-select').value;
+    const fecha = document.getElementById('session-date').value || fechaActual;
+    const patientName = document.getElementById('paciente-credito-select').value;
+    
+    // Validaciones específicas para créditos
+    const validation = validateCreditMode();
+    if (!validation.valid) {
+        alert(validation.message);
+        return;
+    }
+    
+    // Verificar créditos disponibles usando función de Fase 1
+    if (!hasAvailableCredits(patientName, therapist)) {
+        alert('Este paciente no tiene créditos disponibles para esta terapeuta');
+        return;
+    }
+    
+    // Usar crédito usando función de Fase 1
+    const creditResult = await usePatientCredits(patientName, therapist, Date.now());
+
+    if (!creditResult.success) {
+        alert('Error al usar crédito: ' + creditResult.message);
+        return;
+    }
+    
+    // Crear sesión con valores $0 (no genera ingresos del día)
+    const session = {
+        id: Date.now(),
+        therapist,
+        fecha,
+        patientName,
+        cashToNeurotea: 0,           // SIEMPRE 0 para créditos
+        transferToTherapist: 0,      // SIEMPRE 0 para créditos
+        transferToNeurotea: 0,       // SIEMPRE 0 para créditos
+        sessionValue: 0,             // SIEMPRE 0 para créditos
+        neuroteaContribution: 0,     // SIEMPRE 0 para créditos
+        therapistFee: 0,             // SIEMPRE 0 para créditos
+        creditUsed: true,            // NUEVO: Marca que usó crédito
+        originalPackageId: creditResult.packageUsed || 'unknown',
+        remainingCredits: creditResult.remainingInPackage || 0
+    };
+    
+    // Agregar sesión (NO actualizar saldos reales porque es $0)
+    if (!sessions[fecha]) sessions[fecha] = [];
+    sessions[fecha].push(session);
+
+    // CORRECCIÓN: Actualizar lista de paquetes activos PRIMERO (incluye histórico)
+    updateActivePackagesList();
+
+    // Actualizar vistas
+    updateAllViews(fecha);
+
+    // Limpiar formulario después de actualizar vistas
+    clearSessionForm();
+
+    saveToStorageAsync();
+
+    // Mensaje de confirmación específico para créditos
+    const remainingCredits = creditResult.remainingInPackage !== undefined ? creditResult.remainingInPackage : 0;
+    alert(`✅ Sesión registrada usando crédito.\nPaciente: ${patientName}\nTerapeuta: ${therapist}\nCréditos restantes: ${remainingCredits}`);
+}
+
+/**
+ * FASE 3: Registra una sesión con pago del día (comportamiento actual + créditos adicionales)
+ */
+function registerPaymentSession() {
+    const therapist = document.getElementById('therapist-select')?.value;
+    const fecha = document.getElementById('session-date')?.value || fechaActual;
+    const patientName = document.getElementById('patient-name')?.value?.trim();
+
+    // Validaciones del modo de pago
+    const validation = validatePaymentMode();
+    if (!validation.valid) {
+        alert(validation.message);
+        return;
+    }
+    
+    const values = calculateSessionValues();
+    if (values.sessionValue <= 0) {
+        alert('El valor de la sesión debe ser mayor a 0');
+        return;
+    }
+    
+    const cashToNeurotea = parseNumber(document.getElementById('cash-to-neurotea')?.value || 0);
+    const transferToTherapist = parseNumber(document.getElementById('transfer-to-therapist')?.value || 0);
+    const transferToNeurotea = parseNumber(document.getElementById('transfer-to-neurotea')?.value || 0);
+    
+    // MANTENER EXACTAMENTE EL COMPORTAMIENTO ACTUAL
+    const session = {
+        id: Date.now(),
+        therapist,
+        fecha,
+        patientName,
+        cashToNeurotea,
+        transferToTherapist,
+        transferToNeurotea,
+        sessionValue: values.sessionValue,
+        neuroteaContribution: values.neuroteaContribution,
+        therapistFee: values.therapistFee,
+        contributionType: values.contributionType || '30'
+    };
+    
+    if (!sessions[fecha]) {
+        sessions[fecha] = [];
+    }
+    sessions[fecha].push(session);
+
+    // ✅ ARQUITECTURA CORREGIDA: NO modificar saldosReales aquí
+    // El saldo se calcula DINÁMICAMENTE con calcularSaldoCajaReal()
+    // basándose en las sesiones actuales, no en variables acumulativas
+
+    // NUEVA LÓGICA: Verificar si se deben crear créditos adicionales
+    const createAdditional = document.getElementById('crear-creditos-adicionales').checked;
+    
+    if (createAdditional && sesionesFuturasTemp.length > 0) {
+        try {
+            const creditosCreados = procesarSesionesFuturas(patientName, fecha);
+            console.log(`✅ Sesión registrada + ${creditosCreados} créditos futuros creados`);
+        } catch (error) {
+            console.error('❌ Error al procesar sesiones futuras:', error);
+            alert('Sesión registrada, pero hubo un error al crear las sesiones futuras');
+        }
+    }
+
+    // Actualizar vistas y limpiar formulario
+    updateAllViews(fecha);
+    clearSessionForm();
+    saveToStorageAsync();
+}
+
+function clearSessionForm() {
+    // Verificar y limpiar campos básicos
+    const therapistSelect = document.getElementById('therapist-select');
+    if (therapistSelect) therapistSelect.value = '';
+    
+    const patientName = document.getElementById('patient-name');
+    if (patientName) patientName.value = '';
+    
+    const cashToNeurotea = document.getElementById('cash-to-neurotea');
+    if (cashToNeurotea) cashToNeurotea.value = '';
+    
+    const transferToTherapist = document.getElementById('transfer-to-therapist');
+    if (transferToTherapist) transferToTherapist.value = '';
+    
+    const transferToNeurotea = document.getElementById('transfer-to-neurotea');
+    if (transferToNeurotea) transferToNeurotea.value = '';
+    
+    const fixedAmountInput = document.getElementById('fixed-amount-input');
+    if (fixedAmountInput) {
+        fixedAmountInput.value = '';
+        fixedAmountInput.disabled = true;
+    }
+    
+    const contribution30 = document.getElementById('contribution-30');
+    if (contribution30) contribution30.checked = true;
+    
+    // FASE 3: Limpiar nuevos campos con verificaciones
+    const modoPagoDia = document.getElementById('modo-pago-dia');
+    if (modoPagoDia) modoPagoDia.checked = true;
+    
+    const modoUsarCredito = document.getElementById('modo-usar-credito');
+    if (modoUsarCredito) modoUsarCredito.checked = false;
+    
+    const crearCreditosAdicionales = document.getElementById('crear-creditos-adicionales');
+    if (crearCreditosAdicionales) crearCreditosAdicionales.checked = false;
+
+    const pacienteCreditoSelect = document.getElementById('paciente-credito-select');
+    if (pacienteCreditoSelect) pacienteCreditoSelect.value = '';
+    
+    const creditosInfoDisplay = document.getElementById('creditos-info-display');
+    if (creditosInfoDisplay) creditosInfoDisplay.innerHTML = '';
+    
+    // NUEVO: Limpiar mini carrito de sesiones futuras
+    sesionesFuturasTemp = [];
+    const sesionesFuturasContainer = document.getElementById('sesiones-futuras-container');
+    if (sesionesFuturasContainer) {
+        sesionesFuturasContainer.style.display = 'none';
+        actualizarListaSesionesFuturas();
+    }
+    
+    // Resetear visibilidad de secciones con verificaciones
+    const creditosAdicionalesSection = document.getElementById('creditos-adicionales-section');
+    if (creditosAdicionalesSection) creditosAdicionalesSection.style.display = 'block';
+    
+    const pacienteCreditoSection = document.getElementById('paciente-credito-section');
+    if (pacienteCreditoSection) pacienteCreditoSection.style.display = 'none';
+    
+    const desglosePagoSection = document.getElementById('desglose-pago-section');
+    if (desglosePagoSection) desglosePagoSection.style.display = 'block';
+    
+    calculateSessionValues();
+}
+
+// ===========================
+// GESTIÓN DE EGRESOS
+// ===========================
+
+function addEgreso() {
+    const tipo = document.getElementById('egreso-type')?.value;
+    const concepto = document.getElementById('egreso-concept')?.value?.trim();
+    const monto = parseNumber(document.getElementById('egreso-value')?.value || 0);
+    const fecha = fechaActual;
+    
+    if (!tipo || !concepto || monto <= 0) {
+        alert('Por favor complete todos los campos');
+        return;
+    }
+    
+    if (tipo === 'adelanto') {
+        const therapist = document.getElementById('egreso-therapist-select')?.value;
+        if (!therapist) {
+            alert('Por favor seleccione una terapeuta para el adelanto');
+            return;
+        }
+    }
+    
+    const egreso = {
+        id: Date.now(),
+        tipo,
+        concepto,
+        monto,
+        fecha,
+        therapist: tipo === 'adelanto' ? document.getElementById('egreso-therapist-select')?.value : null
+    };
+    
+    if (!egresos[fecha]) {
+        egresos[fecha] = [];
+    }
+    egresos[fecha].push(egreso);
+
+    // ✅ ARQUITECTURA CORREGIDA: NO modificar saldosReales
+    // El saldo se recalculará DINÁMICAMENTE con calcularSaldoCajaReal()
+
+    // Limpiar formulario
+    document.getElementById('egreso-concept').value = '';
+    document.getElementById('egreso-value').value = '';
+    document.getElementById('egreso-therapist-select').value = '';
+    
+    updateAllViews(fecha);
+    saveToStorage();
+    // NO mostrar alert - registro silencioso
+}
+
+async function deleteEgreso(fecha, egresoId) {
+    if (!confirm('¿Está seguro de eliminar este egreso?')) return;
+
+    const egresoIndex = egresos[fecha].findIndex(e => e.id === egresoId);
+    if (egresoIndex !== -1) {
+        // ✅ ARQUITECTURA CORREGIDA: NO modificar saldosReales
+        // El saldo se recalculará DINÁMICAMENTE con calcularSaldoCajaReal()
+        egresos[fecha].splice(egresoIndex, 1);
+
+        if (egresos[fecha].length === 0) {
+            delete egresos[fecha];
+        }
+
+        // ✅ COHERENCIA SISTÉMICA: saveToStorageAsync usa clearAndSaveToIndexedDB
+        await saveToStorageAsync();
+        updateAllViews(fecha);
+    }
+}
+
+async function clearAllEgresos() {
+    if (!confirm('¿Está seguro de eliminar todos los egresos del día?')) return;
+
+    const fecha = fechaActual;
+    if (egresos[fecha]) {
+        // ✅ ARQUITECTURA CORREGIDA: NO modificar saldosReales
+        // El saldo se recalculará DINÁMICAMENTE con calcularSaldoCajaReal()
+
+        delete egresos[fecha];
+
+        // ✅ COHERENCIA SISTÉMICA: saveToStorageAsync usa clearAndSaveToIndexedDB
+        await saveToStorageAsync();
+        updateAllViews(fecha);
+        alert('Todos los egresos del día han sido eliminados');
+    }
+}
+
+function toggleTherapistSelect() {
+    const tipo = document.getElementById('egreso-type')?.value;
+    const therapistContainer = document.getElementById('egreso-therapist-container');
+    
+    if (therapistContainer) {
+        if (tipo === 'adelanto') {
+            therapistContainer.style.display = 'block';
+        } else {
+            therapistContainer.style.display = 'none';
+            document.getElementById('egreso-therapist-select').value = '';
+        }
+    }
+}
+
+// ===========================
+// CÁLCULOS DE RENDICIÓN DE CUENTAS
+// ===========================
+
+function calculateTherapistStatus(therapist, fecha) {
+    const daySessions = sessions[fecha] || [];
+    const dayEgresos = egresos[fecha] || [];
+    const dayPackages = dailyPackagePurchases[fecha] || [];
+    const dayGroupSessions = groupSessions[fecha] || [];
+
+    // IMPORTANTE: Incluir paquetes del histórico que fueron COMPRADOS ese día
+    // (paquetes que se usaron completamente el mismo día de compra)
+    const historyPackagesForDate = (packageHistory || []).filter(p => p.purchaseDate === fecha);
+    const allDayPackages = [...dayPackages, ...historyPackagesForDate];
+
+    // Calcular totales para esta terapeuta
+    const therapistSessions = daySessions.filter(s => s.therapist === therapist);
+    const therapistPackages = allDayPackages.filter(p => p.therapist === therapist);
+    // Sesiones grupales donde participó esta terapeuta
+    const therapistGroupSessions = dayGroupSessions.filter(gs =>
+        gs.therapists && gs.therapists.includes(therapist)
+    );
+
+    // Verificar si no hay datos
+    if (therapistSessions.length === 0 && therapistPackages.length === 0 && therapistGroupSessions.length === 0) {
+        return {
+            ingresoTotal: 0,
+            aporteNeurotea: 0,
+            honorarios: 0,
+            transferenciaATerapeuta: 0,
+            adelantosRecibidos: 0,
+            neuroteaLeDebe: 0,
+            terapeutaDebe: 0,
+            estado: 'SALDADO',
+            colorClass: 'badge-secondary',
+            hasGroupSessions: false,
+            groupSessionsCount: 0
+        };
+    }
+
+    // CALCULAR: Ingresos (sesiones + paquetes + grupales)
+    const sessionIncome = therapistSessions.filter(s => !s.creditUsed).reduce((sum, s) => sum + s.sessionValue, 0);
+    const packageIncome = therapistPackages.reduce((sum, p) => sum + p.sessionValue, 0);
+    // Para grupales, cada terapeuta ve su PARTE PROPORCIONAL del valor total (valor / cantidad de terapeutas)
+    // La primera terapeuta recibe el residuo de la división
+    const groupIncome = therapistGroupSessions.reduce((sum, gs) => {
+        const therapistCount = gs.therapistCount || gs.therapists?.length || 1;
+        const isFirstTherapist = gs.therapists && gs.therapists[0] === therapist;
+        const baseIncome = Math.floor(gs.totalValue / therapistCount);
+        const residuoIncome = gs.totalValue - (baseIncome * therapistCount);
+        return sum + baseIncome + (isFirstTherapist ? residuoIncome : 0);
+    }, 0);
+    const ingresoTotal = sessionIncome + packageIncome + groupIncome;
+
+    // CALCULAR: Aportes a NeuroTEA
+    const sessionAporte = therapistSessions.filter(s => !s.creditUsed).reduce((sum, s) => sum + s.neuroteaContribution, 0);
+    const packageAporte = therapistPackages.reduce((sum, p) => sum + (p.neuroteaContribution || 0), 0);
+    // Para grupales, el aporte proporcional de cada terapeuta (floor + residuo para la primera)
+    const groupAporte = therapistGroupSessions.reduce((sum, gs) => {
+        const therapistCount = gs.therapistCount || gs.therapists?.length || 1;
+        const isFirstTherapist = gs.therapists && gs.therapists[0] === therapist;
+        const baseAporte = Math.floor(gs.neuroteaContribution / therapistCount);
+        const residuoAporte = gs.neuroteaContribution - (baseAporte * therapistCount);
+        return sum + baseAporte + (isFirstTherapist ? residuoAporte : 0);
+    }, 0);
+    const aporteNeurotea = sessionAporte + packageAporte + groupAporte;
+
+    // CALCULAR: Honorarios
+    const sessionHonorarios = therapistSessions.filter(s => !s.creditUsed).reduce((sum, s) => sum + s.therapistFee, 0);
+    const packageHonorarios = packageIncome - packageAporte;
+    // Para grupales, cada terapeuta recibe su parte proporcional
+    // La primera terapeuta de la lista recibe el residuo de la división
+    const groupHonorarios = therapistGroupSessions.reduce((sum, gs) => {
+        const isFirstTherapist = gs.therapists && gs.therapists[0] === therapist;
+        const baseHonorarios = gs.feePerTherapist || 0;
+        const residuo = isFirstTherapist ? (gs.feeResidue || 0) : 0;
+        return sum + baseHonorarios + residuo;
+    }, 0);
+    const honorarios = sessionHonorarios + packageHonorarios + groupHonorarios;
+
+    // CALCULAR: Transferencias (solo sesiones individuales y paquetes - grupales no tienen transferencia a terapeuta)
+    const sessionTransfer = therapistSessions.reduce((sum, s) => sum + s.transferToTherapist, 0);
+    const packageTransfer = therapistPackages.reduce((sum, p) => sum + p.transferToTherapist, 0);
+    const transferenciaATerapeuta = sessionTransfer + packageTransfer;
+    
+    // CALCULAR: Adelantos recibidos
+    const adelantosRecibidos = dayEgresos
+        .filter(e => e.tipo === 'adelanto' && e.therapist === therapist)
+        .reduce((sum, e) => sum + e.monto, 0);
+    
+    // CALCULAR: Lo que debe cada uno
+    const neuroteaLeDebe = honorarios - transferenciaATerapeuta - adelantosRecibidos;
+    const terapeutaDebe = neuroteaLeDebe < 0 ? Math.abs(neuroteaLeDebe) : 0;
+    const neuroteaDebe = neuroteaLeDebe > 0 ? neuroteaLeDebe : 0;
+
+    // AGREGAR PROPIEDADES FALTANTES PARA COMPROBANTES (incluye grupales proporcionales)
+    const valorTotalSesiones = sessionIncome + packageIncome + groupIncome;
+    const aporteNeuroTEA = sessionAporte + packageAporte + groupAporte;
+
+    // ✅ ARQUITECTURA CORREGIDA: Usar función dinámica para saldo en caja
+    // NO depende de saldosReales.efectivo (variable acumulativa problemática)
+    const saldoCajaActual = calcularSaldoCajaReal(fecha);
+    
+    // Obtener saldo de cuenta NeuroTEA
+    const saldoCuentaNeuroTEA = calcularSaldoCuentaNeuroTEA(fecha);
+    
+    // DETERMINAR: Estado
+    let estado = '';
+    let colorClass = '';
+    
+    if (neuroteaLeDebe === 0) {
+        estado = 'SALDADO';
+        colorClass = 'badge-secondary';
+    } else if (neuroteaLeDebe < 0) {
+        estado = 'LA TERAPEUTA DEBE DAR';
+        colorClass = 'badge-danger';
+    } else {
+        const fondosTotalesDisponibles = saldoCajaActual + saldoCuentaNeuroTEA;
+        
+        if (fondosTotalesDisponibles < neuroteaDebe) {
+            estado = 'FONDOS INSUFICIENTES';
+            colorClass = 'badge-danger';
+        } else if (saldoCajaActual >= neuroteaDebe) {
+            estado = 'DAR EFECTIVO';
+            colorClass = 'badge-success';
+        } else if (saldoCajaActual > 0) {
+            estado = 'DAR Y TRANSFERIR';
+            colorClass = 'badge-warning';
+        } else {
+            estado = 'TRANSFERIR';
+            colorClass = 'badge-info';
+        }
+    }
+    
+    // ✅ NUEVO: Obtener información de confirmación y vueltos
+    let confirmacionInfo = null;
+    if (confirmaciones[fecha] && confirmaciones[fecha][therapist]) {
+        const conf = confirmaciones[fecha][therapist];
+        confirmacionInfo = {
+            confirmado: true,
+            timestamp: conf.timestamp,
+            tipoOpcion: conf.flujo?.tipoOpcion || conf.tipoOpcion || 'exacto',
+            efectivoUsado: conf.flujo?.efectivoUsado || 0,
+            efectivoRecibido: conf.flujo?.efectivoRecibido || 0,
+            vueltoEfectivo: conf.flujo?.vueltoEfectivo || 0,
+            vueltoTransferencia: conf.flujo?.vueltoTransferencia || 0,
+            // IMPORTANTE: Usar ?? en lugar de || para bancoUsado porque puede ser negativo
+            bancoUsado: conf.flujo?.bancoUsado ?? 0,
+            modalidad: conf.modalidad || null,
+            estadoCongelado: conf.estadoCongelado || null
+        };
+    }
+
+    return {
+        ingresoTotal,
+        aporteNeurotea,
+        honorarios,
+        transferenciaATerapeuta,
+        adelantosRecibidos,
+        neuroteaLeDebe: neuroteaDebe,
+        terapeutaDebe,
+        estado,
+        colorClass,
+        saldoCuentaNeuroTEA,
+        saldoCajaActual,
+        valorTotalSesiones,
+        aporteNeuroTEA,
+        // ✅ NUEVO: Información de confirmación y vueltos
+        confirmacionInfo,
+        // ✅ NUEVO: Flags para sesiones grupales
+        hasGroupSessions: therapistGroupSessions.length > 0,
+        groupSessionsCount: therapistGroupSessions.length,
+        groupHonorarios: groupHonorarios || 0
+    };
+}
+
+// ===========================
+// VERSIÓN OPTIMIZADA PARA REPORTES HTML
+// ===========================
+// Esta función evita recalcular datos que ya fueron computados
+// Recibe datos pre-calculados para mejorar rendimiento en reportes
+function calculateTherapistStatusOptimized(therapist, fecha, precalcData) {
+    const { daySessions, dayEgresos, allDayPackages, dayGroupSessions, saldoCaja, cuentaNeuroTEA, confirmaciones } = precalcData;
+
+    // Calcular totales para esta terapeuta usando datos pre-calculados
+    const therapistSessions = daySessions.filter(s => s.therapist === therapist);
+    const therapistPackages = allDayPackages.filter(p => p.therapist === therapist);
+    const therapistGroupSessions = dayGroupSessions.filter(gs =>
+        gs.therapists && gs.therapists.includes(therapist)
+    );
+
+    // Verificar si no hay datos
+    if (therapistSessions.length === 0 && therapistPackages.length === 0 && therapistGroupSessions.length === 0) {
+        return {
+            ingresoTotal: 0,
+            aporteNeurotea: 0,
+            honorarios: 0,
+            transferenciaATerapeuta: 0,
+            adelantosRecibidos: 0,
+            neuroteaLeDebe: 0,
+            terapeutaDebe: 0,
+            estado: 'SALDADO',
+            colorClass: 'badge-secondary',
+            hasGroupSessions: false,
+            groupSessionsCount: 0
+        };
+    }
+
+    // CALCULAR: Ingresos (sesiones + paquetes + grupales)
+    const sessionIncome = therapistSessions.filter(s => !s.creditUsed).reduce((sum, s) => sum + s.sessionValue, 0);
+    const packageIncome = therapistPackages.reduce((sum, p) => sum + p.sessionValue, 0);
+    const groupIncome = therapistGroupSessions.reduce((sum, gs) => {
+        const therapistCount = gs.therapistCount || gs.therapists?.length || 1;
+        const isFirstTherapist = gs.therapists && gs.therapists[0] === therapist;
+        const baseIncome = Math.floor(gs.totalValue / therapistCount);
+        const residuoIncome = gs.totalValue - (baseIncome * therapistCount);
+        return sum + baseIncome + (isFirstTherapist ? residuoIncome : 0);
+    }, 0);
+    const ingresoTotal = sessionIncome + packageIncome + groupIncome;
+
+    // CALCULAR: Aportes a NeuroTEA
+    const sessionAporte = therapistSessions.filter(s => !s.creditUsed).reduce((sum, s) => sum + s.neuroteaContribution, 0);
+    const packageAporte = therapistPackages.reduce((sum, p) => sum + (p.neuroteaContribution || 0), 0);
+    const groupAporte = therapistGroupSessions.reduce((sum, gs) => {
+        const therapistCount = gs.therapistCount || gs.therapists?.length || 1;
+        const isFirstTherapist = gs.therapists && gs.therapists[0] === therapist;
+        const baseAporte = Math.floor(gs.neuroteaContribution / therapistCount);
+        const residuoAporte = gs.neuroteaContribution - (baseAporte * therapistCount);
+        return sum + baseAporte + (isFirstTherapist ? residuoAporte : 0);
+    }, 0);
+    const aporteNeurotea = sessionAporte + packageAporte + groupAporte;
+
+    // CALCULAR: Honorarios
+    const sessionHonorarios = therapistSessions.filter(s => !s.creditUsed).reduce((sum, s) => sum + s.therapistFee, 0);
+    const packageHonorarios = packageIncome - packageAporte;
+    const groupHonorarios = therapistGroupSessions.reduce((sum, gs) => {
+        const isFirstTherapist = gs.therapists && gs.therapists[0] === therapist;
+        const baseHonorarios = gs.feePerTherapist || 0;
+        const residuo = isFirstTherapist ? (gs.feeResidue || 0) : 0;
+        return sum + baseHonorarios + residuo;
+    }, 0);
+    const honorarios = sessionHonorarios + packageHonorarios + groupHonorarios;
+
+    // CALCULAR: Transferencias (solo sesiones individuales y paquetes)
+    const sessionTransfer = therapistSessions.reduce((sum, s) => sum + s.transferToTherapist, 0);
+    const packageTransfer = therapistPackages.reduce((sum, p) => sum + p.transferToTherapist, 0);
+    const transferenciaATerapeuta = sessionTransfer + packageTransfer;
+
+    // CALCULAR: Adelantos recibidos
+    const adelantosRecibidos = dayEgresos
+        .filter(e => e.tipo === 'adelanto' && e.therapist === therapist)
+        .reduce((sum, e) => sum + e.monto, 0);
+
+    // CALCULAR: Lo que debe cada uno
+    const neuroteaLeDebe = honorarios - transferenciaATerapeuta - adelantosRecibidos;
+    const terapeutaDebe = neuroteaLeDebe < 0 ? Math.abs(neuroteaLeDebe) : 0;
+    const neuroteaDebe = neuroteaLeDebe > 0 ? neuroteaLeDebe : 0;
+
+    // USAR saldos pre-calculados (OPTIMIZACIÓN PRINCIPAL)
+    const saldoCajaActual = saldoCaja;
+    const saldoCuentaNeuroTEA = cuentaNeuroTEA;
+
+    // DETERMINAR: Estado
+    let estado = '';
+    let colorClass = '';
+
+    if (neuroteaLeDebe === 0) {
+        estado = 'SALDADO';
+        colorClass = 'badge-secondary';
+    } else if (neuroteaLeDebe < 0) {
+        estado = 'LA TERAPEUTA DEBE DAR';
+        colorClass = 'badge-danger';
+    } else {
+        const fondosTotalesDisponibles = saldoCajaActual + saldoCuentaNeuroTEA;
+
+        if (fondosTotalesDisponibles < neuroteaDebe) {
+            estado = 'FONDOS INSUFICIENTES';
+            colorClass = 'badge-danger';
+        } else if (saldoCajaActual >= neuroteaDebe) {
+            estado = 'DAR EFECTIVO';
+            colorClass = 'badge-success';
+        } else if (saldoCajaActual > 0) {
+            estado = 'DAR Y TRANSFERIR';
+            colorClass = 'badge-warning';
+        } else {
+            estado = 'TRANSFERIR';
+            colorClass = 'badge-info';
+        }
+    }
+
+    // Obtener información de confirmación
+    let confirmacionInfo = null;
+    if (confirmaciones[therapist]) {
+        const conf = confirmaciones[therapist];
+        confirmacionInfo = {
+            confirmado: true,
+            timestamp: conf.timestamp,
+            tipoOpcion: conf.flujo?.tipoOpcion || conf.tipoOpcion || 'exacto',
+            efectivoUsado: conf.flujo?.efectivoUsado || 0,
+            efectivoRecibido: conf.flujo?.efectivoRecibido || 0,
+            vueltoEfectivo: conf.flujo?.vueltoEfectivo || 0,
+            vueltoTransferencia: conf.flujo?.vueltoTransferencia || 0,
+            bancoUsado: conf.flujo?.bancoUsado ?? 0,
+            modalidad: conf.modalidad || null,
+            estadoCongelado: conf.estadoCongelado || null
+        };
+    }
+
+    return {
+        ingresoTotal,
+        aporteNeurotea,
+        honorarios,
+        transferenciaATerapeuta,
+        adelantosRecibidos,
+        neuroteaLeDebe: neuroteaDebe,
+        terapeutaDebe,
+        estado,
+        colorClass,
+        saldoCuentaNeuroTEA,
+        saldoCajaActual,
+        valorTotalSesiones: ingresoTotal,
+        aporteNeuroTEA: aporteNeurotea,
+        confirmacionInfo,
+        hasGroupSessions: therapistGroupSessions.length > 0,
+        groupSessionsCount: therapistGroupSessions.length,
+        groupHonorarios: groupHonorarios || 0
+    };
+}
+
+// ===========================
+// CONFIRMACIÓN DE PAGOS CON REVERSIÓN
+// ===========================
+
+function handlePaymentOption(therapist, fecha, option) {
+    if (!option) return;
+    
+    switch(option) {
+        case 'exacto':
+            confirmTherapistPayment(therapist, fecha, 'exacto');
+            break;
+        case 'vuelto':
+            const status = calculateTherapistStatus(therapist, fecha);
+            const montoReal = prompt(`Debe dar ${formatCurrency(status.neuroteaLeDebe)}. ¿Cuánto va a entregar en efectivo?`, status.neuroteaLeDebe);
+            if (montoReal && parseNumber(montoReal) > status.neuroteaLeDebe) {
+                confirmTherapistPayment(therapist, fecha, 'vuelto', parseNumber(montoReal));
+            } else if (montoReal) {
+                alert('El monto debe ser mayor al adeudado para generar vuelto');
+            }
+            break;
+        case 'transferir':
+            const statusTransfer = calculateTherapistStatus(therapist, fecha);
+            if (statusTransfer.saldoCuentaNeuroTEA < statusTransfer.neuroteaLeDebe) {
+                alert(`No hay suficiente saldo en Cuenta NeuroTEA para transferir.\n\nNecesario: ${formatCurrency(statusTransfer.neuroteaLeDebe)}\nDisponible: ${formatCurrency(statusTransfer.saldoCuentaNeuroTEA)}\n\nPor favor use otra opción de pago.`);
+                break;
+            }
+            confirmTherapistPayment(therapist, fecha, 'transferir');
+            break;
+        case 'vuelto-efectivo':
+            const statusEfectivo = calculateTherapistStatus(therapist, fecha);
+            const montoEfectivo = prompt(`Debe dar ${formatCurrency(statusEfectivo.neuroteaLeDebe)}. ¿Cuánto va a entregar en efectivo? (Vuelto será en efectivo)`, statusEfectivo.neuroteaLeDebe);
+            if (montoEfectivo && parseNumber(montoEfectivo) > statusEfectivo.neuroteaLeDebe) {
+                const vueltoNecesario = parseNumber(montoEfectivo) - statusEfectivo.neuroteaLeDebe;
+                const saldoCajaActual = calcularSaldoCajaReal(fecha);
+                if (saldoCajaActual < vueltoNecesario) {
+                    alert(`No hay suficiente efectivo en caja para dar el vuelto.\n\nVuelto necesario: ${formatCurrency(vueltoNecesario)}\nSaldo en caja: ${formatCurrency(saldoCajaActual)}\n\nPor favor use otra opción de pago.`);
+                    break;
+                }
+                confirmTherapistPayment(therapist, fecha, 'vuelto-efectivo', parseNumber(montoEfectivo));
+            } else if (montoEfectivo) {
+                alert('El monto debe ser mayor al adeudado para generar vuelto');
+            }
+            break;
+    }
+    
+    // Resetear el select después de la acción
+    setTimeout(() => {
+        const select = document.querySelector(`select[onchange*="${therapist}"]`);
+        if (select) select.value = '';
+    }, 100);
+}
+
+function toggleTherapistPayment(therapist, fecha) {
+    const isConfirmed = isTherapistPaymentConfirmed(therapist, fecha);
+    
+    if (isConfirmed) {
+        revertTherapistPayment(therapist, fecha);
+    } else {
+        confirmTherapistPayment(therapist, fecha);
+    }
+}
+
+function confirmTherapistPayment(therapist, fecha, tipoOpcion = 'exacto', montoReal = null) {
+    if (!confirm(`¿Confirmar pago a ${therapist}?`)) return;
+
+    const status = calculateTherapistStatus(therapist, fecha);
+
+    // Verificar si hay fondos suficientes
+    if (status.estado === 'FONDOS INSUFICIENTES') {
+        alert('No hay fondos suficientes para realizar el pago');
+        return;
+    }
+
+    if (!confirmaciones[fecha]) {
+        confirmaciones[fecha] = {};
+    }
+
+    const flujoDetalle = {
+        efectivoUsado: 0,
+        bancoUsado: 0,
+        efectivoRecibido: 0,      // Para "LA TERAPEUTA DEBE DAR" en efectivo
+        vueltoEfectivo: 0,        // Vuelto en efectivo (regresa a caja)
+        vueltoTransferencia: 0,   // Vuelto por transferencia (entra a cuenta NeuroTEA)
+        tipoOpcion: tipoOpcion
+    };
+
+    // ✅ ARQUITECTURA CORREGIDA: Solo registrar el flujo, NO modificar saldosReales
+    // El saldo se calcula DINÁMICAMENTE con calcularSaldoCajaReal()
+    switch (status.estado) {
+        case 'DAR EFECTIVO':
+            switch(tipoOpcion) {
+                case 'exacto':
+                    flujoDetalle.efectivoUsado = status.neuroteaLeDebe;
+                    break;
+                case 'vuelto':
+                    const vuelto = montoReal - status.neuroteaLeDebe;
+                    flujoDetalle.efectivoUsado = montoReal;
+                    flujoDetalle.vueltoTransferencia = vuelto; // Vuelto que terapeuta transfiere a cuenta NeuroTEA
+                    break;
+                case 'transferir':
+                    flujoDetalle.bancoUsado = status.neuroteaLeDebe;
+                    break;
+                case 'vuelto-efectivo':
+                    const vueltoEfectivo = montoReal - status.neuroteaLeDebe;
+                    flujoDetalle.efectivoUsado = montoReal; // Lo que realmente sale de caja
+                    flujoDetalle.vueltoEfectivo = vueltoEfectivo; // Lo que regresa a caja
+                    break;
+            }
+            break;
+
+        case 'DAR Y TRANSFERIR':
+            const efectivoDisponible = status.saldoCajaActual;
+            const diferenciaNecesaria = status.neuroteaLeDebe - efectivoDisponible;
+
+            // Validar que hay suficiente en cuenta NeuroTEA para la diferencia
+            if (status.saldoCuentaNeuroTEA < diferenciaNecesaria) {
+                alert(`No hay suficiente saldo en Cuenta NeuroTEA para completar el pago.\n\nNecesario transferir: ${formatCurrency(diferenciaNecesaria)}\nDisponible en cuenta: ${formatCurrency(status.saldoCuentaNeuroTEA)}\n\nNo es posible realizar esta operación.`);
+                return;
+            }
+
+            flujoDetalle.efectivoUsado = efectivoDisponible;
+            flujoDetalle.bancoUsado = diferenciaNecesaria;
+            flujoDetalle.tipoOpcion = 'dar-transferir'; // Forzar tipoOpcion específico
+            break;
+
+        case 'TRANSFERIR':
+            // Validar que hay suficiente en cuenta NeuroTEA
+            if (status.saldoCuentaNeuroTEA < status.neuroteaLeDebe) {
+                alert(`No hay suficiente saldo en Cuenta NeuroTEA para transferir.\n\nNecesario: ${formatCurrency(status.neuroteaLeDebe)}\nDisponible: ${formatCurrency(status.saldoCuentaNeuroTEA)}\n\nNo es posible realizar esta operación.`);
+                return;
+            }
+            flujoDetalle.bancoUsado = status.neuroteaLeDebe;
+            break;
+
+        case 'LA TERAPEUTA DEBE DAR':
+            flujoDetalle.efectivoRecibido = status.terapeutaDebe;
+            break;
+
+        case 'SALDADO':
+            // No hay movimiento de dinero
+            break;
+
+        default:
+            alert('Estado no reconocido: ' + status.estado);
+            return;
+    }
+
+    // Guardar confirmación con estado congelado
+    confirmaciones[fecha][therapist] = {
+        timestamp: Date.now(),
+        amount: status.neuroteaLeDebe || status.terapeutaDebe,
+        type: status.estado,
+        tipoOpcion: tipoOpcion, // Guardar opción seleccionada para referencia
+        flujo: flujoDetalle,
+        estadoCongelado: { ...status }
+    };
+
+    console.log(`✅ Pago confirmado: ${therapist} - ${status.estado} - Efectivo: ${flujoDetalle.efectivoUsado}, Banco: ${flujoDetalle.bancoUsado}`);
+
+    updateAllViews(fecha);
+    saveToStorage();
+}
+
+function revertTherapistPayment(therapist, fecha) {
+    if (!confirm(`¿Revertir confirmación de pago a ${therapist}?`)) return;
+
+    const confirmacion = confirmaciones[fecha][therapist];
+    if (!confirmacion) return;
+
+    // ✅ ARQUITECTURA CORREGIDA: Solo eliminar la confirmación
+    // El saldo se recalculará DINÁMICAMENTE con calcularSaldoCajaReal()
+    // No es necesario modificar saldosReales
+
+    console.log(`🔄 Revirtiendo pago: ${therapist} - ${confirmacion.type}`);
+
+    // Eliminar confirmación
+    delete confirmaciones[fecha][therapist];
+
+    updateAllViews(fecha);
+    saveToStorage();
+}
+
+
+/**
+ * ✅ ARQUITECTURA CORREGIDA: Limpia confirmaciones de un terapeuta cuando se elimina una sesión
+ * Busca por terapeuta (no por sessionIds que nunca existió)
+ * @param {string} fecha - Fecha de la sesión
+ * @param {Object} session - Sesión que se va a eliminar
+ */
+function cleanupSessionConfirmations(fecha, session) {
+    if (!confirmaciones[fecha]) return;
+    if (!session || !session.therapist) return;
+
+    const therapist = session.therapist;
+
+    // ✅ REVERSIBILIDAD: Verificar si el terapeuta tiene otras sesiones antes de eliminar confirmación
+    // Verificar sesiones individuales (excluyendo la sesión actual que se está eliminando)
+    const otherIndividualSessions = (sessions[fecha] || [])
+        .filter(s => s.therapist === therapist && s.id !== session.id);
+
+    // Verificar sesiones grupales donde participa este terapeuta
+    const otherGroupSessions = (groupSessions[fecha] || [])
+        .filter(gs => gs.therapists && gs.therapists.includes(therapist));
+
+    // Verificar si hay confirmación para este terapeuta
+    if (confirmaciones[fecha][therapist]) {
+        // Solo eliminar si no tiene otras sesiones
+        if (otherIndividualSessions.length === 0 && otherGroupSessions.length === 0) {
+            console.log(`🔄 Eliminando confirmación de ${therapist} (sesión eliminada, sin otras sesiones)`);
+            delete confirmaciones[fecha][therapist];
+        } else {
+            console.log(`ℹ️ ${therapist} tiene otras sesiones, manteniendo confirmación para recálculo`);
+            // El cálculo de rendición se actualizará automáticamente con updateAllViews()
+        }
+    }
+}
+
+
+/**
+ * Revierte los créditos usados en una sesión
+ * Si la sesión usó créditos, incrementa el remaining del paquete
+ * Actualiza tanto dailyPackagePurchases como patientCredits
+ * @param {Object} session - Objeto de sesión con información
+ */
+function revertSessionCredits(session) {
+    if (!session.creditUsed) return;
+
+    const patientName = session.patientName;
+    const therapist = session.therapist;
+    const originalPackageId = session.originalPackageId; // ID del paquete original
+    let reverted = false;
+
+    // ✅ PASO 1: Buscar en dailyPackagePurchases (paquetes activos)
+    Object.keys(dailyPackagePurchases).forEach(fecha => {
+        if (reverted) return;
+        const dayPackages = dailyPackagePurchases[fecha] || [];
+        for (let pkg of dayPackages) {
+            // Buscar por packageId si está disponible, o por paciente/terapeuta
+            const matchById = originalPackageId && pkg.id === originalPackageId;
+            const matchByPatient = pkg.therapist === therapist &&
+                pkg.patientName === patientName &&
+                pkg.remaining < pkg.totalSessions;
+
+            if (matchById || matchByPatient) {
+                pkg.remaining++;
+                console.log(`✅ Crédito revertido en dailyPackagePurchases: ${patientName} - ${therapist} (remaining: ${pkg.remaining}/${pkg.totalSessions})`);
+                reverted = true;
+                break;
+            }
+        }
+    });
+
+    // ✅ PASO 2: Si no se encontró en activos, buscar en packageHistory y restaurar
+    if (!reverted && packageHistory && packageHistory.length > 0) {
+        // Buscar el paquete en el histórico
+        let historyIndex = -1;
+        if (originalPackageId) {
+            historyIndex = packageHistory.findIndex(p => p.id === originalPackageId);
+        }
+        if (historyIndex === -1) {
+            // Buscar por paciente/terapeuta (el más reciente)
+            historyIndex = packageHistory.findIndex(p =>
+                p.patientName === patientName &&
+                p.therapist === therapist
+            );
+        }
+
+        if (historyIndex !== -1) {
+            const historicPkg = packageHistory[historyIndex];
+            console.log(`🔄 Paquete encontrado en histórico, restaurando: ${historicPkg.id}`);
+
+            // Remover del histórico
+            packageHistory.splice(historyIndex, 1);
+
+            // Restaurar a dailyPackagePurchases con 1 crédito
+            const restoredPkg = {
+                ...historicPkg,
+                remaining: 1, // Tiene 1 crédito después de revertir
+                status: 'active'
+            };
+            delete restoredPkg.completedDate; // Quitar fecha de completado
+
+            const purchaseDate = historicPkg.purchaseDate;
+            if (!dailyPackagePurchases[purchaseDate]) {
+                dailyPackagePurchases[purchaseDate] = [];
+            }
+            dailyPackagePurchases[purchaseDate].push(restoredPkg);
+
+            // Restaurar en patientCredits
+            if (!patientCredits[patientName]) {
+                patientCredits[patientName] = {};
+            }
+            patientCredits[patientName][therapist] = {
+                packageId: historicPkg.id,
+                remaining: 1,
+                total: historicPkg.totalSessions,
+                purchaseDate: purchaseDate,
+                status: 'active'
+            };
+
+            console.log(`✅ Paquete restaurado del histórico: ${historicPkg.id} (remaining: 1/${historicPkg.totalSessions})`);
+            reverted = true;
+        }
+    }
+
+    // ✅ PASO 3: Actualizar patientCredits si el paquete estaba en activos
+    if (reverted && patientCredits[patientName] && patientCredits[patientName][therapist]) {
+        const creditInfo = patientCredits[patientName][therapist];
+
+        if (Array.isArray(creditInfo)) {
+            for (let credit of creditInfo) {
+                const matchById = originalPackageId && credit.packageId === originalPackageId;
+                const matchByUsage = credit.remaining < credit.total;
+                if (matchById || matchByUsage) {
+                    credit.remaining++;
+                    console.log(`✅ Crédito revertido en patientCredits: ${patientName} - ${therapist} (remaining: ${credit.remaining}/${credit.total})`);
+                    break;
+                }
+            }
+        } else if (creditInfo.remaining < creditInfo.total) {
+            creditInfo.remaining++;
+            console.log(`✅ Crédito revertido en patientCredits: ${patientName} - ${therapist} (remaining: ${creditInfo.remaining}/${creditInfo.total})`);
+        }
+    }
+
+    if (!reverted) {
+        console.warn(`⚠️ No se encontró paquete para revertir crédito: ${patientName} - ${therapist} (packageId: ${originalPackageId || 'N/A'})`);
+    }
+}
+
+
+function isTherapistPaymentConfirmed(therapist, fecha) {
+    return confirmaciones[fecha] && confirmaciones[fecha][therapist];
+}
+
+// ===========================
+// ACTUALIZACIÓN DE VISTAS
+// ===========================
+
+function updateAllViews(fecha) {
+    try {
+        // Validar fecha
+        if (!fecha) {
+            fecha = fechaActual || getLocalDateString();
+        }
+
+        updateDailySessionsList(fecha);
+        updateDashboard(fecha);
+        updateTransferDetails(fecha);
+        updateRendicionCuentas(fecha);
+        updateEgresosList(fecha);
+        updateTherapistList();
+        updateSaldoBadge(fecha);
+        updatePackageHistoryList();
+        
+    } catch (error) {
+        console.error("❌ ERROR CRÍTICO en updateAllViews:", error);
+        console.error("Stack trace:", error.stack);
+        
+        // Mostrar mensaje de error en la interfaz
+        const errorMessage = document.createElement('div');
+        errorMessage.innerHTML = `
+            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                <strong>Error crítico:</strong> No se pudieron actualizar las vistas. 
+                <button onclick="location.reload()" class="underline">Recargar página</button>
+            </div>
+        `;
+        document.body.insertBefore(errorMessage, document.body.firstChild);
+    }
+}
+
+function updateDailySessionsList(fecha) {
+    try {
+        // Validar que las variables globales existan
+        if (typeof sessions === 'undefined') sessions = {};
+
+        const container = document.getElementById('daily-sessions-container');
+        if (!container) return;
+
+        const daySessions = sessions[fecha] || [];
+        const dayGroupSessions = groupSessions[fecha] || [];
+
+        if (daySessions.length === 0 && dayGroupSessions.length === 0) {
+            container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay sesiones registradas para este día</p>';
+            return;
+        }
+
+    let finalHTML = '';
+
+    // ========================================
+    // SECCIÓN DE SESIONES GRUPALES (verde) - Agrupadas por GRUPO
+    // ========================================
+    if (dayGroupSessions.length > 0) {
+        // Agrupar sesiones grupales por groupId
+        const sessionsByGroup = {};
+        dayGroupSessions.forEach(gs => {
+            if (!sessionsByGroup[gs.groupId]) {
+                sessionsByGroup[gs.groupId] = [];
+            }
+            sessionsByGroup[gs.groupId].push(gs);
+        });
+
+        Object.keys(sessionsByGroup).forEach(groupId => {
+            const groupConfig = groupTherapy[groupId];
+            const groupName = groupConfig ? groupConfig.name : 'Grupo Desconocido';
+            const groupSessionsList = sessionsByGroup[groupId];
+            const sessionCount = groupSessionsList.length;
+            const totalGroupValue = groupSessionsList.reduce((sum, gs) => sum + gs.totalValue, 0);
+
+            const groupSessionsHTML = groupSessionsList.map(gs => {
+                const presentChildren = gs.attendance ? gs.attendance.filter(a => a.present).length : 0;
+                const totalChildren = gs.attendance ? gs.attendance.length : 0;
+                const therapistCount = gs.therapistCount || 1;
+
+                // Lista de niños presentes
+                const presentChildrenNames = gs.attendance
+                    ? gs.attendance.filter(a => a.present).map(a => a.childName).join(', ')
+                    : '';
+
+                // Lista de terapeutas
+                const therapistNames = gs.therapists ? gs.therapists.join(', ') : 'Sin terapeutas';
+
+                return `
+                    <div class="p-3 border-l-4 border-green-400 bg-green-50 dark:bg-green-900/30 ml-4 mb-2">
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-200 text-green-800 dark:bg-green-700 dark:text-green-200">
+                                    GRUPAL ÷${therapistCount}
+                                </span>
+                                <span class="text-xs text-gray-500 ml-2">${gs.time || ''}</span>
+                            </div>
+                            <button onclick="deleteGroupSession('${fecha}', '${gs.id}')" class="text-red-500 hover:text-red-700 p-1">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                        <div class="text-sm text-green-700 dark:text-green-300 mb-2">
+                            <div class="font-medium mb-1">Presentes (${presentChildren}/${totalChildren}):</div>
+                            <div class="ml-2 text-green-600 dark:text-green-400">${presentChildrenNames || 'Ninguno'}</div>
+                        </div>
+                        <div class="text-sm text-green-700 dark:text-green-300 mb-2">
+                            <div class="font-medium">Terapeutas:</div>
+                            <div class="ml-2">${therapistNames}</div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-sm text-green-700 dark:text-green-300 border-t border-green-200 dark:border-green-700 pt-2 mt-2">
+                            <div>Valor Total: ${formatCurrency(gs.totalValue)}</div>
+                            <div>Aporte NeuroTEA: ${formatCurrency(gs.neuroteaContribution)} ${formatContributionIndicator(gs)}</div>
+                            <div>Hon. c/Terapeuta: ${formatCurrency(gs.feePerTherapist)}</div>
+                            <div>Efectivo: ${formatCurrency(gs.cashToNeurotea || 0)}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            finalHTML += `
+                <div class="mb-4 border rounded-md bg-white dark:bg-gray-800 overflow-hidden border-green-300">
+                    <div class="bg-green-100 dark:bg-green-800 p-4 cursor-pointer hover:bg-green-200 dark:hover:bg-green-700 transition-colors"
+                         onclick="toggleGroupSection('${groupId.replace(/'/g, "\\'")}')">
+                        <div class="flex justify-between items-center">
+                            <h4 class="font-semibold text-green-800 dark:text-green-200 flex items-center">
+                                <i data-lucide="users" class="w-5 h-5 mr-2"></i>
+                                ${groupName}
+                            </h4>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-sm text-green-600 dark:text-green-300">${sessionCount} sesión${sessionCount !== 1 ? 'es' : ''} - ${formatCurrency(totalGroupValue)}</span>
+                                <i data-lucide="chevron-down" class="w-4 h-4 text-green-600 dark:text-green-300 transform transition-transform" id="chevron-group-${groupId.replace(/[^a-zA-Z0-9]/g, '_')}"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hidden p-4" id="sessions-group-${groupId.replace(/[^a-zA-Z0-9]/g, '_')}">
+                        ${groupSessionsHTML}
+                    </div>
+                </div>
+            `;
+        });
+    }
+
+    // ========================================
+    // SECCIÓN DE SESIONES INDIVIDUALES (azul/beige) - Agrupadas por terapeuta
+    // ========================================
+    const sessionsByTherapist = {};
+    daySessions.forEach(session => {
+        if (!sessionsByTherapist[session.therapist]) {
+            sessionsByTherapist[session.therapist] = {
+                normal: [],
+                credits: [],
+                groupParticipations: [] // Participaciones en sesiones grupales
+            };
+        }
+
+        // Separar sesiones normales de sesiones con crédito
+        if (session.creditUsed === true) {
+            sessionsByTherapist[session.therapist].credits.push(session);
+        } else {
+            sessionsByTherapist[session.therapist].normal.push(session);
+        }
+    });
+
+    // Agregar participaciones grupales a cada terapeuta
+    dayGroupSessions.forEach(gs => {
+        if (gs.therapists && gs.therapists.length > 0) {
+            const therapistCount = gs.therapists.length;
+            const groupConfig = groupTherapy[gs.groupId];
+            const groupName = groupConfig ? groupConfig.name : 'Grupo';
+
+            gs.therapists.forEach((therapist, index) => {
+                if (!sessionsByTherapist[therapist]) {
+                    sessionsByTherapist[therapist] = {
+                        normal: [],
+                        credits: [],
+                        groupParticipations: []
+                    };
+                }
+
+                // Calcular valor proporcional para esta terapeuta
+                const isFirstTherapist = index === 0;
+                const baseValue = Math.floor(gs.totalValue / therapistCount);
+                const residuo = gs.totalValue - (baseValue * therapistCount);
+                const valorProporcional = baseValue + (isFirstTherapist ? residuo : 0);
+
+                // Calcular aporte NeuroTEA proporcional
+                const baseAporte = Math.floor(gs.neuroteaContribution / therapistCount);
+                const residuoAporte = gs.neuroteaContribution - (baseAporte * therapistCount);
+                const aporteProporcional = baseAporte + (isFirstTherapist ? residuoAporte : 0);
+
+                // Calcular honorarios proporcionales
+                const honorariosProporcionales = valorProporcional - aporteProporcional;
+
+                // Calcular porcentaje de aporte
+                const porcentajeAporte = valorProporcional > 0
+                    ? Math.round((aporteProporcional / valorProporcional) * 100)
+                    : 0;
+
+                sessionsByTherapist[therapist].groupParticipations.push({
+                    groupName: groupName,
+                    totalValue: gs.totalValue,
+                    therapistCount: therapistCount,
+                    valorProporcional: valorProporcional,
+                    aporteProporcional: aporteProporcional,
+                    honorariosProporcionales: honorariosProporcionales,
+                    porcentajeAporte: porcentajeAporte
+                });
+            });
+        }
+    });
+
+    // Generar HTML agrupado por terapeuta con secciones separadas
+    const therapistGroups = Object.keys(sessionsByTherapist).sort().map(therapist => {
+        const normalSessions = sessionsByTherapist[therapist].normal;
+        const creditSessions = sessionsByTherapist[therapist].credits;
+        const groupParticipations = sessionsByTherapist[therapist].groupParticipations || [];
+
+        let html = '';
+
+        // Calcular totales incluyendo participaciones grupales
+        const normalTotalValue = normalSessions.reduce((sum, s) => sum + s.sessionValue, 0);
+        const groupTotalValue = groupParticipations.reduce((sum, gp) => sum + gp.valorProporcional, 0);
+        const totalCount = normalSessions.length + groupParticipations.length;
+        const totalValue = normalTotalValue + groupTotalValue;
+
+        // SECCIÓN NORMAL (azul) - si hay sesiones normales O participaciones grupales
+        if (normalSessions.length > 0 || groupParticipations.length > 0) {
+            // HTML de sesiones individuales normales
+            const normalSessionsHTML = normalSessions.map(session => `
+                <div class="p-3 border-l-4 border-blue-300 bg-gray-50 dark:bg-gray-700 ml-4 mb-2">
+                    <div class="flex justify-between items-start mb-2">
+                        <h5 class="font-semibold text-gray-800 dark:text-gray-200">${session.patientName || 'Sin nombre'}</h5>
+                        <button onclick="deleteSession('${fecha}', ${session.id})" class="text-red-500 hover:text-red-700 p-1">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div>Efectivo: ${formatCurrency(session.cashToNeurotea)}</div>
+                        <div>Transf. Terapeuta: ${formatCurrency(session.transferToTherapist)}</div>
+                        <div>Transf. NeuroTEA: ${formatCurrency(session.transferToNeurotea)}</div>
+                        <div class="font-bold">Total: ${formatCurrency(session.sessionValue)}</div>
+                        <div>Aporte NeuroTEA: ${formatCurrency(session.neuroteaContribution)} ${formatContributionIndicator(session)}</div>
+                        <div>Honorarios: ${formatCurrency(session.therapistFee)}</div>
+                    </div>
+                </div>
+            `).join('');
+
+            // HTML de participaciones grupales (tarjetas informativas)
+            const groupParticipationsHTML = groupParticipations.map(gp => `
+                <div class="p-3 border-l-4 border-green-400 bg-gray-50 dark:bg-gray-700 ml-4 mb-2">
+                    <div class="flex justify-between items-start mb-2">
+                        <h5 class="font-semibold text-gray-800 dark:text-gray-200">${gp.groupName}</h5>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-xs font-medium px-2 py-1 rounded bg-green-200 text-green-800 dark:bg-green-700 dark:text-green-200">Terapia Grupal</span>
+                            <span class="text-blue-500 cursor-help" title="Participación en sesión grupal. Para eliminar, use el registro del grupo.">
+                                <i data-lucide="info" class="w-4 h-4"></i>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="text-sm text-gray-600 dark:text-gray-300 space-y-1">
+                        <div class="font-medium">${formatCurrency(gp.totalValue)} ÷ ${gp.therapistCount} = ${formatCurrency(gp.valorProporcional)}</div>
+                        <div>Aporte NeuroTEA: ${formatCurrency(gp.aporteProporcional)} (${gp.porcentajeAporte}%)</div>
+                        <div>Honorarios: ${formatCurrency(gp.honorariosProporcionales)}</div>
+                    </div>
+                </div>
+            `).join('');
+
+            html += `
+                <div class="mb-4 border rounded-md bg-white dark:bg-gray-800 overflow-hidden">
+                    <div class="bg-blue-50 dark:bg-blue-900 p-4 cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-800 transition-colors"
+                         onclick="toggleTherapistGroup('${therapist.replace(/'/g, "\\'")}', 'normal')">
+                        <div class="flex justify-between items-center">
+                            <h4 class="font-semibold text-blue-800 dark:text-blue-200">${therapist}</h4>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-sm text-blue-600 dark:text-blue-300">${totalCount} sesión${totalCount !== 1 ? 'es' : ''} - ${formatCurrency(totalValue)}</span>
+                                <i data-lucide="chevron-down" class="w-4 h-4 text-blue-600 dark:text-blue-300 transform transition-transform" id="chevron-${therapist.replace(/[^a-zA-Z0-9]/g, '_')}_normal"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hidden p-4" id="sessions-${therapist.replace(/[^a-zA-Z0-9]/g, '_')}_normal">
+                        ${normalSessionsHTML}
+                        ${groupParticipationsHTML}
+                    </div>
+                </div>
+            `;
+        }
+
+        // SECCIÓN CRÉDITOS (beige) - solo si hay sesiones con crédito
+        if (creditSessions.length > 0) {
+            const creditCount = creditSessions.length;
+
+            const creditSessionsHTML = creditSessions.map(session => {
+                const creditUsage = calculateCreditUsage(session);
+                return `
+                    <div class="session-credit p-3 border-l-4 ml-4 mb-2">
+                        <div class="flex justify-between items-start mb-2">
+                            <h5 class="font-semibold credit-text-bold">${session.patientName || 'Sin nombre'}</h5>
+                            <button onclick="deleteSession('${fecha}', ${session.id})" class="text-red-500 hover:text-red-700 p-1">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-sm">
+                            <div class="credit-text-secondary">Efectivo: Gs 0</div>
+                            <div class="credit-text-secondary">Transf. Terapeuta: Gs 0</div>
+                            <div class="credit-text-secondary">Transf. NeuroTEA: Gs 0</div>
+                            <div class="font-bold credit-text-bold">${creditUsage}</div>
+                            <div class="credit-text-secondary">Aporte NeuroTEA: Gs 0</div>
+                            <div class="credit-text-secondary">Honorarios: Gs 0</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            html += `
+                <div class="mb-4 border rounded-md bg-white dark:bg-gray-800 overflow-hidden">
+                    <div class="therapist-section-credits p-4 cursor-pointer transition-colors"
+                         onclick="toggleTherapistGroup('${therapist.replace(/'/g, "\\'")}', 'credits')">
+                        <div class="flex justify-between items-center">
+                            <h4 class="font-semibold credit-text-bold">${therapist}</h4>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-sm credit-text-primary">${creditCount} sesión${creditCount !== 1 ? 'es' : ''} - Gs 0</span>
+                                <i data-lucide="chevron-down" class="w-4 h-4 credit-text-primary transform transition-transform" id="chevron-${therapist.replace(/[^a-zA-Z0-9]/g, '_')}_credits"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hidden p-4" id="sessions-${therapist.replace(/[^a-zA-Z0-9]/g, '_')}_credits">
+                        ${creditSessionsHTML}
+                    </div>
+                </div>
+            `;
+        }
+
+        return html;
+    }).join('');
+
+    finalHTML += therapistGroups;
+    container.innerHTML = finalHTML;
+    lucide.createIcons();
+    
+    } catch (error) {
+        console.error("❌ ERROR en updateDailySessionsList:", error);
+        console.error("Stack trace:", error.stack);
+        
+        const container = document.getElementById('daily-sessions-container');
+        if (container) {
+            container.innerHTML = '<p class="text-red-500 text-center py-4">Error al cargar sesiones. Revise la consola para más detalles.</p>';
+        }
+    }
+}
+
+// Nueva función para calcular el uso de créditos
+function calculateCreditUsage(session) {
+    try {
+        // Intentar obtener información precisa de créditos
+        const creditsInfo = getPatientCreditsInfo(session.patientName, session.therapist);
+        
+        if (creditsInfo && creditsInfo.totalOriginal && creditsInfo.totalRemaining !== undefined) {
+            const total = creditsInfo.totalOriginal;
+            const remaining = creditsInfo.totalRemaining;
+            const used = total - remaining;
+            return `Crédito Usado ${used}/${total}`;
+        }
+        
+        // Fallback usando información de la sesión
+        if (session.remainingCredits !== undefined && session.originalPackageId) {
+            // Calcular créditos usados basándose en los restantes
+            const remaining = session.remainingCredits;
+            // Asumir paquete estándar si no tenemos info específica
+            const totalEstimated = remaining + 1; // +1 porque acabamos de usar uno
+            const used = totalEstimated - remaining;
+            return `Crédito Usado ${used}/${totalEstimated}`;
+        }
+        
+        // Fallback usando estructura de patientCredits directamente
+        if (patientCredits[session.patientName] && patientCredits[session.patientName][session.therapist]) {
+            const credits = patientCredits[session.patientName][session.therapist];
+            if (Array.isArray(credits)) {
+                // Múltiples paquetes
+                const totalOriginal = credits.reduce((sum, pkg) => sum + pkg.total, 0);
+                const totalRemaining = credits.reduce((sum, pkg) => sum + pkg.remaining, 0);
+                const used = totalOriginal - totalRemaining;
+                return `Crédito Usado ${used}/${totalOriginal}`;
+            } else if (credits.total && credits.remaining !== undefined) {
+                // Paquete único
+                const used = credits.total - credits.remaining;
+                return `Crédito Usado ${used}/${credits.total}`;
+            }
+        }
+        
+        // Fallback genérico basado en la imagen objetivo
+        return "Crédito Usado 1/2";
+        
+    } catch (error) {
+        console.warn("Error calculando uso de créditos:", error);
+        return "Crédito Usado";
+    }
+}
+
+// Función para alternar el formulario de sesión grupal
+function toggleGroupSessionForm() {
+    const content = document.getElementById('group-session-form-content');
+    const chevron = document.getElementById('group-form-chevron');
+
+    if (content && chevron) {
+        if (content.classList.contains('hidden')) {
+            content.classList.remove('hidden');
+            chevron.classList.add('rotate-180');
+            // Poblar el select de grupos al abrir
+            populateGroupSelect();
+            populateGroupTherapistSelect();
+        } else {
+            content.classList.add('hidden');
+            chevron.classList.remove('rotate-180');
+        }
+    }
+}
+
+// Función actualizada para alternar la visibilidad de los grupos de terapeutas
+function toggleTherapistGroup(therapistName, type = 'normal') {
+    const sanitizedName = therapistName.replace(/[^a-zA-Z0-9]/g, '_');
+    const sessionsContainer = document.getElementById(`sessions-${sanitizedName}_${type}`);
+    const chevron = document.getElementById(`chevron-${sanitizedName}_${type}`);
+
+    if (sessionsContainer && chevron) {
+        if (sessionsContainer.classList.contains('hidden')) {
+            sessionsContainer.classList.remove('hidden');
+            chevron.classList.add('rotate-180');
+        } else {
+            sessionsContainer.classList.add('hidden');
+            chevron.classList.remove('rotate-180');
+        }
+    }
+}
+
+// Función para alternar la visibilidad de las sesiones de un grupo específico
+function toggleGroupSection(groupId) {
+    const sanitizedId = groupId.replace(/[^a-zA-Z0-9]/g, '_');
+    const sessionsContainer = document.getElementById(`sessions-group-${sanitizedId}`);
+    const chevron = document.getElementById(`chevron-group-${sanitizedId}`);
+
+    if (sessionsContainer && chevron) {
+        if (sessionsContainer.classList.contains('hidden')) {
+            sessionsContainer.classList.remove('hidden');
+            chevron.classList.add('rotate-180');
+        } else {
+            sessionsContainer.classList.add('hidden');
+            chevron.classList.remove('rotate-180');
+        }
+    }
+}
+
+function updateDashboard(fecha) {
+    try {
+        // Validar que las variables globales existan
+        if (typeof sessions === 'undefined') sessions = {};
+        if (typeof egresos === 'undefined') egresos = {};
+        if (typeof dailyPackagePurchases === 'undefined') dailyPackagePurchases = {};
+        if (typeof groupSessions === 'undefined') groupSessions = {};
+        if (typeof packageHistory === 'undefined') packageHistory = [];
+
+        const daySessions = sessions[fecha] || [];
+        const dayEgresos = egresos[fecha] || [];
+        const dayPackages = dailyPackagePurchases[fecha] || [];
+        const dayGroupSessions = groupSessions[fecha] || [];
+
+        // IMPORTANTE: Incluir paquetes del histórico que fueron COMPRADOS ese día
+        const historyPackagesForDate = (packageHistory || []).filter(p => p.purchaseDate === fecha);
+        const allDayPackages = [...dayPackages, ...historyPackagesForDate];
+
+        // Calcular totales DEL DÍA incluyendo paquetes y sesiones grupales
+        const sessionIncome = daySessions.filter(s => !s.creditUsed).reduce((sum, s) => sum + (s.sessionValue || 0), 0);
+        const packageIncome = allDayPackages.reduce((sum, p) => sum + (p.sessionValue || 0), 0);
+        const groupIncome = dayGroupSessions.reduce((sum, gs) => sum + (gs.totalValue || 0), 0);
+        const totalIngresos = sessionIncome + packageIncome + groupIncome;
+
+        const sessionAporte = daySessions.filter(s => !s.creditUsed).reduce((sum, s) => sum + (s.neuroteaContribution || 0), 0);
+        const packageAporte = allDayPackages.reduce((sum, p) => sum + (p.neuroteaContribution || 0), 0);
+        const groupAporte = dayGroupSessions.reduce((sum, gs) => sum + (gs.neuroteaContribution || 0), 0);
+        const totalAporteNeurotea = sessionAporte + packageAporte + groupAporte;
+
+        const sessionEfectivo = daySessions.reduce((sum, s) => sum + (s.cashToNeurotea || 0), 0);
+        const packageEfectivo = allDayPackages.reduce((sum, p) => sum + (p.cashToNeurotea || 0), 0);
+        const groupEfectivo = dayGroupSessions.reduce((sum, gs) => sum + (gs.cashToNeurotea || 0), 0);
+        const totalEfectivo = sessionEfectivo + packageEfectivo + groupEfectivo;
+
+        const sessionTransfNeurotea = daySessions.reduce((sum, s) => sum + (s.transferToNeurotea || 0), 0);
+        const packageTransfNeurotea = allDayPackages.reduce((sum, p) => sum + (p.transferToNeurotea || 0), 0);
+        const groupTransfNeurotea = dayGroupSessions.reduce((sum, gs) => sum + (gs.transferToNeurotea || 0), 0);
+        const totalTransfNeurotea = sessionTransfNeurotea + packageTransfNeurotea + groupTransfNeurotea;
+
+        const totalEgresos = dayEgresos.reduce((sum, e) => sum + (e.monto || 0), 0);
+
+        // Usar función dinámica para saldo en caja
+        // NO depende de saldosReales.efectivo (variable acumulativa problemática)
+        const saldoCaja = calcularSaldoCajaReal(fecha);
+
+        // Calcular saldo unificado de Cuenta NeuroTEA
+        const saldoCuentaNeuroTEA = calcularSaldoCuentaNeuroTEA(fecha);
+    
+    // Actualizar elementos del dashboard
+    const elements = {
+        'dashboard-ingreso-total': totalIngresos,
+        'dashboard-aporte-neurotea': totalAporteNeurotea,
+        'dashboard-saldo-caja': saldoCaja,
+        'dashboard-total-efectivo': totalEfectivo,  // TOTAL DEL DÍA
+        'dashboard-cuenta-neurotea': saldoCuentaNeuroTEA,  // SALDO UNIFICADO
+        'dashboard-total-egresos': totalEgresos
+    };
+    
+    Object.entries(elements).forEach(([id, value]) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = formatCurrency(value);
+        }
+    });
+    
+    } catch (error) {
+        console.error("❌ ERROR en updateDashboard:", error);
+        console.error("Stack trace:", error.stack);
+        
+        // Mostrar mensaje de error en el dashboard
+        const errorElements = ['dashboard-ingreso-total', 'dashboard-aporte-neurotea', 'dashboard-saldo-caja'];
+        errorElements.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = "Error";
+                element.style.color = "red";
+            }
+        });
+    }
+}
+
+function updateTransferDetails(fecha) {
+    const container = document.getElementById('transfers-container');
+    if (!container) return;
+    
+    const daySessions = sessions[fecha] || [];
+    const dayPackages = dailyPackagePurchases[fecha] || [];
+    // IMPORTANTE: Incluir paquetes del histórico que fueron COMPRADOS ese día
+    const historyPackagesForDate = (packageHistory || []).filter(p => p.purchaseDate === fecha);
+    const allDayPackages = [...dayPackages, ...historyPackagesForDate];
+    const transfers = [];
+
+    // Procesar sesiones existentes - AGREGAR IDs únicos y nombres
+    daySessions.forEach(session => {
+        if (session.transferToNeurotea > 0) {
+            transfers.push({
+                id: `session_${session.id}_neurotea`,  // NUEVO: ID único
+                tipo: 'A NeuroTEA',
+                destinatario: 'NeuroTEA',
+                monto: session.transferToNeurotea,
+                concepto: `Pago de sesión con ${session.therapist}`,
+                patientName: session.patientName || 'Sin nombre' // NUEVO
+            });
+        }
+        if (session.transferToTherapist > 0) {
+            transfers.push({
+                id: `session_${session.id}_therapist`, // NUEVO: ID único
+                tipo: 'A Terapeuta',
+                destinatario: session.therapist,
+                monto: session.transferToTherapist,
+                concepto: `Pago de sesión con ${session.therapist}`,
+                patientName: session.patientName || 'Sin nombre' // NUEVO
+            });
+        }
+    });
+    
+    // Agregar vueltos por transferencia y transferencias de rendición
+    if (confirmaciones[fecha]) {
+        Object.entries(confirmaciones[fecha]).forEach(([therapist, conf]) => {
+            // Vueltos de terapeuta por transferencia (cuando NeuroTEA le debe y da con vuelto por transferencia)
+            if (conf.flujo && conf.flujo.vueltoTransferencia > 0) {
+                transfers.push({
+                    id: `vuelto_${therapist}_${fecha}`,
+                    tipo: 'Vuelto de Terapeuta',
+                    destinatario: 'NeuroTEA',
+                    monto: conf.flujo.vueltoTransferencia,
+                    concepto: `Vuelto de ${therapist} por pago en efectivo`,
+                    patientName: 'Vuelto por transferencia'
+                });
+            }
+            // Transferencia de terapeuta por rendición (cuando la terapeuta debe dar)
+            if (conf.type === 'LA TERAPEUTA DEBE DAR' && conf.modalidad === 'transferencia') {
+                transfers.push({
+                    id: `rendicion_transf_${therapist}_${fecha}`,
+                    tipo: 'Rendición Terapeuta',
+                    destinatario: 'NeuroTEA',
+                    monto: conf.amount,
+                    concepto: `Transferencia de ${therapist} por rendición`,
+                    patientName: `Rendición: ${therapist}`,
+                    isRendicionTransfer: true
+                });
+            }
+        });
+    }
+    
+    // Procesar paquetes (incluyendo los del histórico comprados ese día)
+    allDayPackages.forEach(pkg => {
+        if (pkg.transferToNeurotea > 0) {
+            transfers.push({
+                id: `package_${pkg.id}_neurotea`,
+                tipo: 'A NeuroTEA',
+                destinatario: 'NeuroTEA',
+                monto: pkg.transferToNeurotea,
+                concepto: `Pago de paquete con ${pkg.therapist}`,
+                patientName: pkg.patientName || 'Sin nombre'
+            });
+        }
+        if (pkg.transferToTherapist > 0) {
+            transfers.push({
+                id: `package_${pkg.id}_therapist`,
+                tipo: 'A Terapeuta',
+                destinatario: pkg.therapist,
+                monto: pkg.transferToTherapist,
+                concepto: `Pago de paquete con ${pkg.therapist}`,
+                patientName: pkg.patientName || 'Sin nombre'
+            });
+        }
+    });
+
+    // Procesar sesiones grupales - INDIVIDUALIZADO por niño para control bancario
+    const dayGroupSessions = groupSessions[fecha] || [];
+    dayGroupSessions.forEach(gs => {
+        const groupName = gs.groupName || 'Grupo';
+
+        // Iterar sobre cada niño presente que hizo transferencia
+        if (gs.attendance && gs.attendance.length > 0) {
+            gs.attendance.forEach((child, childIndex) => {
+                if (child.present && child.transferToNeurotea > 0) {
+                    transfers.push({
+                        id: `group_${gs.id}_child_${childIndex}_neurotea`,
+                        tipo: 'A NeuroTEA (Grupal)',
+                        destinatario: 'NeuroTEA',
+                        monto: child.transferToNeurotea,
+                        concepto: `Pago de sesión grupal de ${child.childName || 'Niño'} - "${groupName}"`,
+                        patientName: child.childName || `Niño ${childIndex + 1}`,
+                        isGroupSession: true
+                    });
+                }
+            });
+        }
+    });
+
+    if (transfers.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay transferencias registradas para este día</p>';
+        return;
+    }
+    
+    // Agrupar transferencias por destinatario
+    const transfersByDestination = {};
+    transfers.forEach(transfer => {
+        if (!transfersByDestination[transfer.destinatario]) {
+            transfersByDestination[transfer.destinatario] = [];
+        }
+        transfersByDestination[transfer.destinatario].push(transfer);
+    });
+    
+    // Generar HTML agrupado con NUEVAS funcionalidades
+    const destinationGroups = Object.keys(transfersByDestination).sort().map(destinatario => {
+        const destinationTransfers = transfersByDestination[destinatario];
+        const transferCount = destinationTransfers.length;
+        const totalAmount = destinationTransfers.reduce((sum, t) => sum + t.monto, 0);
+        
+        const transfersHTML = destinationTransfers.map(transfer => {
+            const isNeuroTEA = destinatario === 'NeuroTEA';
+            const isGroupSession = transfer.isGroupSession || false;
+            const borderColor = isGroupSession ? 'border-green-400' : (isNeuroTEA ? 'border-blue-300' : 'border-purple-300');
+            const badgeColor = transfer.tipo === 'A NeuroTEA (Grupal)' ? 'bg-green-100 text-green-800' :
+                              transfer.tipo === 'A NeuroTEA' ? 'bg-blue-100 text-blue-800' :
+                              transfer.tipo === 'Vuelto de Terapeuta' ? 'bg-orange-100 text-orange-800' :
+                              'bg-purple-100 text-purple-800';
+            
+            // NUEVO: Agregar botón de confirmación SOLO para NeuroTEA
+            let confirmationButton = '';
+            if (isNeuroTEA) {
+                // CORREGIDO: Acceder al campo confirmed del objeto
+                const state = transferConfirmationStates[transfer.id];
+                const isConfirmed = state ? (typeof state === 'object' ? state.confirmed : state) : false;
+                const statusClass = isConfirmed ? 'confirmed' : 'pending';
+                const statusIcon = isConfirmed ? '✓' : '❌';
+                const statusText = isConfirmed ? 'Confirmado' : 'Pendiente';
+                
+                confirmationButton = `
+                    <button class="transfer-status-btn ${statusClass}" 
+                            onclick="toggleTransferConfirmation('${transfer.id}')">
+                        <span class="status-icon">${statusIcon}</span>
+                        ${statusText}
+                    </button>
+                `;
+            }
+            
+            return `
+            <div class="p-3 border-l-4 ${borderColor} bg-gray-50 dark:bg-gray-700 ml-4 mb-2">
+                <div class="flex justify-between items-center mb-2">
+                    <h5 class="font-semibold text-gray-800 dark:text-gray-200">${transfer.concepto}</h5>
+                    ${confirmationButton}
+                    <span class="text-sm px-2 py-1 rounded-full ${badgeColor}">${transfer.tipo}</span>
+                </div>
+                <div class="patient-info mb-2">👤 ${transfer.patientName}</div>
+                <div class="text-lg font-bold text-gray-900 dark:text-gray-100">
+                    ${formatCurrency(transfer.monto)}
+                </div>
+            </div>
+            `;
+        }).join('');
+        
+        const isNeuroTEA = destinatario === 'NeuroTEA';
+        const iconClass = isNeuroTEA ? 'building-2' : 'user';
+        const colorClass = isNeuroTEA ? 'blue' : 'purple';
+        
+        return `
+            <div class="mb-4 border rounded-md bg-white dark:bg-gray-800 overflow-hidden">
+                <div class="bg-${colorClass}-50 dark:bg-${colorClass}-900 p-4 cursor-pointer hover:bg-${colorClass}-100 dark:hover:bg-${colorClass}-800 transition-colors" 
+                     onclick="toggleTransferGroup('${destinatario.replace(/'/g, "\\'")}')">
+                    <div class="flex justify-between items-center">
+                        <h4 class="font-semibold text-${colorClass}-800 dark:text-${colorClass}-200 flex items-center">
+                            <i data-lucide="${iconClass}" class="w-5 h-5 mr-2"></i>
+                            Transferencias a ${destinatario}
+                        </h4>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-sm text-${colorClass}-600 dark:text-${colorClass}-300">
+                                ${transferCount} transferencia${transferCount !== 1 ? 's' : ''} - ${formatCurrency(totalAmount)}
+                            </span>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-${colorClass}-600 dark:text-${colorClass}-300 transform transition-transform" id="chevron-transfer-${destinatario.replace(/[^a-zA-Z0-9]/g, '_')}"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="hidden p-4" id="transfers-${destinatario.replace(/[^a-zA-Z0-9]/g, '_')}">
+                    ${transfersHTML}
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    container.innerHTML = destinationGroups;
+    lucide.createIcons();
+}
+
+// Función para alternar la visibilidad de los grupos de transferencias
+function toggleTransferGroup(destinationName) {
+    const sanitizedName = destinationName.replace(/[^a-zA-Z0-9]/g, '_');
+    const transfersContainer = document.getElementById(`transfers-${sanitizedName}`);
+    const chevron = document.getElementById(`chevron-transfer-${sanitizedName}`);
+    
+    if (transfersContainer && chevron) {
+        if (transfersContainer.classList.contains('hidden')) {
+            transfersContainer.classList.remove('hidden');
+            chevron.classList.add('rotate-180');
+        } else {
+            transfersContainer.classList.add('hidden');
+            chevron.classList.remove('rotate-180');
+        }
+    }
+}
+
+function updateRendicionCuentas(fecha) {
+    const daySessions = sessions[fecha] || [];
+    const dayEgresos = egresos[fecha] || [];
+    const dayPackages = dailyPackagePurchases[fecha] || [];
+    const dayGroupSessions = groupSessions[fecha] || [];
+
+    // IMPORTANTE: Incluir paquetes del histórico que fueron COMPRADOS ese día
+    const historyPackagesForDate = (packageHistory || []).filter(p => p.purchaseDate === fecha);
+    const allDayPackages = [...dayPackages, ...historyPackagesForDate];
+
+    // Calcular totales incluyendo paquetes del histórico Y sesiones grupales
+    const sessionEfectivo = daySessions.reduce((sum, s) => sum + (s.cashToNeurotea || 0), 0);
+    const packageEfectivo = allDayPackages.reduce((sum, p) => sum + (p.cashToNeurotea || 0), 0);
+    const groupEfectivo = dayGroupSessions.reduce((sum, gs) => sum + (gs.cashToNeurotea || 0), 0);
+    const totalEfectivo = sessionEfectivo + packageEfectivo + groupEfectivo;
+
+    const sessionBanco = daySessions.reduce((sum, s) => sum + (s.transferToNeurotea || 0), 0);
+    const packageBanco = allDayPackages.reduce((sum, p) => sum + (p.transferToNeurotea || 0), 0);
+    const groupBanco = dayGroupSessions.reduce((sum, gs) => sum + (gs.transferToNeurotea || 0), 0);
+    const totalBanco = sessionBanco + packageBanco + groupBanco;
+    
+    const totalEgresos = dayEgresos.reduce((sum, e) => sum + e.monto, 0);
+    const totalGeneral = totalEfectivo + totalBanco;
+
+    // ✅ ARQUITECTURA CORREGIDA: Usar función dinámica para saldo en caja
+    // NO depende de saldosReales.efectivo (variable acumulativa problemática)
+    const saldoCaja = calcularSaldoCajaReal(fecha);
+
+    // Calcular saldo unificado de Cuenta NeuroTEA usando la función auxiliar
+    const saldoCuentaNeuroTEA = calcularSaldoCuentaNeuroTEA(fecha);
+    
+    // Actualizar elementos - USAR VALORES CALCULADOS CORRECTAMENTE
+    const elements = {
+        'rendicion-efectivo': totalEfectivo,
+        'rendicion-banco': saldoCuentaNeuroTEA,  // USAR SALDO UNIFICADO
+        'rendicion-total': totalGeneral,
+        'rendicion-saldo-caja': saldoCaja,
+        'total-egresos-display': totalEgresos
+    };
+    
+    Object.entries(elements).forEach(([id, value]) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = formatCurrency(value);
+        }
+    });
+    
+    // Actualizar tabla de rendición por terapeuta
+    updateRendicionTherapistTable(fecha);
+}
+
+function updateRendicionTherapistTable(fecha) {
+    const container = document.getElementById('rendicion-therapist-table-body');
+    if (!container) return;
+
+    const daySessions = sessions[fecha] || [];
+    const sessionTherapists = daySessions.map(s => s.therapist);
+    const dayPackages = dailyPackagePurchases[fecha] || [];
+    // IMPORTANTE: Incluir paquetes del histórico que fueron COMPRADOS ese día
+    const historyPackagesForDate = (packageHistory || []).filter(p => p.purchaseDate === fecha);
+    const allDayPackages = [...dayPackages, ...historyPackagesForDate];
+    const packageTherapists = allDayPackages.map(p => p.therapist);
+    // Incluir terapeutas de sesiones grupales
+    const dayGroupSessions = groupSessions[fecha] || [];
+    const groupTherapists = dayGroupSessions.flatMap(gs => gs.therapists || []);
+    const uniqueTherapists = [...new Set([...sessionTherapists, ...packageTherapists, ...groupTherapists])];
+
+    if (uniqueTherapists.length === 0) {
+        container.innerHTML = '<tr><td colspan="11" class="text-center py-4 text-gray-500">No hay datos para mostrar</td></tr>';
+        return;
+    }
+    
+    container.innerHTML = uniqueTherapists.map(therapist => {
+        const isConfirmed = isTherapistPaymentConfirmed(therapist, fecha);
+        let status;
+        let rowClass = '';
+        let actionButton = '';
+        
+        if (isConfirmed && confirmaciones[fecha][therapist].estadoCongelado) {
+            // Usar valores congelados si está confirmado
+            status = confirmaciones[fecha][therapist].estadoCongelado;
+            rowClass = 'bg-red-50 dark:bg-red-900/20';
+            
+            // Botón de revertir para estados confirmados
+            actionButton = `
+                <button onclick="toggleTherapistPayment('${therapist}', '${fecha}')" class="btn-confirmar">
+                    Revertir
+                </button>
+            `;
+        } else {
+            // Usar cálculos en vivo si no está confirmado
+            status = calculateTherapistStatus(therapist, fecha);
+            
+            // NUEVA LÓGICA: Modalidades para "LA TERAPEUTA DEBE DAR"
+            if (status.estado === 'LA TERAPEUTA DEBE DAR') {
+                actionButton = `
+                    <select onchange="handleTherapistDebtPayment('${therapist}', '${fecha}', this.value)" 
+                            class="debt-payment-select">
+                        <option value="">¿Cómo entrega?</option>
+                        <option value="efectivo">Entrega efectivo</option>
+                        <option value="transferencia">Transfiere a cuenta</option>
+                    </select>
+                `;
+            } else if (status.estado === 'DAR EFECTIVO') {
+                // MODIFICACIÓN PARA VUELTOS: Agregar 4ta opción
+                actionButton = `
+                    <select onchange="handlePaymentOption('${therapist}', '${fecha}', this.value)" class="btn-confirmar">
+                        <option value="">Seleccionar...</option>
+                        <option value="exacto">Dar exacto (${formatCurrency(status.neuroteaLeDebe)})</option>
+                        <option value="vuelto">Dar con vuelto (por transferencia)...</option>
+                        <option value="vuelto-efectivo">Dar con vuelto en efectivo...</option>
+                        <option value="transferir">Solo transferir</option>
+                    </select>
+                `;
+            } else {
+                // Botón normal para otros estados
+                actionButton = `
+                    <button onclick="toggleTherapistPayment('${therapist}', '${fecha}')" class="btn-confirmar">
+                        Confirmar
+                    </button>
+                `;
+            }
+        }
+        
+        return `
+            <tr class="${rowClass}">
+                <td class="px-4 py-2 border font-medium">${therapist}</td>
+                <td class="px-4 py-2 border text-right">${formatCurrency(status.ingresoTotal)}</td>
+                <td class="px-4 py-2 border text-right">${formatCurrency(status.aporteNeurotea)}</td>
+                <td class="px-4 py-2 border text-right">${formatCurrency(status.honorarios)}</td>
+                <td class="px-4 py-2 border text-right">${formatCurrency(status.transferenciaATerapeuta)}</td>
+                <td class="px-4 py-2 border text-right">${formatCurrency(status.adelantosRecibidos)}</td>
+                <td class="px-4 py-2 border text-right">
+                    ${status.neuroteaLeDebe > 0 ? formatCurrency(status.neuroteaLeDebe) : formatCurrency(0)}
+                </td>
+                <td class="px-4 py-2 border text-right">
+                    ${status.terapeutaDebe > 0 ? formatCurrency(status.terapeutaDebe) : formatCurrency(0)}
+                </td>
+                <td class="px-4 py-2 border text-center">
+                    <span class="badge ${status.colorClass}">${status.estado}</span>
+                </td>
+                <td class="px-4 py-2 border text-center">
+                    ${actionButton}
+                </td>
+                <td class="px-4 py-2 border text-center">
+                    <button onclick="generateTherapistReceipt('${therapist}', '${fecha}')" 
+                            class="btn-pdf-icon"
+                            title="Generar comprobante individual">
+                        <svg width="20" height="24" viewBox="0 0 20 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <!-- Documento base -->
+                            <path d="M2 2C2 0.895431 2.89543 0 4 0H13L18 5V22C18 23.1046 17.1046 24 16 24H4C2.89543 24 2 23.1046 2 22V2Z" fill="#E5E7EB"/>
+                            <!-- Esquina doblada -->
+                            <path d="M13 0V4C13 4.55228 13.4477 5 14 5H18L13 0Z" fill="#D1D5DB"/>
+                            <!-- Líneas del documento -->
+                            <rect x="5" y="8" width="8" height="1" rx="0.5" fill="#9CA3AF"/>
+                            <rect x="5" y="11" width="10" height="1" rx="0.5" fill="#9CA3AF"/>
+                            <!-- Banda roja PDF -->
+                            <rect x="1" y="14" width="18" height="6" rx="1" fill="#DC2626"/>
+                            <!-- Texto PDF -->
+                            <text x="10" y="18.5" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="6" font-weight="bold">PDF</text>
+                        </svg>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function updateEgresosList(fecha) {
+    const container = document.getElementById('egresos-list-container');
+    if (!container) return;
+    
+    const dayEgresos = egresos[fecha] || [];
+    
+    if (dayEgresos.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay egresos registrados para este día</p>';
+        return;
+    }
+    
+    container.innerHTML = dayEgresos.map(egreso => `
+        <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
+            <div>
+                <div class="font-medium">${egreso.concepto}</div>
+                <div class="text-sm text-gray-500">
+                    ${egreso.tipo === 'adelanto' ? `Adelanto a ${egreso.therapist}` : 'Gasto de NeuroTEA'} - ${formatCurrency(egreso.monto)}
+                </div>
+            </div>
+            <button onclick="deleteEgreso('${fecha}', ${egreso.id})" class="text-red-500 hover:text-red-700 p-1">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+        </div>
+    `).join('');
+    
+    lucide.createIcons();
+}
+
+// ===========================
+// FUNCIONES AUXILIARES
+// ===========================
+
+async function deleteSession(fecha, sessionId) {
+    if (!confirm('¿Está seguro de eliminar esta sesión?')) return;
+
+    const sessionIndex = sessions[fecha].findIndex(s => s.id === sessionId);
+    if (sessionIndex !== -1) {
+        const session = sessions[fecha][sessionIndex];
+
+        console.log(`🗑️ Eliminando sesión: ${session.therapist} - ${session.patientName}`);
+
+        // ✅ ARQUITECTURA CORREGIDA: Limpiar confirmaciones relacionadas
+        cleanupSessionConfirmations(fecha, session);
+
+        // ✅ Revertir créditos usados si aplica
+        revertSessionCredits(session);
+
+        // ✅ ARQUITECTURA CORREGIDA: NO modificar saldosReales
+        // El saldo se recalculará DINÁMICAMENTE con calcularSaldoCajaReal()
+
+        sessions[fecha].splice(sessionIndex, 1);
+
+        if (sessions[fecha].length === 0) {
+            delete sessions[fecha];
+        }
+
+        // ✅ COHERENCIA SISTÉMICA: saveToStorageAsync usa clearAndSaveToIndexedDB
+        // que sincroniza automáticamente las eliminaciones
+        await saveToStorageAsync();
+        updateAllViews(fecha);
+
+        console.log(`✅ Sesión eliminada. Saldo recalculado dinámicamente.`);
+    }
+}
+
+async function clearDayRecords() {
+    if (!confirm('¿Está seguro de limpiar todos los registros del día? Esto revertirá todos los cálculos y rendiciones.')) return;
+
+    const fecha = fechaActual;
+
+    console.log(`🗑️ Limpiando todos los registros del día: ${fecha}`);
+
+    // ✅ ARQUITECTURA CORREGIDA: NO modificar saldosReales
+    // El saldo se recalculará DINÁMICAMENTE con calcularSaldoCajaReal()
+
+    // Eliminar sesiones individuales
+    if (sessions[fecha]) {
+        delete sessions[fecha];
+    }
+
+    // Eliminar egresos
+    if (egresos[fecha]) {
+        delete egresos[fecha];
+    }
+
+    // Limpiar confirmaciones (esto revierte las rendiciones)
+    if (confirmaciones[fecha]) {
+        delete confirmaciones[fecha];
+    }
+
+    // Eliminar sesiones grupales
+    if (groupSessions[fecha]) {
+        delete groupSessions[fecha];
+    }
+
+    // Eliminar paquetes comprados del día
+    if (dailyPackagePurchases[fecha]) {
+        // También limpiar los créditos asociados a esos paquetes
+        const packagesToDelete = dailyPackagePurchases[fecha] || [];
+        packagesToDelete.forEach(pkg => {
+            // Limpiar créditos de patientCredits asociados a este paquete
+            if (pkg.patientName && pkg.therapist && patientCredits[pkg.patientName]) {
+                const therapistCredits = patientCredits[pkg.patientName][pkg.therapist];
+                if (therapistCredits) {
+                    if (Array.isArray(therapistCredits)) {
+                        // Filtrar paquetes que no sean el que se está eliminando
+                        patientCredits[pkg.patientName][pkg.therapist] = therapistCredits.filter(c => c.packageId !== pkg.id);
+                        if (patientCredits[pkg.patientName][pkg.therapist].length === 0) {
+                            delete patientCredits[pkg.patientName][pkg.therapist];
+                        }
+                    } else if (therapistCredits.packageId === pkg.id) {
+                        delete patientCredits[pkg.patientName][pkg.therapist];
+                    }
+                }
+                // Limpiar objeto de paciente si quedó vacío
+                if (Object.keys(patientCredits[pkg.patientName] || {}).length === 0) {
+                    delete patientCredits[pkg.patientName];
+                }
+            }
+        });
+        delete dailyPackagePurchases[fecha];
+    }
+
+    // Limpiar estados de confirmación de transferencias del día
+    // CORREGIDO: Iterar sobre las claves y filtrar por timestamp
+    Object.keys(transferConfirmationStates).forEach(key => {
+        const state = transferConfirmationStates[key];
+        // Extraer fecha del timestamp (puede ser objeto o boolean para compatibilidad)
+        let stateDate = null;
+        if (typeof state === 'object' && state.timestamp) {
+            stateDate = state.timestamp.split('T')[0];
+        }
+        if (stateDate === fecha) {
+            delete transferConfirmationStates[key];
+        }
+    });
+
+    // ✅ NUEVO: Eliminar paquetes del histórico que fueron COMPRADOS ese día
+    // Esto asegura coherencia cuando se limpia un día donde se compraron paquetes
+    // que luego se usaron completamente (y por ende están en packageHistory)
+    if (packageHistory && packageHistory.length > 0) {
+        const packagesToRemoveFromHistory = packageHistory.filter(p => p.purchaseDate === fecha);
+        if (packagesToRemoveFromHistory.length > 0) {
+            packagesToRemoveFromHistory.forEach(pkg => {
+                const index = packageHistory.findIndex(p => p.id === pkg.id);
+                if (index !== -1) {
+                    packageHistory.splice(index, 1);
+                    console.log(`🗑️ Paquete eliminado del histórico (comprado el ${fecha}): ${pkg.id}`);
+                }
+            });
+        }
+    }
+
+    // ✅ COHERENCIA SISTÉMICA: saveToStorageAsync usa clearAndSaveToIndexedDB
+    // que sincroniza automáticamente TODAS las eliminaciones
+    await saveToStorageAsync();
+    updateAllViews(fecha);
+
+    console.log(`✅ Registros del día eliminados. Todos los cálculos y rendiciones han sido revertidos.`);
+    alert('Todos los registros del día han sido eliminados y los cálculos revertidos.');
+}
+
+// Función para migrar paquetes antiguos
+function migrateLegacyPackages() {
+    let migrated = false;
+    
+    Object.keys(dailyPackagePurchases).forEach(fecha => {
+        dailyPackagePurchases[fecha].forEach(pkg => {
+            if (!pkg.neuroteaContribution) {
+                pkg.neuroteaContribution = pkg.sessionValue * 0.30;
+                pkg.therapistFee = pkg.sessionValue * 0.80;
+                pkg.contributionType = '20';
+                migrated = true;
+            }
+        });
+    });
+    
+    if (migrated) {
+        console.log('✅ Paquetes antiguos migrados correctamente');
+        saveToStorage();
+    }
+}
+
+// Función para validar integridad de datos de paquetes existentes
+function validateAllPackagesIntegrity() {
+    let corrected = false;
+
+    Object.keys(dailyPackagePurchases).forEach(fecha => {
+        const packages = dailyPackagePurchases[fecha];
+        if (!packages || !Array.isArray(packages)) return;
+
+        packages.forEach(pkg => {
+            if (!pkg) return;
+            // Validar que neuroteaContribution no exceda sessionValue
+            if (pkg.neuroteaContribution > pkg.sessionValue) {
+                pkg.neuroteaContribution = pkg.sessionValue * 0.30;
+                pkg.therapistFee = pkg.sessionValue * 0.80;
+                corrected = true;
+                console.warn(`⚠️ Corregido aporte excesivo en paquete ${pkg.id}`);
+            }
+            
+            // Validar que therapistFee sea consistente
+            const expectedFee = pkg.sessionValue - pkg.neuroteaContribution;
+            if (Math.abs(pkg.therapistFee - expectedFee) > 1) {
+                pkg.therapistFee = expectedFee;
+                corrected = true;
+                console.warn(`⚠️ Corregido honorario inconsistente en paquete ${pkg.id}`);
+            }
+            
+            // Validar que contributionType exista
+            if (!pkg.contributionType) {
+                pkg.contributionType = '20';
+                corrected = true;
+            }
+        });
+    });
+    
+    if (corrected) {
+        console.log('✅ Datos de paquetes validados y corregidos');
+        saveToStorage();
+    }
+}
+
+// Función para validar que los 5 momentos funcionen correctamente
+function validateUserExperience() {
+    console.log('🎯 VALIDANDO EXPERIENCIA DE USUARIO - 5 MOMENTOS');
+    
+    try {
+        // MOMENTO 1: Verificar saldo inicial
+        const saldoInicial = getInitialBalance(fechaActual);
+        console.log(`✅ MOMENTO 1: Saldo inicial configurado: ${formatCurrency(saldoInicial)}`);
+        
+        // MOMENTO 2-3: Verificar que paquetes se integren en dashboard
+        const dayPackages = dailyPackagePurchases[fechaActual] || [];
+        if (dayPackages.length > 0) {
+            console.log(`✅ MOMENTO 2-3: ${dayPackages.length} paquetes encontrados`);
+            
+            // Verificar cálculos de aportes específicos
+            dayPackages.forEach(pkg => {
+                const expectedAporte = pkg.neuroteaContribution || (pkg.sessionValue * 0.30);
+                console.log(`  - ${pkg.patientName}: Aporte ${formatCurrency(expectedAporte)} (${pkg.contributionType || '20%'})`);
+            });
+        }
+        
+        // MOMENTO 4: Verificar que sesiones con crédito no afecten dashboard
+        const daySessions = sessions[fechaActual] || [];
+        const creditSessions = daySessions.filter(s => s.creditUsed);
+        const normalSessions = daySessions.filter(s => !s.creditUsed);
+        
+        console.log(`✅ MOMENTO 4: ${creditSessions.length} sesiones con crédito, ${normalSessions.length} sesiones normales`);
+        
+        // MOMENTO 5: Verificar integración completa
+        const uniqueTherapists = [...new Set([
+            ...daySessions.map(s => s.therapist),
+            ...dayPackages.map(p => p.therapist)
+        ])];
+        
+        console.log(`✅ MOMENTO 5: ${uniqueTherapists.length} terapeutas en total integradas`);
+        
+        console.log('🎯 VALIDACIÓN COMPLETADA - EXPERIENCIA DE USUARIO OK');
+        
+    } catch (error) {
+        console.error('❌ ERROR EN VALIDACIÓN DE EXPERIENCIA:', error);
+    }
+}
+
+// ===========================
+// INICIALIZACIÓN
+// ===========================
+
+document.addEventListener('DOMContentLoaded', async function() {
+    try {
+        // Inicializar IndexedDB
+        await initIndexedDB();
+        console.log('IndexedDB initialized successfully');
+        
+        // Cargar datos
+        await loadFromStorage();
+    } catch (error) {
+        console.error('Error initializing IndexedDB:', error);
+        // Fallback a localStorage
+        loadFromStorage();
+    }
+    
+    // Configurar fecha actual
+    const dateInput = document.getElementById('session-date');
+    if (dateInput) {
+        dateInput.value = fechaActual;
+        dateInput.addEventListener('change', function() {
+            fechaActual = this.value;
+            updateAllViews(fechaActual);
+        });
+    }
+    
+    // Event listeners para cálculos automáticos
+    const paymentFields = ['cash-to-neurotea', 'transfer-to-therapist', 'transfer-to-neurotea', 'fixed-amount-input'];
+    paymentFields.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.addEventListener('input', calculateSessionValues);
+        }
+    });
+    
+    // Event listeners para radio buttons de aporte
+    const contributionRadios = document.querySelectorAll('input[name="neurotea-contribution"]');
+    contributionRadios.forEach(radio => {
+        radio.addEventListener('change', function() {
+            toggleFixedAmount();
+            calculateSessionValues();
+        });
+    });
+    
+    // Event listener para selector de terapeuta
+    const therapistSelect = document.getElementById('therapist-select');
+    if (therapistSelect) {
+        therapistSelect.addEventListener('change', validateRegisterButton);
+    }
+    
+    // Event listeners para modo crédito
+    const creditMode = document.getElementById('modo-usar-credito');
+    if (creditMode) {
+        creditMode.addEventListener('change', validateRegisterButton);
+    }
+    
+    const creditPatientSelect = document.getElementById('paciente-credito-select');
+    if (creditPatientSelect) {
+        creditPatientSelect.addEventListener('change', validateRegisterButton);
+    }
+
+    // Event listener para modo sesión grupal
+    const groupSessionMode = document.getElementById('modo-sesion-grupal');
+    if (groupSessionMode) {
+        groupSessionMode.addEventListener('change', function() {
+            if (this.checked) {
+                openGroupSessionModal();
+                // Volver a modo pago del día después de abrir el modal
+                const modoPagoDia = document.getElementById('modo-pago-dia');
+                if (modoPagoDia) modoPagoDia.checked = true;
+            }
+        });
+    }
+
+    // Event listener para botón de registro
+    const registerBtn = document.getElementById('register-btn');
+    if (registerBtn) {
+        registerBtn.addEventListener('click', registerSession);
+    }
+    
+    // Event listener para agregar terapeuta
+    const addTherapistBtn = document.getElementById('add-therapist-btn');
+    if (addTherapistBtn) {
+        addTherapistBtn.addEventListener('click', addTherapist);
+    }
+    
+    // Event listener para input de nueva terapeuta (Enter)
+    const newTherapistInput = document.getElementById('new-therapist-name');
+    if (newTherapistInput) {
+        newTherapistInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                addTherapist();
+            }
+        });
+    }
+    
+    // Event listener para tipo de egreso
+    const egresoType = document.getElementById('egreso-type');
+    if (egresoType) {
+        egresoType.addEventListener('change', toggleTherapistSelect);
+    }
+    
+    // Event listener para agregar egreso
+    const addEgresoBtn = document.getElementById('add-egreso-btn');
+    if (addEgresoBtn) {
+        addEgresoBtn.addEventListener('click', addEgreso);
+    }
+    
+    // Event listener para limpiar registros del día
+    const clearRecordsBtn = document.getElementById('new-day-btn');
+    if (clearRecordsBtn) {
+        clearRecordsBtn.addEventListener('click', async () => {
+            await clearDayRecords();
+        });
+    }
+    
+    // Event listener para limpiar egresos del día
+    const clearEgresosBtn = document.getElementById('clear-egresos-btn');
+    if (clearEgresosBtn) {
+        clearEgresosBtn.addEventListener('click', async () => {
+            await clearAllEgresos();
+        });
+    }
+    
+    // Event listeners para el modal de saldo inicial
+    const saldoModal = document.getElementById('saldo-modal');
+    if (saldoModal) {
+        saldoModal.addEventListener('click', function(e) {
+            if (e.target === saldoModal) {
+                closeSaldoModal();
+            }
+        });
+    }
+    
+    // Event listener para tecla Escape (cerrar modal)
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            const modal = document.getElementById('saldo-modal');
+            if (modal && !modal.classList.contains('hidden')) {
+                closeSaldoModal();
+            }
+        }
+    });
+    
+    // Event listener para Enter en el input del saldo
+    const saldoInput = document.getElementById('nuevo-saldo-input');
+    if (saldoInput) {
+        saldoInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                saveSaldoInicial();
+            }
+        });
+    }
+    
+    // ===========================
+    // EVENT LISTENERS PARA PESTAÑA DE PAQUETES
+    // ===========================
+    
+    // Event listeners para cálculos automáticos en formulario de paquetes
+    const packagePaymentFields = ['package-cash', 'package-transfer-therapist', 'package-transfer-neurotea', 'package-sessions', 'package-fixed-amount-input'];
+    packagePaymentFields.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.addEventListener('input', updatePackageTotals);
+        }
+    });
+    
+    // Event listener para cambios en nombre del paciente y terapeuta
+    const packagePatientName = document.getElementById('package-patient-name');
+    if (packagePatientName) {
+        packagePatientName.addEventListener('input', updatePackageTotals);
+    }
+    
+    const packageTherapistSelect = document.getElementById('package-therapist');
+    if (packageTherapistSelect) {
+        packageTherapistSelect.addEventListener('change', updatePackageTotals);
+    }
+    
+    // Event listener para envío del formulario de paquetes
+    const packageForm = document.getElementById('package-form');
+    if (packageForm) {
+        packageForm.addEventListener('submit', handlePackageFormSubmit);
+    }
+    
+    // Event listeners para radio buttons de aporte en paquetes
+    const packageContributionRadios = document.querySelectorAll('input[name="package-neurotea-contribution"]');
+    packageContributionRadios.forEach(radio => {
+        radio.addEventListener('change', function() {
+            try {
+                const fixedInput = document.getElementById('package-fixed-amount-input');
+                if (fixedInput) {
+                    const isFixed = this.value === 'fixed';
+                    fixedInput.disabled = !isFixed;
+                    
+                    if (!isFixed) {
+                        fixedInput.value = '';
+                    } else {
+                        // Enfocar el input cuando se selecciona monto fijo
+                        setTimeout(() => fixedInput.focus(), 100);
+                    }
+                }
+                updatePackageTotals();
+            } catch (error) {
+                console.error('Error en event listener de radio buttons:', error);
+            }
+        });
+    });
+    
+    // Event listener específico para input de monto fijo
+    const fixedAmountInput = document.getElementById('package-fixed-amount-input');
+    if (fixedAmountInput) {
+        fixedAmountInput.addEventListener('input', function() {
+            try {
+                // Validar que no sea negativo
+                if (this.value < 0) {
+                    this.value = 0;
+                }
+                updatePackageTotals();
+            } catch (error) {
+                console.error('Error en input de monto fijo:', error);
+            }
+        });
+        
+        fixedAmountInput.addEventListener('blur', function() {
+            try {
+                // Validar al perder el foco
+                const total = parseFloat(document.getElementById('package-cash').value || 0) +
+                             parseFloat(document.getElementById('package-transfer-therapist').value || 0) +
+                             parseFloat(document.getElementById('package-transfer-neurotea').value || 0);
+                
+                if (parseFloat(this.value) > total && total > 0) {
+                    alert('El monto fijo no puede ser mayor al total del paquete');
+                    this.focus();
+                }
+            } catch (error) {
+                console.error('Error en validación de monto fijo:', error);
+            }
+        });
+    }
+
+    // ============================
+    // EVENT LISTENERS PARA FASE 3 - FORMULARIO DE USO DE PAQUETES
+    // ===========================
+    
+    // Event listeners para modo de registro
+    const modeRadios = document.querySelectorAll('input[name="modo-registro"]');
+    modeRadios.forEach(radio => {
+        radio.addEventListener('change', togglePaymentMode);
+    });
+    
+    // Event listener para terapeuta (actualizar pacientes con créditos)
+    const therapistSelectForCredits = document.getElementById('therapist-select');
+    if (therapistSelectForCredits) {
+        // Agregar listener adicional para actualizar pacientes con créditos
+        therapistSelectForCredits.addEventListener('change', function() {
+            updateAvailablePatients();
+            validateRegisterButton();
+        });
+    }
+    
+    // Event listener para checkbox de créditos adicionales (MINI CARRITO)
+    const additionalCheckbox = document.getElementById('crear-creditos-adicionales');
+    if (additionalCheckbox) {
+        additionalCheckbox.addEventListener('change', function() {
+            // Solo ejecutar la función del mini carrito
+            toggleSesionesFuturasContainer();
+        });
+    }
+    
+    // Event listener para selección de paciente con crédito
+    const patientCreditSelect = document.getElementById('paciente-credito-select');
+    if (patientCreditSelect) {
+        patientCreditSelect.addEventListener('change', function() {
+            // MEJORA: Auto-completar el campo de nombre manual
+            const selectedPatient = this.value;
+            const patientNameField = document.getElementById('patient-name');
+            
+            if (selectedPatient && patientNameField) {
+                patientNameField.value = selectedPatient;
+            }
+            
+            updateCreditInfo();
+            validateRegisterButton();
+        });
+    }
+    
+    // ===========================
+    // EVENT LISTENERS PARA MINI CARRITO DE SESIONES FUTURAS
+    // ===========================
+    
+    // Event listener para botón de agregar sesión futura
+    const agregarBtn = document.getElementById('agregar-sesion-futura-btn');
+    if (agregarBtn) {
+        agregarBtn.addEventListener('click', agregarSesionFutura);
+    }
+    
+    // Event listener para Enter en cantidad
+    const cantidadInput = document.getElementById('cantidad-futura-input');
+    if (cantidadInput) {
+        cantidadInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                agregarSesionFutura();
+            }
+        });
+    }
+    
+    // Event listener para cambio de terapeuta principal (actualizar lista de futuras)
+    const therapistSelectMain = document.getElementById('therapist-select');
+    if (therapistSelectMain) {
+        therapistSelectMain.addEventListener('change', function() {
+            if (document.getElementById('crear-creditos-adicionales').checked) {
+                inicializarTerapeutasFuturas();
+            }
+        });
+    }
+    
+    // Event listeners para campos de pago de sesión actual (actualizar gran total)
+    ['cash-to-neurotea', 'transfer-to-therapist', 'transfer-to-neurotea'].forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.addEventListener('input', calcularGranTotal);
+        }
+    });
+    
+    // Inicializar estado
+    toggleFixedAmount();
+    calculateSessionValues();
+    updateAllViews(fechaActual);
+    
+    // ⭐ AGREGAR: Validar experiencia de usuario después de la inicialización
+    setTimeout(() => {
+        validateUserExperience();
+    }, 1000);
+    
+    // Inicializar iconos de Lucide
+    lucide.createIcons();
+});
+
+
+// ===========================
+// FUNCIONES DE GENERACIÓN DE PDF - VERSIÓN CORREGIDA FINAL
+// ===========================
+
+// ===========================
+// CONSTANTES CSS EXACTAS DEL HTML DE REFERENCIA
+// ===========================
+const CSS_MEASUREMENTS = {
+    header: {
+        height: 60,                    // CSS: height del encabezado azul
+        padding: { left: 30, right: 30 }  // CSS: padding: 0 30px
+    },
+    content: {
+        padding: { top: 20, left: 30, right: 30 }, // CSS: padding: 20px 30px
+        sectionSpacing: 20             // CSS: margin-bottom: 20px
+    },
+    fonts: {
+        body: 11,          // CSS: font-size: 11px
+        avanza: 18,        // CSS: font-size: 18px  
+        neurotea: 32,      // CSS: font-size: 32px
+        comprobante: 36,   // CSS: font-size: 36px
+        calcTitle: 12,     // CSS: font-size: 12px
+        obsText: 10        // CSS: font-size: 10px
+    },
+    borders: {
+        table: 2,          // CSS: border: 2px solid #000
+        totals: 2,         // CSS: border: 2px solid #000  
+        calculation: 1,    // CSS: border: 1px solid #000
+        observations: 1    // CSS: border: 1px solid #000
+    },
+    spacing: {
+        infoBottom: 10,    // CSS: padding-bottom: 10px
+        tableMargin: 20,   // CSS: margin-bottom: 20px
+        totalsMargin: 20,  // CSS: margin-bottom: 20px
+        calcMargin: 20,    // CSS: margin-bottom: 20px
+        obsMargin: 40,     // CSS: margin-bottom: 40px
+        signatureTop: 50   // CSS: margin-top: 50px
+    }
+};
+
+function generateRendicionHTML() {
+    // Fecha actual para el reporte
+    const fecha = document.getElementById('session-date').value || fechaActual;
+
+    // Corregir problema de fecha UTC - descomponer y crear en hora local
+    const [year, month, day] = fecha.split('-').map(Number);
+    const fechaLocal = new Date(year, month - 1, day);
+
+    const fechaFormateada = fechaLocal.toLocaleDateString('es-PY', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+
+    // Capitalizar primera letra
+    const fechaCapitalizada = fechaFormateada.charAt(0).toUpperCase() + fechaFormateada.slice(1);
+
+    // CALCULAR DATOS DIRECTAMENTE DESDE LAS VARIABLES GLOBALES
+    const daySessions = sessions[fecha] || [];
+    const dayEgresos = egresos[fecha] || [];
+    const dayPackages = dailyPackagePurchases[fecha] || [];
+    const dayGroupSessions = groupSessions[fecha] || [];
+
+    // IMPORTANTE: Incluir paquetes del histórico que fueron COMPRADOS ese día
+    const historyPackagesForDate = (packageHistory || []).filter(p => p.purchaseDate === fecha);
+    const allDayPackages = [...dayPackages, ...historyPackagesForDate];
+
+    // Calcular totales usando la misma lógica que updateRendicionCuentas
+    let totalGeneral = 0;
+    let totalEfectivo = 0;
+    let totalTransfNeurotea = 0;
+
+    // Sesiones individuales
+    daySessions.forEach(session => {
+        totalGeneral += session.sessionValue;
+        totalEfectivo += session.cashToNeurotea;
+        totalTransfNeurotea += session.transferToNeurotea;
+    });
+
+    // Paquetes comprados (incluyendo los del histórico comprados ese día)
+    allDayPackages.forEach(pkg => {
+        totalGeneral += pkg.sessionValue || 0;
+        totalEfectivo += pkg.cashToNeurotea || 0;
+        totalTransfNeurotea += pkg.transferToNeurotea || 0;
+    });
+
+    // Sesiones grupales
+    dayGroupSessions.forEach(gs => {
+        totalGeneral += gs.totalValue || 0;
+        totalEfectivo += gs.cashToNeurotea || 0;
+        totalTransfNeurotea += gs.transferToNeurotea || 0;
+    });
+
+    // Calcular total de egresos
+    let totalEgresos = 0;
+    dayEgresos.forEach(egreso => {
+        totalEgresos += egreso.monto;
+    });
+
+    // Usar función dinámica para saldo en caja
+    const saldoCaja = calcularSaldoCajaReal(fecha);
+
+    // Cuenta NeuroTEA
+    const cuentaNeuroTEA = calcularSaldoCuentaNeuroTEA(fecha);
+
+    // Calcular Ingreso Total del Día
+    let ingresoTotalDia = totalGeneral;
+
+    // Calcular Ingreso Total Efectivo
+    let ingresoTotalEfectivo = totalEfectivo;
+
+    // Calcular Aporte Total a NeuroTEA
+    // IMPORTANTE: Usar allDayPackages para incluir paquetes del histórico comprados este día
+    let aporteTotalNeuroTEA = 0;
+    daySessions.forEach(session => {
+        aporteTotalNeuroTEA += session.neuroteaContribution;
+    });
+    allDayPackages.forEach(pkg => {
+        aporteTotalNeuroTEA += pkg.neuroteaContribution || 0;
+    });
+    dayGroupSessions.forEach(gs => {
+        aporteTotalNeuroTEA += gs.neuroteaContribution || 0;
+    });
+
+    // Obtener terapeutas únicos
+    // IMPORTANTE: Usar allDayPackages para incluir terapeutas de paquetes del histórico
+    const therapistsFromSessions = daySessions.map(s => s.therapist);
+    const therapistsFromPackages = allDayPackages.map(p => p.therapist);
+    const therapistsFromGroupSessions = dayGroupSessions.flatMap(gs => gs.therapists || []);
+    const uniqueTherapists = [...new Set([...therapistsFromSessions, ...therapistsFromPackages, ...therapistsFromGroupSessions])];
+
+    // Función auxiliar para determinar clase de estado
+    function getStatusBadgeClass(estado, isConfirmed) {
+        if (isConfirmed) return 'confirmado';
+        if (estado === 'SALDADO') return 'equilibrado';
+        if (estado === 'LA TERAPEUTA DEBE DAR') return 'debe-dar';
+        if (estado === 'DAR EFECTIVO' || estado === 'DAR Y TRANSFERIR' || estado === 'TRANSFERIR') return 'debe-recibir';
+        return 'equilibrado';
+    }
+
+    // Generar filas de terapeutas
+    // OPTIMIZACIÓN: Pre-calcular datos comunes una sola vez para evitar recálculos redundantes
+    const precalculatedData = {
+        daySessions,
+        dayEgresos,
+        allDayPackages,
+        dayGroupSessions,
+        saldoCaja,          // Ya calculado arriba
+        cuentaNeuroTEA,     // Ya calculado arriba
+        confirmaciones: confirmaciones[fecha] || {}
+    };
+
+    let therapistRowsHTML = '';
+    if (uniqueTherapists.length > 0) {
+        uniqueTherapists.forEach(therapist => {
+            const status = calculateTherapistStatusOptimized(therapist, fecha, precalculatedData);
+            const isConfirmed = precalculatedData.confirmaciones[therapist] ? true : false;
+
+            let displayStatus = status;
+            if (isConfirmed && confirmaciones[fecha] && confirmaciones[fecha][therapist] && confirmaciones[fecha][therapist].estadoCongelado) {
+                displayStatus = confirmaciones[fecha][therapist].estadoCongelado;
+            }
+
+            const badgeClass = getStatusBadgeClass(displayStatus.estado, isConfirmed);
+            const estadoTexto = displayStatus.estado + (isConfirmed ? ' ✓' : '');
+
+            therapistRowsHTML += `
+                <tr>
+                    <td class="therapist-name">${therapist}</td>
+                    <td class="right amount">${formatCurrency(displayStatus.ingresoTotal)}</td>
+                    <td class="right amount">${formatCurrency(displayStatus.aporteNeurotea)}</td>
+                    <td class="right amount">${formatCurrency(displayStatus.honorarios)}</td>
+                    <td class="right amount">${formatCurrency(displayStatus.transferenciaATerapeuta)}</td>
+                    <td class="right amount">${formatCurrency(displayStatus.adelantosRecibidos)}</td>
+                    <td class="right amount${displayStatus.neuroteaLeDebe > 0 ? ' positive' : ''}">${formatCurrency(displayStatus.neuroteaLeDebe > 0 ? displayStatus.neuroteaLeDebe : 0)}</td>
+                    <td class="right amount${displayStatus.terapeutaDebe > 0 ? ' negative' : ''}">${formatCurrency(displayStatus.terapeutaDebe > 0 ? displayStatus.terapeutaDebe : 0)}</td>
+                    <td class="center">
+                        <span class="status-badge ${badgeClass}"><span class="status-dot"></span>${estadoTexto}</span>
+                    </td>
+                </tr>`;
+        });
+    } else {
+        therapistRowsHTML = `<tr><td colspan="9" class="empty-state">No hay terapeutas registradas para este día</td></tr>`;
+    }
+
+    // Generar filas de egresos
+    let egresosRowsHTML = '';
+    if (dayEgresos.length > 0) {
+        dayEgresos.forEach(egreso => {
+            const tipoTexto = egreso.tipo === 'adelanto' ? `Adelanto a ${egreso.therapist}` : 'Gasto de NeuroTEA';
+            egresosRowsHTML += `
+                <tr>
+                    <td>${egreso.concepto}</td>
+                    <td>${tipoTexto}</td>
+                    <td class="right amount">${formatCurrency(egreso.monto)}</td>
+                </tr>`;
+        });
+    } else {
+        egresosRowsHTML = `<tr><td colspan="3" class="empty-state">No hay egresos registrados para este día</td></tr>`;
+    }
+
+    // Recopilar transferencias
+    const transfers = [];
+
+    // Transferencias de sesiones individuales
+    daySessions.forEach(session => {
+        if (session.transferToNeurotea > 0) {
+            transfers.push({
+                destinatario: 'NeuroTEA',
+                monto: session.transferToNeurotea,
+                concepto: `Pago de sesión con ${session.therapist}`
+            });
+        }
+    });
+
+    // Transferencias de sesiones grupales - INDIVIDUALIZADO por niño
+    dayGroupSessions.forEach(gs => {
+        const groupName = gs.groupName || 'Grupo';
+        if (gs.attendance && gs.attendance.length > 0) {
+            gs.attendance.forEach(child => {
+                if (child.present && child.transferToNeurotea > 0) {
+                    transfers.push({
+                        destinatario: 'NeuroTEA',
+                        monto: child.transferToNeurotea,
+                        concepto: `Pago de sesión grupal de ${child.childName || 'Niño'} - "${groupName}"`
+                    });
+                }
+            });
+        }
+    });
+
+    // Transferencias de paquetes
+    allDayPackages.forEach(pkg => {
+        if (pkg.transferToNeurotea > 0) {
+            transfers.push({
+                destinatario: 'NeuroTEA',
+                monto: pkg.transferToNeurotea,
+                concepto: `Pago de paquete con ${pkg.therapist}`
+            });
+        }
+    });
+
+    // Vueltos de terapeutas y transferencias de rendición
+    if (confirmaciones[fecha]) {
+        Object.entries(confirmaciones[fecha]).forEach(([therapist, conf]) => {
+            if (conf.flujo && conf.flujo.vueltoTransferencia > 0) {
+                transfers.push({
+                    destinatario: 'NeuroTEA',
+                    monto: conf.flujo.vueltoTransferencia,
+                    concepto: `Vuelto de ${therapist} por pago en efectivo`
+                });
+            }
+            if (conf.type === 'LA TERAPEUTA DEBE DAR' && conf.modalidad === 'transferencia') {
+                transfers.push({
+                    destinatario: 'NeuroTEA',
+                    monto: conf.amount,
+                    concepto: `Transferencia de ${therapist} por rendición`
+                });
+            }
+        });
+    }
+
+    // Filtrar solo transferencias a NeuroTEA
+    const neuroteaTransfers = transfers.filter(t => t.destinatario === 'NeuroTEA');
+
+    // Generar filas de transferencias
+    let transfersRowsHTML = '';
+    let totalNeuroteaTransfers = 0;
+    if (neuroteaTransfers.length > 0) {
+        neuroteaTransfers.forEach(transfer => {
+            totalNeuroteaTransfers += transfer.monto;
+            transfersRowsHTML += `
+                <tr>
+                    <td>${transfer.destinatario}</td>
+                    <td class="right amount">${formatCurrency(transfer.monto)}</td>
+                    <td>${transfer.concepto}</td>
+                </tr>`;
+        });
+    } else {
+        transfersRowsHTML = `<tr><td colspan="3" class="empty-state">No hay transferencias registradas para este día</td></tr>`;
+    }
+
+    // Timestamp de generación
+    const now = new Date();
+    const timestampGeneracion = `${now.toLocaleDateString('es-PY')} a las ${now.toLocaleTimeString('es-PY')}`;
+
+    // Generar HTML completo
+    const htmlContent = `<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rendición de Cuentas - NeuroTEA</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        @page {
+            size: A4;
+            margin: 15mm;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #f5f5f5;
+            color: #1a1a1a;
+            line-height: 1.4;
+            font-size: 11px;
+        }
+
+        .page {
+            width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            background: white;
+            padding: 15mm;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+            margin: -15mm -15mm 20px -15mm;
+            padding: 20px 15mm;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .brand-prefix {
+            font-size: 12px;
+            font-weight: 300;
+            letter-spacing: 1.5px;
+            opacity: 0.8;
+            text-transform: uppercase;
+        }
+
+        .brand-name {
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .brand-name span {
+            color: #f59e0b;
+        }
+
+        .header-subtitle {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-top: 2px;
+        }
+
+        .header-right {
+            text-align: right;
+        }
+
+        .header-right .date {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .header-right .report-type {
+            font-size: 11px;
+            opacity: 0.8;
+            margin-top: 2px;
+        }
+
+        /* Section Title */
+        .section-title {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #1e3a5f;
+            margin: 20px 0 10px 0;
+            padding-bottom: 6px;
+            border-bottom: 2px solid #1e3a5f;
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+            font-size: 10px;
+        }
+
+        th {
+            background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+            color: white;
+            text-align: left;
+            padding: 10px 12px;
+            font-weight: 600;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        th.right, td.right {
+            text-align: right;
+        }
+
+        th.center, td.center {
+            text-align: center;
+        }
+
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e5e7eb;
+            vertical-align: middle;
+        }
+
+        tr:hover {
+            background: #f8fafc;
+        }
+
+        /* Resumen Table */
+        .resumen-table td:first-child {
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .resumen-table td:last-child {
+            font-weight: 600;
+            color: #1e3a5f;
+            font-family: 'SF Mono', 'Consolas', monospace;
+        }
+
+        /* Therapist Table */
+        .therapist-table th {
+            font-size: 8px;
+            padding: 8px 6px;
+        }
+
+        .therapist-table td {
+            padding: 8px 6px;
+            font-size: 9px;
+        }
+
+        .therapist-name {
+            font-weight: 600;
+            color: #1e3a5f;
+        }
+
+        .amount {
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-weight: 500;
+        }
+
+        .amount.positive {
+            color: #059669;
+        }
+
+        .amount.negative {
+            color: #dc2626;
+        }
+
+        /* Status Badge */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 8px;
+            font-weight: 500;
+            color: #1a1a1a;
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .status-badge.equilibrado .status-dot {
+            background: #22c55e;
+        }
+
+        .status-badge.debe-recibir .status-dot {
+            background: #f59e0b;
+        }
+
+        .status-badge.debe-dar .status-dot {
+            background: #ef4444;
+        }
+
+        .status-badge.confirmado .status-dot {
+            background: #3b82f6;
+        }
+
+        /* Egresos Table Header */
+        .egresos-table th {
+            background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+        }
+
+        /* Total Row */
+        .total-row {
+            font-size: 11px;
+            font-weight: 700;
+            color: #1e3a5f;
+            margin: 8px 0 20px 0;
+        }
+
+        .total-row span {
+            font-family: 'SF Mono', 'Consolas', monospace;
+        }
+
+        /* Empty State */
+        .empty-state {
+            font-style: italic;
+            color: #6b7280;
+            padding: 12px 0;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 9px;
+            color: #9ca3af;
+        }
+
+        .footer-brand {
+            font-weight: 600;
+            color: #6b7280;
+        }
+
+        .page-number {
+            color: #6b7280;
+        }
+
+        /* Print Styles */
+        @media print {
+            body {
+                background: white;
+            }
+
+            .page {
+                width: 100%;
+                min-height: auto;
+                box-shadow: none;
+                padding: 0;
+                margin: 0;
+            }
+
+            .header {
+                margin: 0 0 20px 0;
+                padding: 20px;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            th {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            .egresos-table th {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            .status-badge {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <!-- Header -->
+        <div class="header">
+            <div class="brand">
+                <span class="brand-prefix">Avanza</span>
+                <span class="brand-name">Neuro<span>TEA</span></span>
+                <span class="header-subtitle">Sistema de Gestión - Reporte de Rendición de Cuentas</span>
+            </div>
+            <div class="header-right">
+                <div class="date">${fechaCapitalizada}</div>
+                <div class="report-type">Rendición Diaria</div>
+            </div>
+        </div>
+
+        <!-- Resumen Financiero -->
+        <h2 class="section-title">Resumen Financiero</h2>
+        <table class="resumen-table">
+            <thead>
+                <tr>
+                    <th>Concepto</th>
+                    <th class="right">Monto</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Ingreso Total del Día</td>
+                    <td class="right">${formatCurrency(ingresoTotalDia)}</td>
+                </tr>
+                <tr>
+                    <td>Ingreso Total Efectivo</td>
+                    <td class="right">${formatCurrency(ingresoTotalEfectivo)}</td>
+                </tr>
+                <tr>
+                    <td>Aporte Total a NeuroTEA</td>
+                    <td class="right">${formatCurrency(aporteTotalNeuroTEA)}</td>
+                </tr>
+                <tr>
+                    <td>Cuenta NeuroTEA</td>
+                    <td class="right">${formatCurrency(cuentaNeuroTEA)}</td>
+                </tr>
+                <tr>
+                    <td>Total Egresos</td>
+                    <td class="right">${formatCurrency(totalEgresos)}</td>
+                </tr>
+                <tr>
+                    <td>Saldo en Caja</td>
+                    <td class="right">${formatCurrency(saldoCaja)}</td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="total-row">Total Aporte a NeuroTEA: <span>${formatCurrency(aporteTotalNeuroTEA)}</span></div>
+
+        <!-- Rendición por Terapeuta -->
+        <h2 class="section-title">Rendición por Terapeuta</h2>
+        <table class="therapist-table">
+            <thead>
+                <tr>
+                    <th>Terapeuta</th>
+                    <th class="right">Ingreso Total</th>
+                    <th class="right">Aporte NeuroTEA</th>
+                    <th class="right">Honorarios</th>
+                    <th class="right">Transf. a Terapeuta</th>
+                    <th class="right">Adelantos</th>
+                    <th class="right">NeuroTEA Debe</th>
+                    <th class="right">Terapeuta Debe</th>
+                    <th class="center">Estado</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${therapistRowsHTML}
+            </tbody>
+        </table>
+
+        <!-- Egresos del Día -->
+        <h2 class="section-title">Egresos del Día</h2>
+        <table class="egresos-table">
+            <thead>
+                <tr>
+                    <th>Concepto</th>
+                    <th>Tipo</th>
+                    <th class="right">Monto</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${egresosRowsHTML}
+            </tbody>
+        </table>
+        <div class="total-row">Total Egresos: <span>${formatCurrency(totalEgresos)}</span></div>
+
+        <!-- Transferencias del Día -->
+        <h2 class="section-title">Transferencias del Día</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Destinatario</th>
+                    <th class="right">Monto</th>
+                    <th>Concepto</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${transfersRowsHTML}
+            </tbody>
+        </table>
+        <div class="total-row">Total Transferencias a NeuroTEA: <span>${formatCurrency(totalNeuroteaTransfers)}</span></div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <span class="footer-brand">Sistema NeuroTEA</span>
+            <span>Generado el ${timestampGeneracion}</span>
+            <span class="page-number">Página 1 de 1</span>
+        </div>
+    </div>
+</body>
+</html>`;
+
+    // Crear Blob y descargar como archivo .html
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `NeuroTEA_Rendicion_${fecha.replace(/-/g, '_')}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+
+// ===========================
+// FUNCIONES DE SALDO INICIAL
+// ===========================
+
+// Obtener saldo inicial para una fecha
+function getInitialBalance(fecha) {
+    return saldosIniciales[fecha] || 0;
+}
+
+// NUEVA FUNCIÓN: Obtener saldo inicial de cuenta bancaria
+function getInitialBankBalance(fecha) {
+    // Por ahora, usar el saldo real de banco como base
+    // En el futuro se puede implementar saldos iniciales separados para banco
+    return saldosReales.banco || 0;
+}
+
+// Actualizar el badge de saldo inicial
+function updateSaldoBadge(fecha) {
+    const badge = document.getElementById('saldo-inicial-badge');
+    const dot = document.getElementById('saldo-status-dot');
+    
+    if (!badge || !dot) return;
+    
+    const saldoInicial = getInitialBalance(fecha);
+    const estadoSaldo = getSaldoInitialState(fecha);
+    
+    // Limpiar clases anteriores del punto (el badge siempre mantiene su estilo gris)
+    dot.className = dot.className.replace(/saldo-(configurado|editado)/g, '');
+    
+    // Aplicar estilos según el estado de configuración (solo al punto)
+    if (estadoSaldo === 'sin-definir') {
+        // Gris: Sin definir (saldo inicial = 0)
+        // No agregar clase, usa el color gris por defecto
+    } else if (estadoSaldo === 'configurado') {
+        // Verde: Configurado por primera vez
+        dot.classList.add('saldo-configurado');
+    } else if (estadoSaldo === 'editado') {
+        // Naranja: Ha sido editado/modificado
+        dot.classList.add('saldo-editado');
+    }
+}
+
+// Determinar el estado del saldo inicial
+function getSaldoInitialState(fecha) {
+    const saldoInicial = getInitialBalance(fecha);
+    const historial = historialSaldos[fecha] || [];
+    
+    if (saldoInicial === 0) {
+        return 'sin-definir';
+    } else if (historial.length <= 1) {
+        // Solo una entrada en el historial = configurado por primera vez
+        return 'configurado';
+    } else {
+        // Múltiples entradas = ha sido editado
+        return 'editado';
+    }
+}
+
+// Abrir modal de saldo inicial
+function openSaldoModal() {
+    const modal = document.getElementById('saldo-modal');
+    const saldoDisplay = document.getElementById('saldo-actual-display');
+    const statusText = document.getElementById('saldo-status-text');
+    
+    if (!modal) return;
+    
+    const saldoInicial = getInitialBalance(fechaActual);
+    const estadoSaldo = getSaldoInitialState(fechaActual);
+    
+    // Actualizar display
+    saldoDisplay.textContent = formatNumber(saldoInicial);
+    
+    // Actualizar texto de estado
+    if (estadoSaldo === 'sin-definir') {
+        statusText.textContent = 'Sin definir';
+        statusText.className = 'badge badge-secondary';
+    } else if (estadoSaldo === 'configurado') {
+        statusText.textContent = 'Configurado';
+        statusText.className = 'badge badge-warning';
+    } else {
+        statusText.textContent = 'Editado';
+        statusText.className = 'badge badge-danger';
+    }
+    
+    // Actualizar historial
+    updateHistorialExpandible();
+    
+    modal.classList.remove('hidden');
+}
+
+// Cerrar modal de saldo inicial
+function closeSaldoModal() {
+    const modal = document.getElementById('saldo-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        
+        // Cerrar modo edición si está abierto
+        const editSection = document.getElementById('saldo-edit-section');
+        const actionButtons = document.getElementById('saldo-action-buttons');
+        if (editSection && !editSection.classList.contains('hidden')) {
+            editSection.classList.add('hidden');
+            actionButtons.classList.remove('hidden');
+        }
+        
+        // Cerrar historial si está abierto
+        const historialContent = document.getElementById('historial-content');
+        if (historialContent && !historialContent.classList.contains('hidden')) {
+            historialContent.classList.add('hidden');
+        }
+    }
+}
+
+// Alternar modo de edición
+function toggleEditMode() {
+    const editSection = document.getElementById('saldo-edit-section');
+    const actionButtons = document.getElementById('saldo-action-buttons');
+    const input = document.getElementById('nuevo-saldo-input');
+    
+    if (editSection.classList.contains('hidden')) {
+        // Confirmar antes de entrar en modo edición
+        const saldoActual = getInitialBalance(fechaActual);
+        let mensajeConfirmacion = '';
+        
+        if (saldoActual === 0) {
+            mensajeConfirmacion = '¿Está seguro de que desea establecer un saldo inicial para este día?';
+        } else {
+            mensajeConfirmacion = `¿Está seguro de que desea editar el saldo inicial actual de ${formatCurrency(saldoActual)}?`;
+        }
+        
+        if (!confirm(mensajeConfirmacion)) {
+            return;
+        }
+        
+        // Entrar en modo edición
+        editSection.classList.remove('hidden');
+        actionButtons.classList.add('hidden');
+        input.value = saldoActual;
+        input.focus();
+    } else {
+        // Salir del modo edición
+        editSection.classList.add('hidden');
+        actionButtons.classList.remove('hidden');
+        input.value = '';
+    }
+}
+
+// Guardar saldo inicial
+function saveSaldoInicial() {
+    const input = document.getElementById('nuevo-saldo-input');
+    const nuevoSaldo = parseNumber(input.value);
+    
+    if (nuevoSaldo < 0) {
+        alert('El saldo inicial no puede ser negativo');
+        return;
+    }
+    
+    const saldoAnterior = getInitialBalance(fechaActual);
+    
+    // Determinar el tipo de acción para la confirmación
+    let mensajeConfirmacion = '';
+    if (saldoAnterior === 0 && nuevoSaldo > 0) {
+        mensajeConfirmacion = `¿Está seguro de que desea establecer el saldo inicial en ${formatCurrency(nuevoSaldo)}?`;
+    } else if (saldoAnterior !== nuevoSaldo) {
+        mensajeConfirmacion = `¿Está seguro de que desea cambiar el saldo inicial de ${formatCurrency(saldoAnterior)} a ${formatCurrency(nuevoSaldo)}?`;
+    } else {
+        // No hay cambios, cerrar modo edición sin hacer nada
+        toggleEditMode();
+        return;
+    }
+    
+    // Solicitar confirmación
+    if (!confirm(mensajeConfirmacion)) {
+        return;
+    }
+    
+    // Guardar nuevo saldo
+    saldosIniciales[fechaActual] = nuevoSaldo;
+    
+    // Agregar al historial SOLO si hay cambio real
+    if (saldoAnterior !== nuevoSaldo) {
+        addToHistorialSaldo(fechaActual, nuevoSaldo, saldoAnterior);
+    }
+    
+    // Actualizar badge
+    updateSaldoBadge(fechaActual);
+    
+    // Actualizar vistas
+    updateAllViews(fechaActual);
+    
+    // Guardar en storage
+    saveToStorage();
+    
+    // Cerrar modo edición
+    toggleEditMode();
+    
+    // Actualizar modal
+    openSaldoModal();
+}
+
+// Limpiar historial de saldos (nueva funcionalidad con contraseña)
+async function clearHistorialSaldo() {
+    const password = prompt('Ingrese contraseña para limpiar historial:');
+    
+    if (password !== '280208') {
+        alert('Contraseña incorrecta');
+        return;
+    }
+    
+    // Confirmar acción con mensaje más claro
+    if (!confirm('¿Está seguro de que desea resetear completamente el saldo inicial? Esto limpiará el historial Y volverá el saldo a 0. Esta acción no se puede deshacer.')) {
+        return;
+    }
+    
+    // CORRECCIÓN: Resetear TANTO el historial COMO el saldo inicial
+    if (historialSaldos[fechaActual]) {
+        delete historialSaldos[fechaActual];
+    }
+    
+    // Resetear el saldo inicial a 0 (como si estuviera iniciando recién)
+    saldosIniciales[fechaActual] = 0;
+    
+    // NUEVO: Eliminar de IndexedDB
+    try {
+        await deleteHistorialSaldosByDate(fechaActual);
+        await deleteFromIndexedDB('saldosIniciales', fechaActual);
+    } catch (error) {
+        console.error('Error deleting from IndexedDB:', error);
+    }
+    
+    // Guardar cambios
+    saveToStorage();
+    
+    // Actualizar estado visual completo después de resetear
+    updateSaldoBadge(fechaActual);
+    updateHistorialExpandible();
+    
+    // Actualizar el modal para reflejar el reseteo completo
+    const saldoDisplay = document.getElementById('saldo-actual-display');
+    const statusText = document.getElementById('saldo-status-text');
+    
+    if (saldoDisplay) {
+        saldoDisplay.textContent = formatNumber(0);
+    }
+    
+    if (statusText) {
+        statusText.textContent = 'Sin definir';
+        statusText.className = 'badge badge-secondary';
+    }
+    
+    // Actualizar todas las vistas para reflejar el cambio
+    updateAllViews(fechaActual);
+    
+    alert('Saldo inicial reseteado correctamente');
+}
+
+// Agregar entrada al historial con límite de 10 entradas
+function addToHistorialSaldo(fecha, valorNuevo, valorAnterior) {
+    // VALIDACIÓN: Rechazar valores inválidos para prevenir "undefined"
+    if (fecha === undefined || fecha === null || fecha === '') {
+        console.error('addToHistorialSaldo: fecha inválida', fecha);
+        return;
+    }
+    
+    if (valorNuevo === undefined || valorNuevo === null || isNaN(valorNuevo)) {
+        console.error('addToHistorialSaldo: valorNuevo inválido', valorNuevo);
+        return;
+    }
+    
+    if (valorAnterior === undefined || valorAnterior === null || isNaN(valorAnterior)) {
+        console.error('addToHistorialSaldo: valorAnterior inválido', valorAnterior);
+        return;
+    }
+    
+    // Convertir a números para asegurar validez
+    valorNuevo = Number(valorNuevo);
+    valorAnterior = Number(valorAnterior);
+    
+    if (!historialSaldos[fecha]) {
+        historialSaldos[fecha] = [];
+    }
+    
+    // Determinar tipo de acción y generar mensaje simple
+    let accion, mensaje;
+    if (valorAnterior === 0) {
+        accion = 'establecio';
+        mensaje = `Se estableció saldo inicial: ${formatCurrency(valorNuevo)}`;
+    } else {
+        accion = 'edito';
+        mensaje = `Se editó saldo inicial: de ${formatCurrency(valorAnterior)} a ${formatCurrency(valorNuevo)}`;
+    }
+    
+    const entrada = {
+        timestamp: new Date().toISOString(),
+        accion: accion,
+        valorAnterior: valorAnterior,
+        valorNuevo: valorNuevo,
+        mensaje: mensaje
+    };
+    
+    // Agregar al inicio del array (más reciente primero)
+    historialSaldos[fecha].unshift(entrada);
+    
+    // Limitar a máximo 10 entradas
+    if (historialSaldos[fecha].length > 10) {
+        historialSaldos[fecha] = historialSaldos[fecha].slice(0, 10);
+    }
+}
+
+// Alternar visibilidad del historial
+function toggleHistorial() {
+    const content = document.getElementById('historial-content');
+    const chevron = document.getElementById('historial-chevron');
+    
+    if (content.classList.contains('hidden')) {
+        content.classList.remove('hidden');
+        chevron.style.transform = 'rotate(180deg)';
+    } else {
+        content.classList.add('hidden');
+        chevron.style.transform = 'rotate(0deg)';
+    }
+}
+
+// Actualizar contador del historial
+function updateHistorialCounter() {
+    const counter = document.getElementById('historial-counter');
+    const historial = historialSaldos[fechaActual] || [];
+    
+    if (counter) {
+        counter.textContent = historial.length;
+    }
+}
+
+// Actualizar contenido expandible del historial
+function updateHistorialExpandible() {
+    const container = document.getElementById('historial-list');
+    let historial = historialSaldos[fechaActual] || [];
+    
+    // CORRECCIÓN: Filtrar entradas con mensajes undefined o inválidos
+    historial = historial.filter(entrada => 
+        entrada && 
+        entrada.mensaje && 
+        entrada.mensaje !== 'undefined' && 
+        typeof entrada.mensaje === 'string' &&
+        entrada.mensaje.trim() !== ''
+    );
+    
+    // Actualizar el historial limpio
+    if (historial.length !== (historialSaldos[fechaActual] || []).length) {
+        historialSaldos[fechaActual] = historial;
+        saveToStorage(); // Guardar cambios
+    }
+    
+    updateHistorialCounter();
+    
+    if (!container) return;
+    
+    if (historial.length === 0) {
+        container.innerHTML = '<p class="text-sm text-gray-500 text-center py-2">No hay cambios registrados</p>';
+        return;
+    }
+    
+    // Mostrar mensajes simples ordenados por fecha (más reciente primero)
+    container.innerHTML = historial.map(entrada => {
+        const fecha = new Date(entrada.timestamp);
+        const fechaStr = fecha.toLocaleDateString('es-PY');
+        const horaStr = fecha.toLocaleTimeString('es-PY', { hour: '2-digit', minute: '2-digit' });
+        
+        return `
+            <div class="text-sm p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                <div class="font-medium">${entrada.mensaje}</div>
+                <div class="text-xs text-gray-500 mt-1">${fechaStr} ${horaStr}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+// ===========================
+// SISTEMA DE CRÉDITOS Y PAQUETES - FUNCIONES PRINCIPALES
+// ===========================
+
+/**
+ * Crea créditos para un paciente con terapeuta específica
+ * Puede ser por paquete independiente o créditos adicionales en sesión
+ */
+function createPatientCredits(creditData) {
+    const { patientName, therapist, quantity, packageId, valuePerSession, totalValue, purchaseDate } = creditData;
+    
+    // Validaciones
+    if (!patientName || !therapist || quantity <= 0) {
+        throw new Error('Datos insuficientes para crear créditos');
+    }
+    
+    // Inicializar estructura si no existe
+    if (!patientCredits[patientName]) {
+        patientCredits[patientName] = {};
+    }
+    
+    // Verificar si ya existen créditos para esta combinación
+    if (patientCredits[patientName][therapist]) {
+        // Agregar a créditos existentes (caso: múltiples paquetes)
+        const existing = patientCredits[patientName][therapist];
+        
+        // Crear nuevo registro para el nuevo paquete
+        const newCreditEntry = {
+            remaining: quantity,
+            total: quantity,
+            used: 0,
+            purchaseDate: purchaseDate,
+            packageId: packageId,
+            valuePerSession: valuePerSession,
+            totalValue: totalValue,
+            status: 'active',
+            usageHistory: []
+        };
+        
+        // Manejar múltiples paquetes (convertir a array si es necesario)
+        if (Array.isArray(existing)) {
+            existing.push(newCreditEntry);
+        } else {
+            // Convertir estructura simple a array
+            patientCredits[patientName][therapist] = [existing, newCreditEntry];
+        }
+    } else {
+        // Crear nuevos créditos
+        patientCredits[patientName][therapist] = {
+            remaining: quantity,
+            total: quantity,
+            used: 0,
+            purchaseDate: purchaseDate,
+            packageId: packageId,
+            valuePerSession: valuePerSession,
+            totalValue: totalValue,
+            status: 'active',
+            usageHistory: []
+        };
+    }
+    
+    // Registrar en log de auditoría
+    logCreditOperation('create', {
+        patient: patientName,
+        therapist: therapist,
+        quantity: quantity,
+        packageId: packageId,
+        timestamp: new Date().toISOString()
+    });
+    
+    return true;
+}
+
+/**
+ * Usa un crédito de un paciente para una terapeuta específica
+ * Actualiza inventario y registra historial de uso
+ */
+function usePatientCredit(patientName, therapist, sessionId) {
+    // Validar existencia de créditos
+    if (!patientCredits[patientName] || !patientCredits[patientName][therapist]) {
+        throw new Error(`No hay créditos disponibles para ${patientName} con ${therapist}`);
+    }
+    
+    const creditEntry = patientCredits[patientName][therapist];
+    
+    // Manejar múltiples paquetes si los hay
+    if (Array.isArray(creditEntry)) {
+        // Usar del paquete más antiguo primero (FIFO)
+        const activePackage = creditEntry.find(pkg => pkg.remaining > 0 && pkg.status === 'active');
+        
+        if (!activePackage) {
+            throw new Error(`No hay créditos activos disponibles para ${patientName} con ${therapist}`);
+        }
+        
+        return processCreditUsage(activePackage, patientName, therapist, sessionId);
+    } else {
+        // Estructura simple (un solo paquete)
+        if (creditEntry.remaining <= 0 || creditEntry.status !== 'active') {
+            throw new Error(`No hay créditos disponibles para ${patientName} con ${therapist}`);
+        }
+        
+        return processCreditUsage(creditEntry, patientName, therapist, sessionId);
+    }
+}
+
+/**
+ * Procesa el uso real del crédito
+ */
+function processCreditUsage(creditEntry, patientName, therapist, sessionId) {
+    // Decrementar créditos disponibles
+    creditEntry.remaining--;
+    
+    // Registrar en historial de uso
+    const usageRecord = {
+        sessionDate: fechaActual,
+        sessionId: sessionId,
+        remainingAfter: creditEntry.remaining,
+        timestamp: new Date().toISOString()
+    };
+    
+    if (!creditEntry.usageHistory) {
+        creditEntry.usageHistory = [];
+    }
+    creditEntry.usageHistory.push(usageRecord);
+    
+    // Actualizar estado si se agotaron los créditos
+    if (creditEntry.remaining === 0) {
+        creditEntry.status = 'used';
+        creditEntry.completedDate = fechaActual;
+    }
+    
+    // Registrar en log de auditoría
+    logCreditOperation('use', {
+        patient: patientName,
+        therapist: therapist,
+        packageId: creditEntry.packageId,
+        remainingAfter: creditEntry.remaining,
+        sessionId: sessionId,
+        timestamp: new Date().toISOString()
+    });
+    
+    return {
+        success: true,
+        remainingCredits: creditEntry.remaining,
+        packageInfo: {
+            packageId: creditEntry.packageId,
+            originalValue: creditEntry.valuePerSession,
+            purchaseDate: creditEntry.purchaseDate
+        }
+    };
+}
+
+/**
+ * Obtiene información completa de créditos de un paciente
+ */
+function getPatientCreditsInfo(patientName, therapist = null) {
+    if (!patientCredits[patientName]) {
+        return null;
+    }
+    
+    if (therapist) {
+        // Información específica para una terapeuta
+        const credits = patientCredits[patientName][therapist];
+        if (!credits) return null;
+        
+        if (Array.isArray(credits)) {
+            // Múltiples paquetes - agregar totales
+            const totalRemaining = credits.reduce((sum, pkg) => sum + pkg.remaining, 0);
+            const totalOriginal = credits.reduce((sum, pkg) => sum + pkg.total, 0);
+            
+            return {
+                therapist: therapist,
+                totalRemaining: totalRemaining,
+                totalOriginal: totalOriginal,
+                packages: credits,
+                hasMultiplePackages: true
+            };
+        } else {
+            // Paquete único
+            return {
+                therapist: therapist,
+                totalRemaining: credits.remaining,
+                totalOriginal: credits.total,
+                packages: [credits],
+                hasMultiplePackages: false
+            };
+        }
+    } else {
+        // Información completa del paciente
+        const allCredits = {};
+        Object.keys(patientCredits[patientName]).forEach(therapistName => {
+            allCredits[therapistName] = getPatientCreditsInfo(patientName, therapistName);
+        });
+        return allCredits;
+    }
+}
+
+/**
+ * Valida si un paciente tiene créditos disponibles
+ */
+function hasAvailableCredits(patientName, therapist) {
+    const creditsInfo = getPatientCreditsInfo(patientName, therapist);
+    return creditsInfo && creditsInfo.totalRemaining > 0;
+}
+
+/**
+ * Usa un crédito de un paciente para una terapeuta específica
+ */
+async function usePatientCredits(patientName, therapist, sessionId) {
+    try {
+        // Verificar que existen créditos
+        if (!patientCredits[patientName] || !patientCredits[patientName][therapist]) {
+            return {
+                success: false,
+                message: `No se encontraron créditos para ${patientName} con ${therapist}`
+            };
+        }
+
+        const credits = patientCredits[patientName][therapist];
+
+        if (Array.isArray(credits)) {
+            // Múltiples paquetes - usar del primer paquete con créditos disponibles
+            for (let i = 0; i < credits.length; i++) {
+                if (credits[i].remaining > 0) {
+                    credits[i].remaining--;
+                    credits[i].used++;
+
+                    // Agregar registro de uso
+                    if (!credits[i].usageHistory) {
+                        credits[i].usageHistory = [];
+                    }
+                    credits[i].usageHistory.push({
+                        sessionId: sessionId,
+                        date: getLocalDateString(),
+                        timestamp: Date.now()
+                    });
+
+                    const packageId = credits[i].packageId;
+                    const remainingNow = credits[i].remaining;
+
+                    // ✅ SINCRONIZAR: Actualizar remaining en dailyPackagePurchases
+                    syncPackageRemaining(packageId, remainingNow, patientName, therapist);
+
+                    // ✅ MOVER AL HISTÓRICO: Si se agotaron los créditos
+                    if (remainingNow === 0) {
+                        console.log(`📦 Paquete ${packageId} agotado, moviendo al histórico...`);
+                        await moveCompletedPackageToHistory(packageId, patientName, therapist);
+                    }
+
+                    return {
+                        success: true,
+                        message: `Crédito usado exitosamente. Quedan ${remainingNow} créditos en este paquete.`,
+                        packageUsed: packageId,
+                        remainingInPackage: remainingNow
+                    };
+                }
+            }
+
+            return {
+                success: false,
+                message: `No hay créditos disponibles para ${patientName} con ${therapist}`
+            };
+
+        } else {
+            // Paquete único
+            if (credits.remaining > 0) {
+                credits.remaining--;
+                credits.used++;
+
+                // Agregar registro de uso
+                if (!credits.usageHistory) {
+                    credits.usageHistory = [];
+                }
+                credits.usageHistory.push({
+                    sessionId: sessionId,
+                    date: getLocalDateString(),
+                    timestamp: Date.now()
+                });
+
+                const packageId = credits.packageId;
+                const remainingNow = credits.remaining;
+
+                // ✅ SINCRONIZAR: Actualizar remaining en dailyPackagePurchases
+                syncPackageRemaining(packageId, remainingNow, patientName, therapist);
+
+                // ✅ MOVER AL HISTÓRICO: Si se agotaron los créditos
+                if (remainingNow === 0) {
+                    console.log(`📦 Paquete ${packageId} agotado, moviendo al histórico...`);
+                    await moveCompletedPackageToHistory(packageId, patientName, therapist);
+                }
+
+                return {
+                    success: true,
+                    message: `Crédito usado exitosamente. Quedan ${remainingNow} créditos.`,
+                    packageUsed: packageId,
+                    remainingInPackage: remainingNow
+                };
+            } else {
+                return {
+                    success: false,
+                    message: `No hay créditos disponibles para ${patientName} con ${therapist}`
+                };
+            }
+        }
+
+    } catch (error) {
+        console.error('Error al usar créditos:', error);
+        return {
+            success: false,
+            message: `Error interno al usar crédito: ${error.message}`
+        };
+    }
+}
+
+/**
+ * ✅ NUEVA FUNCIÓN: Sincroniza el campo remaining en dailyPackagePurchases
+ * Mantiene ambas estructuras de datos sincronizadas
+ */
+function syncPackageRemaining(packageId, remaining, patientName, therapist) {
+    // Buscar el paquete en todas las fechas de dailyPackagePurchases
+    Object.keys(dailyPackagePurchases).forEach(fecha => {
+        const packages = dailyPackagePurchases[fecha] || [];
+        const pkg = packages.find(p => p.id === packageId);
+        if (pkg) {
+            pkg.remaining = remaining;
+            console.log(`🔄 Sincronizado remaining en dailyPackagePurchases: ${packageId} = ${remaining}`);
+        }
+    });
+}
+
+/**
+ * ✅ NUEVA FUNCIÓN: Mueve un paquete completado al histórico
+ * Se llama cuando remaining llega a 0
+ */
+async function moveCompletedPackageToHistory(packageId, patientName, therapist) {
+    // Buscar el paquete en dailyPackagePurchases
+    let foundPackage = null;
+    let foundFecha = null;
+
+    Object.keys(dailyPackagePurchases).forEach(fecha => {
+        const packages = dailyPackagePurchases[fecha] || [];
+        const pkgIndex = packages.findIndex(p => p.id === packageId);
+        if (pkgIndex !== -1) {
+            foundPackage = packages[pkgIndex];
+            foundFecha = fecha;
+        }
+    });
+
+    if (!foundPackage) {
+        console.warn(`⚠️ No se encontró paquete ${packageId} en dailyPackagePurchases para mover al histórico`);
+        return;
+    }
+
+    // Mover al histórico usando la función existente
+    movePackageToHistory(foundPackage, foundFecha);
+
+    // Eliminar de dailyPackagePurchases
+    const packages = dailyPackagePurchases[foundFecha];
+    const index = packages.findIndex(p => p.id === packageId);
+    if (index !== -1) {
+        packages.splice(index, 1);
+        console.log(`✅ Paquete ${packageId} eliminado de dailyPackagePurchases[${foundFecha}]`);
+
+        // Si no quedan paquetes en esa fecha, eliminar la entrada
+        if (packages.length === 0) {
+            delete dailyPackagePurchases[foundFecha];
+        }
+    }
+
+    // Limpiar de patientCredits (ya no tiene créditos)
+    if (patientCredits[patientName] && patientCredits[patientName][therapist]) {
+        const credits = patientCredits[patientName][therapist];
+        if (Array.isArray(credits)) {
+            // Eliminar el crédito agotado del array
+            const creditIndex = credits.findIndex(c => c.packageId === packageId);
+            if (creditIndex !== -1) {
+                credits.splice(creditIndex, 1);
+                console.log(`✅ Crédito ${packageId} eliminado de patientCredits (array)`);
+            }
+            // Si no quedan créditos, limpiar la estructura
+            if (credits.length === 0) {
+                delete patientCredits[patientName][therapist];
+                if (Object.keys(patientCredits[patientName]).length === 0) {
+                    delete patientCredits[patientName];
+                }
+            }
+        } else {
+            // Paquete único - eliminar directamente
+            delete patientCredits[patientName][therapist];
+            if (Object.keys(patientCredits[patientName]).length === 0) {
+                delete patientCredits[patientName];
+            }
+            console.log(`✅ Crédito ${packageId} eliminado de patientCredits (único)`);
+        }
+    }
+
+    // ✅ PERSISTIR: Guardar cambios en IndexedDB inmediatamente
+    await saveToStorageAsync();
+
+    // ✅ ACTUALIZAR UI: Refrescar lista de histórico
+    updatePackageHistoryList();
+
+    console.log(`✅ Paquete ${packageId} movido completamente al histórico y persistido`);
+}
+
+/**
+ * Obtiene lista de pacientes con créditos para una terapeuta
+ */
+function getPatientsWithCreditsForTherapist(therapist) {
+    const patientsWithCredits = [];
+    
+    Object.keys(patientCredits).forEach(patientName => {
+        if (hasAvailableCredits(patientName, therapist)) {
+            const creditsInfo = getPatientCreditsInfo(patientName, therapist);
+            patientsWithCredits.push({
+                patientName: patientName,
+                remaining: creditsInfo.totalRemaining,
+                total: creditsInfo.totalOriginal,
+                packages: creditsInfo.packages.length
+            });
+        }
+    });
+    
+    // Ordenar alfabéticamente
+    return patientsWithCredits.sort((a, b) => a.patientName.localeCompare(b.patientName));
+}
+
+/**
+ * Obtiene estadísticas completas del sistema de créditos
+ */
+function getCreditSystemStats() {
+    const stats = {
+        totalActiveCredits: 0,
+        totalUsedCredits: 0,
+        totalValueActive: 0,
+        totalValueUsed: 0,
+        patientCount: 0,
+        therapistCount: 0,
+        packageCount: 0,
+        byTherapist: {},
+        byPatient: {}
+    };
+    
+    // Analizar cada paciente
+    Object.keys(patientCredits).forEach(patientName => {
+        stats.patientCount++;
+        stats.byPatient[patientName] = {
+            totalCredits: 0,
+            totalValue: 0,
+            therapists: []
+        };
+        
+        Object.keys(patientCredits[patientName]).forEach(therapist => {
+            const creditsInfo = getPatientCreditsInfo(patientName, therapist);
+            
+            // Estadísticas por terapeuta
+            if (!stats.byTherapist[therapist]) {
+                stats.byTherapist[therapist] = {
+                    activeCredits: 0,
+                    usedCredits: 0,
+                    totalValue: 0,
+                    patients: 0
+                };
+                stats.therapistCount++;
+            }
+            
+            stats.byTherapist[therapist].activeCredits += creditsInfo.totalRemaining;
+            stats.byTherapist[therapist].usedCredits += (creditsInfo.totalOriginal - creditsInfo.totalRemaining);
+            stats.byTherapist[therapist].patients++;
+            
+            // Calcular valor total
+            creditsInfo.packages.forEach(pkg => {
+                stats.byTherapist[therapist].totalValue += pkg.totalValue;
+                stats.totalValueActive += (pkg.remaining * pkg.valuePerSession);
+                stats.totalValueUsed += ((pkg.total - pkg.remaining) * pkg.valuePerSession);
+            });
+            
+            // Estadísticas por paciente
+            stats.byPatient[patientName].totalCredits += creditsInfo.totalRemaining;
+            stats.byPatient[patientName].therapists.push(therapist);
+            
+            // Estadísticas generales
+            stats.totalActiveCredits += creditsInfo.totalRemaining;
+            stats.totalUsedCredits += (creditsInfo.totalOriginal - creditsInfo.totalRemaining);
+            stats.packageCount += creditsInfo.packages.length;
+        });
+    });
+    
+    return stats;
+}
+
+/**
+ * Crea un paquete independiente (sin sesión del día)
+ * Genera créditos automáticamente y registra como ingreso
+ */
+function createIndependentPackage(packageData) {
+    // Validaciones de entrada
+    if (!validateSinglePackageData(packageData)) {
+        throw new Error('Datos de paquete inválidos');
+    }
+    
+    // Generar ID único del paquete - verificando que NO exista en activos ni históricos
+    const generateUniquePackageId = () => {
+        const allExistingIds = new Set();
+
+        // Recopilar IDs de paquetes activos
+        Object.keys(dailyPackagePurchases).forEach(f => {
+            (dailyPackagePurchases[f] || []).forEach(p => allExistingIds.add(p.id));
+        });
+
+        // Recopilar IDs de paquetes históricos
+        if (packageHistory) {
+            packageHistory.forEach(p => allExistingIds.add(p.id));
+        }
+
+        // Generar ID único
+        let counter = allExistingIds.size + 1;
+        let candidateId;
+        do {
+            const timestamp = Date.now().toString(36).slice(-4);
+            candidateId = `PK-${counter.toString().padStart(3, '0')}-${timestamp}`;
+            counter++;
+        } while (allExistingIds.has(candidateId));
+
+        return candidateId;
+    };
+
+    const packageId = generateUniquePackageId();
+    const fecha = fechaActual;
+    
+    // Crear estructura del paquete
+    const newPackage = {
+        id: packageId,
+        patientName: packageData.patientName,
+        therapist: packageData.therapist,
+        totalSessions: packageData.totalSessions,
+        remaining: packageData.totalSessions, // IMPORTANTE: Inicializar remaining igual a totalSessions
+        cashToNeurotea: packageData.cashToNeurotea,
+        transferToTherapist: packageData.transferToTherapist,
+        transferToNeurotea: packageData.transferToNeurotea,
+        sessionValue: packageData.totalValue,
+        valuePerSession: packageData.totalValue / packageData.totalSessions,
+        neuroteaContribution: packageData.neuroteaContribution || (packageData.totalValue * 0.30),
+        therapistFee: packageData.totalValue - (packageData.neuroteaContribution || (packageData.totalValue * 0.30)),
+        contributionType: packageData.contributionType || '30',
+        purchaseDate: fecha,
+        purchaseTime: new Date().toLocaleTimeString('es-PY'),
+        createdBy: 'independent',
+        status: 'active',
+        notes: packageData.notes || ''
+    };
+    
+    // Registrar paquete en estructura diaria
+    if (!dailyPackagePurchases[fecha]) {
+        dailyPackagePurchases[fecha] = [];
+    }
+    dailyPackagePurchases[fecha].push(newPackage);
+    
+    // Generar créditos automáticamente
+    createPatientCredits({
+        patientName: packageData.patientName,
+        therapist: packageData.therapist,
+        quantity: packageData.totalSessions,
+        packageId: packageId,
+        valuePerSession: newPackage.valuePerSession,
+        totalValue: packageData.totalValue,
+        purchaseDate: fecha
+    });
+    
+    // Actualizar saldos financieros
+    updateFinancialBalances({
+        efectivo: packageData.cashToNeurotea,
+        banco: packageData.transferToNeurotea
+    });
+    
+    // Registrar como ingreso del día
+    registerPackageIncome(newPackage, fecha);
+    
+    return packageId;
+}
+
+/**
+ * Valida los datos de un paquete individual antes de crearlo
+ */
+function validateSinglePackageData(packageData) {
+    if (!packageData || !packageData.patientName || packageData.patientName.trim() === '') {
+        return false;
+    }
+    if (!packageData.therapist || packageData.therapist.trim() === '') {
+        return false;
+    }
+    if (!packageData.totalSessions || packageData.totalSessions <= 0 || packageData.totalSessions > 50) {
+        return false;
+    }
+    if (!packageData.totalValue || packageData.totalValue <= 0) {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * ✅ ARQUITECTURA CORREGIDA: Esta función ya no modifica saldosReales
+ * El saldo se calcula DINÁMICAMENTE con calcularSaldoCajaReal()
+ * Se mantiene por compatibilidad pero no hace nada
+ */
+function updateFinancialBalances(amounts) {
+    // ✅ ARQUITECTURA CORREGIDA: NO modificar saldosReales
+    // El saldo se recalculará DINÁMICAMENTE con calcularSaldoCajaReal()
+    console.log('📊 updateFinancialBalances llamada (sin efecto - cálculo dinámico activo)');
+    saveToStorage();
+}
+
+/**
+ * Registra un paquete como ingreso del día
+ */
+function registerPackageIncome(packageData, fecha) {
+    // Esta función se integrará con el sistema de ingresos existente
+    // Por ahora solo registra en el log
+    logCreditOperation('package_income', {
+        packageId: packageData.id,
+        patient: packageData.patientName,
+        therapist: packageData.therapist,
+        amount: packageData.sessionValue,
+        fecha: fecha,
+        timestamp: new Date().toISOString()
+    });
+}
+
+/**
+ * Registra operaciones de créditos para auditoría
+ */
+function logCreditOperation(operation, data) {
+    const logEntry = {
+        operation: operation,
+        data: data,
+        timestamp: new Date().toISOString()
+    };
+    
+    // Por ahora solo log en consola, se puede extender para persistir
+    console.log('Credit Operation:', logEntry);
+}
+
+// Event listeners para el modal del saldo inicial (se agregan en el DOMContentLoaded principal)
+
+
+// ===========================
+// FUNCIONES DE LA PESTAÑA DE PAQUETES
+// ===========================
+
+/**
+ * Pobla el select de terapeutas en el formulario de paquetes
+ */
+function populatePackageTherapistSelect() {
+    const select = document.getElementById('package-therapist');
+    if (!select) return;
+    
+    // Limpiar opciones existentes excepto la primera
+    select.innerHTML = '<option value="">Seleccionar terapeuta</option>';
+    
+    // Agregar terapeutas disponibles
+    therapists.forEach(therapist => {
+        const option = document.createElement('option');
+        option.value = therapist;
+        option.textContent = therapist;
+        select.appendChild(option);
+    });
+}
+
+/**
+ * Mueve un paquete completado al histórico
+ * @param {Object} pkg - El paquete a mover
+ * @param {string} purchaseDate - Fecha de compra del paquete
+ */
+function movePackageToHistory(pkg, purchaseDate) {
+    // Verificar si ya existe en el histórico (el ID debe ser único)
+    const existsInHistory = packageHistory.some(h => h.id === pkg.id);
+    if (existsInHistory) {
+        console.log(`⚠️ Paquete ${pkg.id} ya existe en histórico, omitiendo duplicado`);
+        return;
+    }
+
+    // Crear registro histórico con información completa
+    const historyRecord = {
+        id: pkg.id,
+        patientName: pkg.patientName,
+        therapist: pkg.therapist,
+        totalSessions: pkg.totalSessions,
+        sessionValue: pkg.sessionValue || 0,
+        purchaseDate: purchaseDate,
+        purchaseTime: pkg.purchaseTime || '',
+        completedDate: getLocalDateString(), // Fecha actual como completado
+        // Datos financieros
+        cashToNeurotea: pkg.cashToNeurotea || 0,
+        transferToNeurotea: pkg.transferToNeurotea || 0,
+        transferToTherapist: pkg.transferToTherapist || 0,
+        neuroteaContribution: pkg.neuroteaContribution || 0,
+        therapistFee: pkg.therapistFee || 0,
+        // Metadata
+        createdBy: pkg.createdBy || 'unknown',
+        status: 'completed'
+    };
+
+    packageHistory.push(historyRecord);
+}
+
+/**
+ * Actualiza la lista de paquetes activos
+ * CORREGIDO: Ahora muestra TODOS los paquetes con créditos disponibles,
+ * independientemente de la fecha de compra
+ */
+function updateActivePackagesList() {
+    const container = document.getElementById('active-packages-container');
+    const counter = document.getElementById('active-packages-counter');
+
+    if (!container || !counter) return;
+
+    // CORRECCIÓN: Obtener paquetes de TODAS las fechas, no solo de hoy
+    const allActivePackages = [];
+    const packagesToRemove = []; // Paquetes sin créditos para eliminar
+
+    // Iterar sobre todas las fechas en dailyPackagePurchases
+    Object.keys(dailyPackagePurchases).forEach(fecha => {
+        const packagesForDate = dailyPackagePurchases[fecha] || [];
+
+        packagesForDate.forEach(pkg => {
+            // ✅ FIX: Usar pkg.remaining directamente (fuente de verdad sincronizada)
+            // En lugar de buscar en patientCredits que puede estar desincronizado
+            const remainingCredits = pkg.remaining !== undefined ? pkg.remaining : pkg.totalSessions;
+
+            if (remainingCredits > 0) {
+                // Paquete activo - agregar a la lista con fecha de referencia
+                allActivePackages.push({
+                    ...pkg,
+                    _purchaseDate: fecha,
+                    _remainingCredits: remainingCredits,
+                    _totalCredits: pkg.totalSessions
+                });
+            } else {
+                // Paquete agotado - marcar para eliminación
+                packagesToRemove.push({ fecha, packageId: pkg.id, patientName: pkg.patientName, therapist: pkg.therapist });
+            }
+        });
+    });
+
+    // Mover paquetes agotados al histórico en lugar de eliminarlos
+    if (packagesToRemove.length > 0) {
+        packagesToRemove.forEach(({ fecha, packageId, patientName, therapist }) => {
+            if (dailyPackagePurchases[fecha]) {
+                const index = dailyPackagePurchases[fecha].findIndex(p => p.id === packageId);
+                if (index !== -1) {
+                    // Obtener el paquete antes de eliminarlo
+                    const completedPackage = dailyPackagePurchases[fecha][index];
+
+                    // Mover al histórico con fecha de completado
+                    movePackageToHistory(completedPackage, fecha);
+
+                    // Eliminar de paquetes activos
+                    dailyPackagePurchases[fecha].splice(index, 1);
+                    console.log(`📦 Paquete completado movido a histórico: ${packageId}`);
+
+                    // ✅ FIX: También limpiar de patientCredits
+                    if (patientName && therapist && patientCredits[patientName] && patientCredits[patientName][therapist]) {
+                        const credits = patientCredits[patientName][therapist];
+                        if (Array.isArray(credits)) {
+                            const creditIndex = credits.findIndex(c => c.packageId === packageId);
+                            if (creditIndex !== -1) {
+                                credits.splice(creditIndex, 1);
+                            }
+                            if (credits.length === 0) {
+                                delete patientCredits[patientName][therapist];
+                            }
+                        } else if (credits.packageId === packageId) {
+                            delete patientCredits[patientName][therapist];
+                        }
+                        if (Object.keys(patientCredits[patientName]).length === 0) {
+                            delete patientCredits[patientName];
+                        }
+                    }
+                }
+                // Si no quedan paquetes en esa fecha, eliminar la entrada
+                if (dailyPackagePurchases[fecha].length === 0) {
+                    delete dailyPackagePurchases[fecha];
+                }
+            }
+        });
+        // Guardar cambios después de mover al histórico
+        saveToStorageAsync();
+    }
+
+    // Ordenar por fecha de compra (más recientes primero)
+    allActivePackages.sort((a, b) => {
+        const dateA = a._purchaseDate || '';
+        const dateB = b._purchaseDate || '';
+        return dateB.localeCompare(dateA);
+    });
+
+    if (allActivePackages.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-8">No hay paquetes activos</p>';
+        counter.textContent = '0 paquetes activos';
+        return;
+    }
+
+    // Generar HTML para cada paquete activo
+    const packagesHTML = allActivePackages.map(pkg => {
+        const remainingCredits = pkg._remainingCredits;
+        const totalCredits = pkg._totalCredits;
+        const usedCredits = totalCredits - remainingCredits;
+        const purchaseDate = pkg._purchaseDate;
+
+        return `
+            <div class="border rounded-lg p-4 bg-gray-50 dark:bg-gray-700">
+                <div class="flex justify-between items-start mb-3">
+                    <div>
+                        <h4 class="font-semibold text-lg">${pkg.patientName}</h4>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">Terapeuta: ${pkg.therapist}</p>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-sm text-gray-500">ID: ${pkg.id.substring(4, 10)}</span>
+                        <p class="text-xs text-gray-500">${pkg.purchaseTime}</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mb-3">
+                    <div>
+                        <span class="text-sm text-gray-600 dark:text-gray-400">Sesiones:</span>
+                        <p class="font-medium">${usedCredits}/${totalCredits} usadas</p>
+                    </div>
+                    <div>
+                        <span class="text-sm text-gray-600 dark:text-gray-400">Restantes:</span>
+                        <p class="font-medium text-green-600">${remainingCredits}</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                        <span class="text-gray-500">Efectivo:</span>
+                        <p class="font-medium">Gs ${pkg.cashToNeurotea.toLocaleString()}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-500">Transf. Terap.:</span>
+                        <p class="font-medium">Gs ${pkg.transferToTherapist.toLocaleString()}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-500">Transf. NeuroTEA:</span>
+                        <p class="font-medium">Gs ${pkg.transferToNeurotea.toLocaleString()}</p>
+                    </div>
+                </div>
+
+                <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600 flex justify-between items-center">
+                    <div class="text-lg font-bold text-gray-900 dark:text-white">
+                        Total del Paquete: <span class="text-blue-600 dark:text-blue-400">${formatCurrency(pkg.sessionValue)}</span>
+                    </div>
+                    <button
+                        onclick="eliminarPaqueteIndividual('${pkg.id}')"
+                        class="text-red-500 hover:text-red-700 p-1"
+                        title="Eliminar este paquete">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = packagesHTML;
+    counter.textContent = `${allActivePackages.length} paquete${allActivePackages.length !== 1 ? 's' : ''} activo${allActivePackages.length !== 1 ? 's' : ''}`;
+
+    // También actualizar el histórico
+    updatePackageHistoryList();
+}
+
+/**
+ * Actualiza solo el contador de paquetes históricos (ya no renderiza lista completa)
+ */
+function updatePackageHistoryList() {
+    const counter = document.getElementById('history-packages-counter');
+    if (!counter) return;
+
+    const count = packageHistory ? packageHistory.length : 0;
+    counter.textContent = count;
+}
+
+/**
+ * Abre el modal de historial de paquetes y renderiza la tabla
+ */
+function openPackageHistoryModal() {
+    const modal = document.getElementById('package-history-modal');
+    const container = document.getElementById('package-history-table-container');
+    const totalDisplay = document.getElementById('package-history-total');
+
+    if (!modal || !container) return;
+
+    if (!packageHistory || packageHistory.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-8">No hay paquetes en el histórico</p>';
+        totalDisplay.textContent = 'Total: 0 paquetes';
+    } else {
+        // Ordenar por fecha de compra (más recientes primero)
+        const sortedHistory = [...packageHistory].sort((a, b) => {
+            const dateA = a.purchaseDate || '';
+            const dateB = b.purchaseDate || '';
+            return dateB.localeCompare(dateA);
+        });
+
+        // Generar tabla simple
+        const tableHTML = `
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b dark:border-gray-600 text-left text-gray-500">
+                        <th class="py-2 px-2">Paciente</th>
+                        <th class="py-2 px-2">Terapeuta</th>
+                        <th class="py-2 px-2 text-center">Sesiones</th>
+                        <th class="py-2 px-2 text-center">Compra</th>
+                        <th class="py-2 px-2 text-center">Eliminar</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${sortedHistory.map(pkg => `
+                        <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <td class="py-2 px-2">${pkg.patientName || 'N/A'}</td>
+                            <td class="py-2 px-2">${pkg.therapist || 'N/A'}</td>
+                            <td class="py-2 px-2 text-center">${pkg.totalSessions || 0}</td>
+                            <td class="py-2 px-2 text-center">${pkg.purchaseDate ? formatDisplayDate(pkg.purchaseDate) : 'N/A'}</td>
+                            <td class="py-2 px-2 text-center">
+                                <button
+                                    onclick="eliminarPaqueteHistoricoDesdeModal('${pkg.id}')"
+                                    class="text-red-500 hover:text-red-700 p-1"
+                                    title="Eliminar">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+
+        container.innerHTML = tableHTML;
+        totalDisplay.textContent = `Total: ${packageHistory.length} paquete${packageHistory.length !== 1 ? 's' : ''}`;
+    }
+
+    modal.classList.remove('hidden');
+
+    // Re-inicializar iconos Lucide
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
+}
+
+/**
+ * Cierra el modal de historial de paquetes
+ */
+function closePackageHistoryModal() {
+    const modal = document.getElementById('package-history-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+/**
+ * Elimina un paquete del histórico desde el modal (refresca la vista)
+ */
+async function eliminarPaqueteHistoricoDesdeModal(packageId) {
+    if (!confirm('¿Eliminar este paquete del histórico?\n\nEsta acción no se puede deshacer.')) {
+        return;
+    }
+
+    const index = packageHistory.findIndex(p => p.id === packageId);
+    if (index === -1) {
+        alert('Paquete no encontrado en el histórico');
+        return;
+    }
+
+    // Eliminar de memoria
+    const removedPackage = packageHistory.splice(index, 1)[0];
+    console.log(`🗑️ Paquete eliminado del histórico: ${packageId} - ${removedPackage.patientName}`);
+
+    // Guardar cambios en IndexedDB
+    await saveToStorageAsync();
+
+    // Actualizar contador en la pestaña
+    updatePackageHistoryList();
+
+    // Refrescar el modal
+    openPackageHistoryModal();
+
+    alert('Paquete eliminado del histórico');
+}
+
+/**
+ * Calcula y actualiza los totales del formulario de paquetes
+ */
+function updatePackageTotals() {
+    const cashInput = document.getElementById('package-cash');
+    const transferTherapistInput = document.getElementById('package-transfer-therapist');
+    const transferNeuroTEAInput = document.getElementById('package-transfer-neurotea');
+    const sessionsInput = document.getElementById('package-sessions');
+    const totalDisplay = document.getElementById('package-total');
+    const perSessionDisplay = document.getElementById('package-per-session');
+    const aporteDisplay = document.getElementById('package-aporte-neurotea');
+    const aportePercentageDisplay = document.getElementById('package-aporte-percentage');
+    const honorariosDisplay = document.getElementById('package-honorarios-terapeuta');
+    const createBtn = document.getElementById('create-package-btn');
+    
+    if (!cashInput || !transferTherapistInput || !transferNeuroTEAInput || !sessionsInput || !totalDisplay || !perSessionDisplay || !createBtn) return;
+    
+    const cash = parseFloat(cashInput.value) || 0;
+    const transferTherapist = parseFloat(transferTherapistInput.value) || 0;
+    const transferNeuroTEA = parseFloat(transferNeuroTEAInput.value) || 0;
+    const sessions = parseInt(sessionsInput.value) || 0;
+    
+    const total = cash + transferTherapist + transferNeuroTEA;
+    const perSession = sessions > 0 ? total / sessions : 0;
+    
+    // Calcular aporte a NeuroTEA según selección
+    let neuroteaContribution = 0;
+    let percentageText = '';
+    const contributionType = document.querySelector('input[name="package-neurotea-contribution"]:checked')?.value;
+    
+    if (contributionType === 'fixed') {
+        const fixedAmount = parseFloat(document.getElementById('package-fixed-amount-input').value) || 0;
+        neuroteaContribution = Math.min(fixedAmount, total); // No puede exceder el total
+        percentageText = '';
+    } else {
+        const percentage = parseFloat(contributionType) || 30;
+        neuroteaContribution = total * (percentage / 100);
+        percentageText = `(${percentage}%)`;
+    }
+    
+    const therapistFee = Math.max(0, total - neuroteaContribution);
+    
+    // Actualizar displays
+    totalDisplay.textContent = formatCurrency(total);
+    perSessionDisplay.textContent = formatCurrency(perSession);
+    
+    if (aporteDisplay) aporteDisplay.textContent = formatCurrency(neuroteaContribution);
+    if (aportePercentageDisplay) aportePercentageDisplay.textContent = percentageText;
+    if (honorariosDisplay) honorariosDisplay.textContent = formatCurrency(therapistFee);
+    
+    // Validación mejorada
+    const patientName = document.getElementById('package-patient-name').value.trim();
+    const therapist = document.getElementById('package-therapist').value;
+    
+    // Validar monto fijo no exceda total
+    const isValidFixed = contributionType !== 'fixed' || neuroteaContribution <= total;
+    
+    const isValid = patientName && therapist && sessions > 0 && sessions <= 50 && total > 0 && isValidFixed;
+    
+    createBtn.disabled = !isValid;
+    
+    if (createBtn.disabled) {
+        createBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
+        createBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
+    } else {
+        createBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+        createBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+    }
+}
+
+/**
+ * Maneja el envío del formulario de creación de paquetes
+ */
+function handlePackageFormSubmit(event) {
+    event.preventDefault();
+    
+    const patientName = document.getElementById('package-patient-name').value.trim();
+    const therapist = document.getElementById('package-therapist').value;
+    const sessions = parseInt(document.getElementById('package-sessions').value);
+    const cash = parseFloat(document.getElementById('package-cash').value) || 0;
+    const transferTherapist = parseFloat(document.getElementById('package-transfer-therapist').value) || 0;
+    const transferNeuroTEA = parseFloat(document.getElementById('package-transfer-neurotea').value) || 0;
+    
+    const totalValue = cash + transferTherapist + transferNeuroTEA;
+    
+    // AGREGAR: Leer valores de aporte del formulario
+    const contributionType = document.querySelector('input[name="package-neurotea-contribution"]:checked')?.value;
+    let neuroteaContribution = 0;
+
+    if (contributionType === 'fixed') {
+        neuroteaContribution = parseFloat(document.getElementById('package-fixed-amount-input').value) || 0;
+    } else {
+        const percentage = parseFloat(contributionType) || 30;
+        neuroteaContribution = totalValue * (percentage / 100);
+    }
+    
+    // Validación adicional
+    if (neuroteaContribution > totalValue) {
+        alert('El aporte no puede ser mayor al total del paquete');
+        return;
+    }
+    
+    try {
+        // Crear el paquete independiente
+        const packageId = createIndependentPackage({
+            patientName: patientName,
+            therapist: therapist,
+            totalSessions: sessions,
+            cashToNeurotea: cash,
+            transferToTherapist: transferTherapist,
+            transferToNeurotea: transferNeuroTEA,
+            totalValue: totalValue,
+            neuroteaContribution: neuroteaContribution,  // NUEVO
+            contributionType: contributionType           // NUEVO
+        });
+        
+        // Limpiar formulario
+        document.getElementById('package-form').reset();
+        updatePackageTotals();
+        
+        // Actualizar vistas
+        updateActivePackagesList();
+        updateAllViews(fechaActual);
+        
+        // Guardar cambios
+        saveToStorage();
+        
+        // Mostrar mensaje de éxito
+        showNotification(`Paquete creado exitosamente (ID: ${packageId.substring(4, 10)})`, 'success');
+        
+    } catch (error) {
+        console.error('Error al crear paquete:', error);
+        showNotification('Error al crear el paquete: ' + error.message, 'error');
+    }
+}
+
+/**
+ * Muestra notificaciones temporales
+ */
+function showNotification(message, type = 'info') {
+    // Crear elemento de notificación
+    const notification = document.createElement('div');
+    notification.className = `fixed top-4 right-4 z-50 p-4 rounded-md shadow-lg max-w-sm ${
+        type === 'success' ? 'bg-green-500 text-white' :
+        type === 'error' ? 'bg-red-500 text-white' :
+        'bg-blue-500 text-white'
+    }`;
+    notification.textContent = message;
+    
+    // Agregar al DOM
+    document.body.appendChild(notification);
+    
+    // Remover después de 3 segundos
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 3000);
+}
+
+// Event listeners para el modal del saldo inicial (se agregan en el DOMContentLoaded principal)
+
+
+
+// ===========================
+// FASE 3: FUNCIONES DE CONTROL DEL FORMULARIO DE USO DE PAQUETES
+// ===========================
+
+/**
+ * Reinicia el estado del formulario de sesiones cuando se entra a la pestaña Registro Diario
+ * Esto asegura que las secciones de aporte y pago estén visibles correctamente
+ */
+function resetSessionFormState() {
+    // Asegurar que el modo "pago-dia" esté seleccionado
+    const pagoDelDiaRadio = document.getElementById('modo-pago-dia');
+    if (pagoDelDiaRadio) {
+        pagoDelDiaRadio.checked = true;
+    }
+
+    // Mostrar sección de aportes
+    const aporteSection = document.getElementById('aporte-neurotea-section');
+    if (aporteSection) {
+        aporteSection.style.display = 'block';
+    }
+
+    // Mostrar sección de desglose de pago
+    const paymentSection = document.getElementById('desglose-pago-section');
+    if (paymentSection) {
+        paymentSection.style.display = 'block';
+    }
+
+    // Ocultar sección de créditos
+    const creditSection = document.getElementById('paciente-credito-section');
+    if (creditSection) {
+        creditSection.style.display = 'none';
+    }
+
+    // Mostrar sección adicional
+    const additionalSection = document.getElementById('creditos-adicionales-section');
+    if (additionalSection) {
+        additionalSection.style.display = 'block';
+    }
+
+    // Asegurar que el radio de 30% esté seleccionado por defecto
+    const contribution30Radio = document.getElementById('contribution-30');
+    if (contribution30Radio && !document.querySelector('input[name="neurotea-contribution"]:checked')) {
+        contribution30Radio.checked = true;
+    }
+
+    // Actualizar cálculos
+    if (typeof updateContributionValues === 'function') {
+        updateContributionValues();
+    }
+}
+
+/**
+ * Alterna entre los modos de registro: "Pago del día" vs "Usar crédito disponible"
+ */
+function togglePaymentMode() {
+    const paymentMode = document.querySelector('input[name="modo-registro"]:checked').value;
+    const creditSection = document.getElementById('paciente-credito-section');
+    const additionalSection = document.getElementById('creditos-adicionales-section');
+    const paymentSection = document.getElementById('desglose-pago-section');
+    
+    // NUEVA FUNCIONALIDAD: Ocultar sección de aportes cuando se usa crédito
+    const aporteSection = document.getElementById('aporte-neurotea-section');
+    
+    if (paymentMode === 'usar-credito') {
+        // Mostrar sección de créditos, ocultar desglose de pago
+        creditSection.style.display = 'block';
+        additionalSection.style.display = 'none';
+        paymentSection.style.display = 'none';
+        
+        // NUEVA: Ocultar sección de aportes (ya se calculó cuando se pagó el adelanto)
+        if (aporteSection) {
+            aporteSection.style.display = 'none';
+        }
+        
+        updateAvailablePatients();
+        
+        // Limpiar campos de pago
+        document.getElementById('cash-to-neurotea').value = '';
+        document.getElementById('transfer-to-therapist').value = '';
+        document.getElementById('transfer-to-neurotea').value = '';
+    } else {
+        // Modo normal: mostrar desglose, ocultar créditos
+        creditSection.style.display = 'none';
+        additionalSection.style.display = 'block';
+        paymentSection.style.display = 'block';
+        
+        // NUEVA: Mostrar sección de aportes en modo normal
+        if (aporteSection) {
+            aporteSection.style.display = 'block';
+        }
+        
+        // Limpiar selección de paciente con crédito
+        document.getElementById('paciente-credito-select').value = '';
+        document.getElementById('creditos-info-display').innerHTML = '';
+    }
+    
+    // Actualizar validaciones
+    validateRegisterButton();
+}
+
+/**
+ * Actualiza la lista de pacientes con créditos disponibles para la terapeuta seleccionada
+ */
+function updateAvailablePatients() {
+    const therapist = document.getElementById('therapist-select').value;
+    const select = document.getElementById('paciente-credito-select');
+    const infoDisplay = document.getElementById('creditos-info-display');
+    
+    if (!therapist) {
+        select.innerHTML = '<option value="">Primero seleccione una terapeuta</option>';
+        infoDisplay.innerHTML = '';
+        return;
+    }
+    
+    // Obtener pacientes con créditos para esta terapeuta
+    const patientsWithCredits = getPatientsWithCreditsForTherapist(therapist);
+    
+    if (patientsWithCredits.length === 0) {
+        select.innerHTML = '<option value="">No hay pacientes con créditos para esta terapeuta</option>';
+        infoDisplay.innerHTML = '<div class="text-amber-600 dark:text-amber-400">ℹ️ No hay créditos disponibles para esta terapeuta</div>';
+        return;
+    }
+    
+    // Construir opciones del select
+    let optionsHTML = '<option value="">Seleccionar paciente...</option>';
+    patientsWithCredits.forEach(patient => {
+        optionsHTML += `<option value="${patient.patientName}">${patient.patientName} (${patient.remaining} créditos)</option>`;
+    });
+    
+    select.innerHTML = optionsHTML;
+    infoDisplay.innerHTML = `<div class="text-green-600 dark:text-green-400">✅ ${patientsWithCredits.length} paciente(s) con créditos disponibles</div>`;
+}
+
+/**
+ * Actualiza la información de créditos cuando se selecciona un paciente
+ */
+function updateCreditInfo() {
+    const therapist = document.getElementById('therapist-select').value;
+    const patientName = document.getElementById('paciente-credito-select').value;
+    const infoDisplay = document.getElementById('creditos-info-display');
+    
+    if (!therapist || !patientName) {
+        infoDisplay.innerHTML = '';
+        return;
+    }
+    
+    // Obtener información detallada de créditos
+    const creditInfo = getPatientCredits(patientName, therapist);
+    
+    if (!creditInfo || creditInfo.remaining <= 0) {
+        infoDisplay.innerHTML = '<div class="text-red-600 dark:text-red-400">❌ No hay créditos disponibles</div>';
+        return;
+    }
+    
+    // Mostrar información detallada
+    let infoHTML = `
+        <div class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md border border-blue-200 dark:border-blue-800">
+            <div class="font-medium text-blue-800 dark:text-blue-200">📦 Información de Créditos</div>
+            <div class="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                <div>• Créditos disponibles: <strong>${creditInfo.remaining}</strong></div>
+                <div>• Valor por sesión: <strong>Gs ${creditInfo.valuePerSession?.toLocaleString() || '0'}</strong></div>
+                <div>• Paquete original: ${creditInfo.packageId}</div>
+            </div>
+        </div>
+    `;
+    
+    infoDisplay.innerHTML = infoHTML;
+}
+
+/**
+ * Valida el modo de crédito antes de permitir el registro
+ */
+function validateCreditMode() {
+    const therapist = document.getElementById('therapist-select').value;
+    const patientName = document.getElementById('paciente-credito-select').value;
+    
+    if (!therapist) {
+        return { valid: false, message: 'Debe seleccionar una terapeuta' };
+    }
+    
+    if (!patientName) {
+        return { valid: false, message: 'Debe seleccionar un paciente con créditos' };
+    }
+    
+    // Verificar que el paciente tiene créditos disponibles
+    const hasCredits = hasAvailableCredits(patientName, therapist);
+    if (!hasCredits) {
+        return { valid: false, message: 'El paciente seleccionado no tiene créditos disponibles' };
+    }
+    
+    return { valid: true };
+}
+
+/**
+ * Obtiene información de créditos de un paciente para una terapeuta
+ */
+function getPatientCredits(patientName, therapist) {
+    if (!patientCredits[patientName] || !patientCredits[patientName][therapist]) {
+        return null;
+    }
+    
+    const creditInfo = patientCredits[patientName][therapist];
+    
+    // Manejar múltiples paquetes
+    if (Array.isArray(creditInfo)) {
+        // Buscar el primer paquete activo con créditos
+        const activePackage = creditInfo.find(pkg => pkg.status === 'active' && pkg.remaining > 0);
+        return activePackage || null;
+    } else {
+        return creditInfo.status === 'active' && creditInfo.remaining > 0 ? creditInfo : null;
+    }
+}
+
+
+// ================================
+// FUNCIONES PARA MINI CARRITO DE SESIONES FUTURAS
+// ================================
+
+/**
+ * Inicializa el dropdown de terapeutas para sesiones futuras
+ */
+function inicializarTerapeutasFuturas() {
+    const select = document.getElementById('terapeuta-futura-select');
+    
+    if (select && therapists.length > 0) {
+        select.innerHTML = '<option value="">Seleccionar terapeuta...</option>';
+        
+        // Agregar TODAS las terapeutas (incluyendo la actual)
+        therapists.forEach(therapist => {
+            select.innerHTML += `<option value="${therapist}">${therapist}</option>`;
+        });
+    }
+}
+
+/**
+ * Agrega una sesión futura al carrito temporal
+ */
+function agregarSesionFutura() {
+    const terapeutaSelect = document.getElementById('terapeuta-futura-select');
+    const cantidadInput = document.getElementById('cantidad-futura-input');
+    
+    const terapeuta = terapeutaSelect.value;
+    const cantidad = parseInt(cantidadInput.value) || 1;
+    
+    // Validaciones
+    if (!terapeuta) {
+        alert('Por favor selecciona una terapeuta');
+        return;
+    }
+    
+    if (cantidad < 1 || cantidad > 20) {
+        alert('La cantidad debe ser entre 1 y 20 sesiones');
+        return;
+    }
+    
+    // Verificar si ya existe una entrada para esta terapeuta
+    const existingIndex = sesionesFuturasTemp.findIndex(s => s.terapeuta === terapeuta);
+    
+    if (existingIndex >= 0) {
+        // Sumar a la cantidad existente
+        sesionesFuturasTemp[existingIndex].cantidad += cantidad;
+    } else {
+        // Agregar nueva entrada
+        sesionesFuturasTemp.push({
+            terapeuta: terapeuta,
+            cantidad: cantidad,
+            id: Date.now() + Math.random(), // ID único para eliminar
+            // Valores de pago (se configuran después)
+            efectivo: 0,
+            transferTerapeuta: 0,
+            transferNeurotea: 0,
+            total: 0
+        });
+    }
+    
+    // Actualizar vista y limpiar formulario
+    actualizarListaSesionesFuturas();
+    limpiarFormularioSesionFutura();
+}
+
+/**
+ * Actualiza la vista de la lista de sesiones futuras
+ */
+function actualizarListaSesionesFuturas() {
+    const lista = document.getElementById('lista-sesiones-futuras');
+    const resumen = document.getElementById('resumen-sesiones-futuras');
+    
+    if (sesionesFuturasTemp.length === 0) {
+        lista.innerHTML = `
+            <div class="text-gray-500 dark:text-gray-400 text-sm text-center py-2 italic">
+                No hay sesiones futuras agregadas
+            </div>
+        `;
+        resumen.style.display = 'none';
+        return;
+    }
+    
+    // Generar lista de sesiones con desglose de pago
+    lista.innerHTML = sesionesFuturasTemp.map(sesion => `
+        <div class="bg-white dark:bg-gray-800 p-3 rounded border shadow-sm">
+            <div class="flex justify-between items-center mb-3">
+                <h5 class="font-medium text-gray-800 dark:text-gray-200">
+                    ${sesion.terapeuta} - ${sesion.cantidad} sesión${sesion.cantidad > 1 ? 'es' : ''}
+                </h5>
+                <button type="button" 
+                        onclick="eliminarSesionFutura('${sesion.id}')" 
+                        class="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 px-2 py-1 rounded"
+                        title="Eliminar">
+                    ✕
+                </button>
+            </div>
+            
+            <!-- Desglose de pago para esta sesión futura -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+                <div>
+                    <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Efectivo NeuroTEA:</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-2 text-gray-500 dark:text-gray-400 text-xs">Gs</span>
+                        <input type="number" 
+                               class="w-full p-2 pl-8 border rounded text-sm dark:bg-gray-700 dark:border-gray-600"
+                               id="efectivo-${sesion.id}"
+                               onchange="calcularTotalSesionFutura('${sesion.id}')"
+                               placeholder="0"
+                               min="0">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Trans. Terapeuta:</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-2 text-gray-500 dark:text-gray-400 text-xs">Gs</span>
+                        <input type="number" 
+                               class="w-full p-2 pl-8 border rounded text-sm dark:bg-gray-700 dark:border-gray-600"
+                               id="trans-terapeuta-${sesion.id}"
+                               onchange="calcularTotalSesionFutura('${sesion.id}')"
+                               placeholder="0"
+                               min="0">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Trans. NeuroTEA:</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-2 text-gray-500 dark:text-gray-400 text-xs">Gs</span>
+                        <input type="number" 
+                               class="w-full p-2 pl-8 border rounded text-sm dark:bg-gray-700 dark:border-gray-600"
+                               id="trans-neurotea-${sesion.id}"
+                               onchange="calcularTotalSesionFutura('${sesion.id}')"
+                               placeholder="0"
+                               min="0">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Sección de Aporte a NeuroTEA para sesión futura -->
+            <div class="border-t pt-3 mt-3">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <span class="text-blue-600 dark:text-blue-400">🏥</span> Aporte a NeuroTEA
+                </label>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <div>
+                        <label class="flex items-center space-x-2">
+                            <input type="radio" 
+                                   name="aporte-${sesion.id}" 
+                                   value="20" 
+                                   onchange="calcularAporteSesionFutura('${sesion.id}')"
+                                   class="text-blue-600 dark:text-blue-400">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">20%</span>
+                        </label>
+                        <input type="number" 
+                               class="w-full p-2 border rounded text-sm mt-1 dark:bg-gray-700 dark:border-gray-600"
+                               id="aporte-20-${sesion.id}"
+                               readonly
+                               placeholder="Auto">
+                    </div>
+                    <div>
+                        <label class="flex items-center space-x-2">
+                            <input type="radio" 
+                                   name="aporte-${sesion.id}" 
+                                   value="30" 
+                                   onchange="calcularAporteSesionFutura('${sesion.id}')"
+                                   class="text-blue-600 dark:text-blue-400">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">30%</span>
+                        </label>
+                        <input type="number" 
+                               class="w-full p-2 border rounded text-sm mt-1 dark:bg-gray-700 dark:border-gray-600"
+                               id="aporte-30-${sesion.id}"
+                               readonly
+                               placeholder="Auto">
+                    </div>
+                    <div>
+                        <label class="flex items-center space-x-2">
+                            <input type="radio" 
+                                   name="aporte-${sesion.id}" 
+                                   value="fijo" 
+                                   onchange="calcularAporteSesionFutura('${sesion.id}')"
+                                   class="text-blue-600 dark:text-blue-400">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Monto Fijo</span>
+                        </label>
+                        <input type="number" 
+                               class="w-full p-2 border rounded text-sm mt-1 dark:bg-gray-700 dark:border-gray-600"
+                               id="aporte-fijo-${sesion.id}"
+                               onchange="calcularAporteSesionFutura('${sesion.id}')"
+                               placeholder="Monto fijo"
+                               min="0">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="text-right">
+                <span class="text-sm text-gray-600 dark:text-gray-400">Total: </span>
+                <span class="font-medium text-green-600 dark:text-green-400" id="total-${sesion.id}">Gs 0</span>
+            </div>
+        </div>
+    `).join('');
+    
+    // Mostrar resumen
+    resumen.style.display = 'block';
+    calcularGranTotal();
+}
+
+/**
+ * Calcula el total de una sesión futura específica
+ */
+function calcularTotalSesionFutura(sesionId) {
+    const efectivo = parseFloat(document.getElementById(`efectivo-${sesionId}`).value) || 0;
+    const transTerapeuta = parseFloat(document.getElementById(`trans-terapeuta-${sesionId}`).value) || 0;
+    const transNeurotea = parseFloat(document.getElementById(`trans-neurotea-${sesionId}`).value) || 0;
+    
+    const total = efectivo + transTerapeuta + transNeurotea;
+    
+    // Actualizar total visual
+    document.getElementById(`total-${sesionId}`).textContent = formatCurrency(total);
+    
+    // Actualizar en el array temporal
+    const sesion = sesionesFuturasTemp.find(s => s.id == sesionId);
+    if (sesion) {
+        sesion.efectivo = efectivo;
+        sesion.transferTerapeuta = transTerapeuta;
+        sesion.transferNeurotea = transNeurotea;
+        sesion.total = total;
+    }
+    
+    calcularGranTotal();
+}
+
+/**
+ * Calcula el gran total de sesión actual + sesiones futuras
+ */
+function calcularGranTotal() {
+    // Total de sesión actual
+    const cashValue = parseFloat(document.getElementById('cash-to-neurotea').value) || 0;
+    const transferTherapist = parseFloat(document.getElementById('transfer-to-therapist').value) || 0;
+    const transferNeurotea = parseFloat(document.getElementById('transfer-to-neurotea').value) || 0;
+    const totalActual = cashValue + transferTherapist + transferNeurotea;
+    
+    // Total de sesiones futuras
+    const totalFuturas = sesionesFuturasTemp.reduce((sum, sesion) => sum + sesion.total, 0);
+    
+    // Actualizar elementos visuales
+    const totalSesionActualEl = document.getElementById('total-sesion-actual');
+    const totalSesionesFuturasEl = document.getElementById('total-sesiones-futuras');
+    const granTotalPagarEl = document.getElementById('gran-total-pagar');
+    
+    if (totalSesionActualEl) totalSesionActualEl.textContent = formatCurrency(totalActual);
+    if (totalSesionesFuturasEl) totalSesionesFuturasEl.textContent = formatCurrency(totalFuturas);
+    if (granTotalPagarEl) granTotalPagarEl.textContent = formatCurrency(totalActual + totalFuturas);
+}
+
+/**
+ * Calcula el aporte a NeuroTEA para una sesión futura específica
+ */
+function calcularAporteSesionFutura(sesionId) {
+    // Obtener el total actual de la sesión futura
+    const efectivo = parseFloat(document.getElementById(`efectivo-${sesionId}`).value) || 0;
+    const transTerapeuta = parseFloat(document.getElementById(`trans-terapeuta-${sesionId}`).value) || 0;
+    const transNeurotea = parseFloat(document.getElementById(`trans-neurotea-${sesionId}`).value) || 0;
+    const totalSesion = efectivo + transTerapeuta + transNeurotea;
+    
+    // Obtener el tipo de aporte seleccionado
+    const aporteRadios = document.querySelectorAll(`input[name="aporte-${sesionId}"]:checked`);
+    if (aporteRadios.length === 0) return;
+    
+    const tipoAporte = aporteRadios[0].value;
+    let aporteCalculado = 0;
+    
+    // Limpiar campos de aporte
+    document.getElementById(`aporte-20-${sesionId}`).value = '';
+    document.getElementById(`aporte-30-${sesionId}`).value = '';
+    document.getElementById(`aporte-fijo-${sesionId}`).value = '';
+    
+    // Calcular según el tipo seleccionado
+    switch (tipoAporte) {
+        case '20':
+            aporteCalculado = totalSesion * 0.20;
+            document.getElementById(`aporte-20-${sesionId}`).value = Math.round(aporteCalculado);
+            break;
+        case '30':
+            aporteCalculado = totalSesion * 0.30;
+            document.getElementById(`aporte-30-${sesionId}`).value = Math.round(aporteCalculado);
+            break;
+        case 'fijo':
+            aporteCalculado = parseFloat(document.getElementById(`aporte-fijo-${sesionId}`).value) || 0;
+            break;
+    }
+    
+    // Actualizar en el array temporal
+    const sesion = sesionesFuturasTemp.find(s => s.id == sesionId);
+    if (sesion) {
+        sesion.tipoAporte = tipoAporte;
+        sesion.aporteNeurotea = aporteCalculado;
+        sesion.honorariosTerapeuta = totalSesion - aporteCalculado;
+    }
+    
+    // Recalcular totales
+    calcularTotalSesionFutura(sesionId);
+}
+
+/**
+ * Elimina una sesión futura del carrito
+ */
+function eliminarSesionFutura(sesionId) {
+    sesionesFuturasTemp = sesionesFuturasTemp.filter(s => s.id != sesionId);
+    actualizarListaSesionesFuturas();
+}
+
+/**
+ * Limpia el formulario de agregar sesión futura
+ */
+function limpiarFormularioSesionFutura() {
+    document.getElementById('terapeuta-futura-select').value = '';
+    document.getElementById('cantidad-futura-input').value = '1';
+}
+
+/**
+ * Procesa y crea todos los créditos de sesiones futuras
+ * COMPATIBLE con sistema de paquetes existente
+ */
+function procesarSesionesFuturas(pacienteName, fechaCompra) {
+    if (sesionesFuturasTemp.length === 0) return 0;
+    
+    let creditosCreados = 0;
+    
+    sesionesFuturasTemp.forEach(sesion => {
+        // Generar ID simple para el paquete
+        const packageCounter = Object.keys(localStorage).filter(key => key.startsWith('package_')).length + 1;
+        const packageId = `PK-${packageCounter.toString().padStart(3, '0')}`;
+        
+        // 1. CREAR ENTRADA EN dailyPackagePurchases (para que aparezca en pestaña Paquetes)
+        if (!dailyPackagePurchases[fechaCompra]) {
+            dailyPackagePurchases[fechaCompra] = [];
+        }
+        
+        // CORRECCIÓN R9.4: Calcular campos faltantes para coherencia con paquetes independent
+        const contributionType = document.querySelector('input[name="neurotea-contribution"]:checked')?.value || '20';
+        let neuroteaContribution;
+        if (contributionType === 'fixed') {
+            neuroteaContribution = parseNumber(document.getElementById('fixed-amount-input')?.value || 0);
+        } else {
+            const percentage = parseFloat(contributionType) || 30;
+            neuroteaContribution = sesion.total * (percentage / 100);
+        }
+        const therapistFee = Math.max(0, sesion.total - neuroteaContribution);
+        
+        dailyPackagePurchases[fechaCompra].push({
+            id: packageId,
+            patientName: pacienteName,
+            therapist: sesion.terapeuta,
+            totalSessions: sesion.cantidad,
+            cashToNeurotea: sesion.efectivo,
+            transferToTherapist: sesion.transferTerapeuta,
+            transferToNeurotea: sesion.transferNeurotea,
+            sessionValue: sesion.total,
+            valuePerSession: sesion.total / sesion.cantidad,
+            purchaseDate: fechaCompra,
+            purchaseTime: new Date().toLocaleTimeString('es-PY'),
+            createdBy: 'session_combined',    // Distinguir del origen
+            status: 'active',
+            therapistFee: therapistFee,
+            neuroteaContribution: neuroteaContribution,
+            notes: `Sesiones futuras pagadas junto con sesión principal`
+        });
+        
+        // 2. CREAR CRÉDITOS (usando función existente de Fase 1)
+        createPatientCredits({
+            patientName: pacienteName,
+            therapist: sesion.terapeuta,
+            quantity: sesion.cantidad,
+            packageId: packageId,
+            valuePerSession: sesion.total / sesion.cantidad,
+            totalValue: sesion.total,
+            purchaseDate: fechaCompra,
+            createdBy: 'session_combined'
+        });
+        
+        creditosCreados += sesion.cantidad;
+        console.log(`✅ Creados ${sesion.cantidad} créditos para ${sesion.terapeuta} (valor: ${formatCurrency(sesion.total)})`);
+    });
+    
+    // Limpiar carrito temporal
+    sesionesFuturasTemp = [];
+    actualizarListaSesionesFuturas();
+    
+    return creditosCreados;
+}
+
+/**
+ * Toggle para mostrar/ocultar el carrito de sesiones futuras
+ */
+function toggleSesionesFuturasContainer() {
+    const checkbox = document.getElementById('crear-creditos-adicionales');
+    const container = document.getElementById('sesiones-futuras-container');
+    
+    if (checkbox.checked) {
+        container.style.display = 'block';
+        inicializarTerapeutasFuturas();
+    } else {
+        container.style.display = 'none';
+        sesionesFuturasTemp = []; // Limpiar carrito
+        actualizarListaSesionesFuturas();
+    }
+}
+
+
+/**
+ * Valida el modo de pago antes de permitir el registro
+ */
+function validatePaymentMode() {
+    // Usar las validaciones existentes del sistema
+    const therapist = document.getElementById('therapist-select').value;
+    const patientName = document.getElementById('patient-name').value.trim();
+    
+    if (!therapist) {
+        return { valid: false, message: 'Debe seleccionar una terapeuta' };
+    }
+    
+    if (!patientName) {
+        return { valid: false, message: 'Debe ingresar el nombre del paciente' };
+    }
+    
+    // Validar créditos adicionales si están marcados
+    const createAdditional = document.getElementById('crear-creditos-adicionales').checked;
+    if (createAdditional) {
+        // Verificar si hay sesiones futuras en el carrito temporal
+        if (sesionesFuturasTemp.length === 0) {
+            return { valid: false, message: 'Debe agregar al menos una sesión futura al carrito' };
+        }
+        
+        // Validar que cada sesión futura tenga un monto total mayor a 0
+        for (const sesion of sesionesFuturasTemp) {
+            if (sesion.total <= 0) {
+                return { valid: false, message: `La sesión futura de ${sesion.terapeuta} debe tener un monto mayor a 0` };
+            }
+        }
+    }
+    
+    return { valid: true };
+}
+
+
+
+/**
+ * Elimina un paquete individual por su ID
+ * CORREGIDO: Ahora elimina correctamente de memoria Y de IndexedDB
+ * @param {string} packageId - ID del paquete a eliminar
+ */
+async function eliminarPaqueteIndividual(packageId) {
+    try {
+        console.log('🗑️ Eliminando paquete:', packageId);
+
+        // Buscar el paquete
+        let paqueteEliminado = null;
+
+        for (const fecha in dailyPackagePurchases) {
+            const paquetes = dailyPackagePurchases[fecha];
+            const index = paquetes.findIndex(pkg => pkg.id === packageId);
+
+            if (index !== -1) {
+                paqueteEliminado = paquetes[index];
+                paquetes.splice(index, 1);
+
+                // Si no quedan paquetes en esa fecha, eliminar la entrada
+                if (paquetes.length === 0) {
+                    delete dailyPackagePurchases[fecha];
+                }
+                break;
+            }
+        }
+
+        if (!paqueteEliminado) {
+            console.error('Paquete no encontrado:', packageId);
+            showNotification('Error: No se pudo encontrar el paquete a eliminar.', 'error');
+            return;
+        }
+
+        // Eliminar créditos de patientCredits en memoria
+        const { patientName, therapist } = paqueteEliminado;
+
+        if (patientCredits[patientName] && patientCredits[patientName][therapist]) {
+            const credits = patientCredits[patientName][therapist];
+
+            if (Array.isArray(credits)) {
+                const creditIndex = credits.findIndex(c => c.packageId === packageId);
+                if (creditIndex !== -1) {
+                    credits.splice(creditIndex, 1);
+                    if (credits.length === 0) {
+                        delete patientCredits[patientName][therapist];
+                    }
+                }
+            } else if (credits.packageId === packageId) {
+                delete patientCredits[patientName][therapist];
+            }
+
+            // Limpiar objeto de paciente si quedó vacío
+            if (patientCredits[patientName] && Object.keys(patientCredits[patientName]).length === 0) {
+                delete patientCredits[patientName];
+            }
+        }
+
+        // Guardar cambios en IndexedDB (clearAndSave sincroniza todo)
+        await saveToStorageAsync();
+
+        // Actualizar las vistas
+        updateActivePackagesList();
+        updateAllViews(fechaActual);
+
+        showNotification(`Paquete eliminado: ${paqueteEliminado.patientName}`, 'success');
+
+    } catch (error) {
+        console.error('Error al eliminar paquete:', error);
+        showNotification('Error al eliminar el paquete. Por favor, inténtalo de nuevo.', 'error');
+    }
+}
+
+
+
+// ===========================
+// NUEVAS FUNCIONES - MODALIDADES TERAPEUTA DEBE DAR
+// ===========================
+
+function handleTherapistDebtPayment(therapist, fecha, modalidad) {
+    if (!modalidad) return;
+    
+    const status = calculateTherapistStatus(therapist, fecha);
+    
+    // Validaciones de seguridad
+    if (status.estado !== 'LA TERAPEUTA DEBE DAR') {
+        alert('Error: Estado inconsistente. Recargue la página.');
+        document.querySelector(`select[onchange*="${therapist}"]`).value = '';
+        return;
+    }
+    
+    if (status.terapeutaDebe <= 0) {
+        alert('Error: No hay deuda pendiente.');
+        document.querySelector(`select[onchange*="${therapist}"]`).value = '';
+        return;
+    }
+    
+    // Confirmación específica por modalidad
+    const amount = status.terapeutaDebe;
+    let confirmMessage = '';
+    
+    if (modalidad === 'efectivo') {
+        confirmMessage = `¿Confirmar que ${therapist} entregó ${formatCurrency(amount)} en efectivo físico?`;
+    } else if (modalidad === 'transferencia') {
+        confirmMessage = `¿Confirmar que ${therapist} transfirió ${formatCurrency(amount)} a cuenta bancaria NeuroTEA?`;
+    }
+    
+    if (!confirm(confirmMessage)) {
+        // Resetear select si cancela
+        document.querySelector(`select[onchange*="${therapist}"]`).value = '';
+        return;
+    }
+    
+    // Procesar según modalidad
+    if (modalidad === 'efectivo') {
+        processDebtPaymentCash(therapist, fecha, amount);
+    } else if (modalidad === 'transferencia') {
+        processDebtPaymentTransfer(therapist, fecha, amount);
+    }
+    
+    // Actualizar vistas
+    updateAllViews(fecha);
+    saveToStorageAsync();
+}
+
+function processDebtPaymentCash(therapist, fecha, amount) {
+    // ✅ ARQUITECTURA CORREGIDA: NO modificar saldosReales
+    // El saldo se calcula DINÁMICAMENTE con calcularSaldoCajaReal()
+
+    // Obtener estado actual para congelar
+    const status = calculateTherapistStatus(therapist, fecha);
+
+    // Marcar como confirmado con flujo específico
+    if (!confirmaciones[fecha]) confirmaciones[fecha] = {};
+    confirmaciones[fecha][therapist] = {
+        timestamp: Date.now(),
+        amount: amount,
+        type: 'LA TERAPEUTA DEBE DAR',
+        modalidad: 'efectivo',
+        tipoOpcion: 'devolucion-efectivo', // IMPORTANTE: Tipo específico para comprobante
+        flujo: {
+            efectivoRecibido: amount, // Esto se considera en calcularSaldoCajaReal()
+            efectivoUsado: 0,
+            bancoUsado: 0,
+            tipoOpcion: 'devolucion-efectivo'
+        },
+        // Congelar estado para poder revertir
+        estadoCongelado: {
+            ...status,
+            estado: 'CONFIRMADO (Efectivo recibido)',
+            colorClass: 'badge-success'
+        }
+    };
+}
+
+function processDebtPaymentTransfer(therapist, fecha, amount) {
+    // La terapeuta transfiere a cuenta NeuroTEA
+    // El saldo de cuenta se actualiza automáticamente en calcularSaldoCuentaNeuroTEA()
+
+    // Obtener estado actual para congelar
+    const status = calculateTherapistStatus(therapist, fecha);
+
+    // Marcar como confirmado con flujo específico
+    if (!confirmaciones[fecha]) confirmaciones[fecha] = {};
+    confirmaciones[fecha][therapist] = {
+        timestamp: Date.now(),
+        amount: amount,
+        type: 'LA TERAPEUTA DEBE DAR',
+        modalidad: 'transferencia',
+        tipoOpcion: 'devolucion-transferencia', // IMPORTANTE: Tipo específico para comprobante
+        flujo: {
+            efectivoRecibido: 0,
+            efectivoUsado: 0,
+            bancoUsado: -amount, // Negativo porque es dinero que ENTRA a la cuenta
+            tipoOpcion: 'devolucion-transferencia'
+        },
+        // Congelar estado para poder revertir
+        estadoCongelado: {
+            ...status,
+            estado: 'CONFIRMADO (Transferencia recibida)',
+            colorClass: 'badge-success'
+        }
+    };
+}
+
+
+// ===========================
+// NUEVAS FUNCIONES - CONFIRMACIONES DE TRANSFERENCIAS
+// ===========================
+
+function toggleTransferConfirmation(transferId) {
+    // CORREGIDO: Trabajar con objeto completo que incluye timestamp
+    const currentState = transferConfirmationStates[transferId];
+    const wasConfirmed = currentState ? currentState.confirmed : false;
+
+    // Actualizar o crear el estado con timestamp
+    transferConfirmationStates[transferId] = {
+        id: transferId,
+        confirmed: !wasConfirmed,
+        timestamp: currentState?.timestamp || new Date().toISOString()
+    };
+
+    // Actualizar interfaz
+    updateTransferStatusButton(transferId, !wasConfirmed);
+
+    // Guardar estado
+    saveToStorageAsync();
+}
+
+function updateTransferStatusButton(transferId, isConfirmed) {
+    const button = document.querySelector(`[onclick*="${transferId}"]`);
+    if (!button) return;
+    
+    if (isConfirmed) {
+        button.className = 'transfer-status-btn confirmed';
+        button.innerHTML = '<span class="status-icon">✓</span> Confirmado';
+    } else {
+        button.className = 'transfer-status-btn pending';
+        button.innerHTML = '<span class="status-icon">❌</span> Pendiente';
+    }
+}
+
+function getTransferConfirmationState(transferId) {
+    // CORREGIDO: Acceder al campo confirmed del objeto
+    const state = transferConfirmationStates[transferId];
+    return state ? state.confirmed : false;
+}
+
+
+// ===========================
+// NUEVAS FUNCIONES - PDF INDIVIDUAL POR TERAPEUTA
+// ===========================
+
+function generateTherapistReceipt(therapist, fecha) {
+    console.log('Generando comprobante HTML para:', therapist, fecha);
+
+    // Validaciones iniciales
+    if (!therapist || !fecha) {
+        alert('Terapeuta y fecha son requeridos');
+        return;
+    }
+
+    const daySessions = sessions[fecha] || [];
+    const therapistSessions = daySessions.filter(s => s.therapist === therapist);
+
+    // Incluir paquetes del día (incluyendo histórico)
+    const dayPackages = dailyPackagePurchases[fecha] || [];
+    const historyPackagesForDate = (packageHistory || []).filter(p => p.purchaseDate === fecha);
+    const allDayPackages = [...dayPackages, ...historyPackagesForDate];
+    const therapistPackages = allDayPackages.filter(p => p.therapist === therapist);
+
+    // Incluir sesiones grupales donde participó esta terapeuta
+    const dayGroupSessions = groupSessions[fecha] || [];
+    const therapistGroupSessions = dayGroupSessions.filter(gs =>
+        gs.therapists && gs.therapists.includes(therapist)
+    );
+
+    if (therapistSessions.length === 0 && therapistPackages.length === 0 && therapistGroupSessions.length === 0) {
+        alert(`No hay sesiones, paquetes ni sesiones grupales registrados para ${therapist} en la fecha ${fecha}`);
+        return;
+    }
+
+    try {
+        // Generar HTML del comprobante (incluye sesiones grupales)
+        const htmlContent = generateReceiptHTMLContent(therapist, fecha, therapistSessions, therapistGroupSessions);
+
+        // Descargar como archivo HTML
+        downloadHTMLFile(htmlContent, therapist, fecha);
+
+        console.log('Comprobante HTML generado exitosamente');
+
+    } catch (error) {
+        console.error('Error generating HTML receipt:', error);
+        alert('Error al generar el comprobante: ' + error.message);
+    }
+}
+
+function generateReceiptHeader(doc, therapist, fecha, colors) {
+    const pageWidth = doc.internal.pageSize.width;
+    
+    // Fondo azul con altura exacta del CSS
+    doc.setFillColor(30, 77, 139);  // #1e4d8b
+    doc.rect(0, 0, pageWidth, CSS_MEASUREMENTS.header.height, 'F');
+    
+    // CLAVE: Reproducir el efecto CSS "margin-bottom: -5px" de "Avanza"
+    const headerCenterY = CSS_MEASUREMENTS.header.height / 2;
+    
+    // "Avanza" - Con font-style: italic y posicionamiento superior
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(CSS_MEASUREMENTS.fonts.avanza);
+    const avanzaY = headerCenterY - 8;  // Simula el margin-bottom: -5px del CSS
+    doc.text('Avanza', CSS_MEASUREMENTS.header.padding.left, avanzaY);
+    
+    // "NeuroTEA" - Superpuesto naturalmente como en el CSS
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(CSS_MEASUREMENTS.fonts.neurotea);
+    const neuroteaY = headerCenterY + 8;  // Posición que permite el solapamiento
+    doc.text('Neuro', CSS_MEASUREMENTS.header.padding.left, neuroteaY);
+    
+    // "TEA" en naranja - Misma línea base que "Neuro"
+    doc.setTextColor(255, 165, 0);  // #ffa500
+    const neuroWidth = doc.getTextWidth('Neuro');
+    doc.text('TEA', CSS_MEASUREMENTS.header.padding.left + neuroWidth, neuroteaY);
+    
+    // "COMPROBANTE" - Alineado perfectamente a la derecha
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(CSS_MEASUREMENTS.fonts.comprobante);
+    const comprobanteText = 'COMPROBANTE';
+    const comprobanteWidth = doc.getTextWidth(comprobanteText);
+    const comprobanteY = headerCenterY + 4;  // Centrado verticalmente
+    doc.text(comprobanteText, pageWidth - CSS_MEASUREMENTS.header.padding.right - comprobanteWidth, comprobanteY);
+    
+    return CSS_MEASUREMENTS.header.height + CSS_MEASUREMENTS.content.padding.top;
+}
+
+function generateBasicInfoSection(doc, therapist, fecha, therapistSessions, yPos, colors) {
+    const pageWidth = doc.internal.pageSize.width;
+    
+    // Datos dinámicos calculados automáticamente
+    const fechaFormateada = formatDateForReceipt(fecha);
+    const horaActual = new Date().toLocaleTimeString('es-PY', { hour: '2-digit', minute: '2-digit' });
+    const numeroComprobante = generateReceiptNumber(therapist, fecha);
+    const cantidadSesiones = therapistSessions.length;
+    const estado = determineTherapistStatus(therapist, fecha);
+    
+    // Aplicar formato exacto del CSS
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(CSS_MEASUREMENTS.fonts.body);
+    
+    const infoY = yPos;
+    const rightColumnX = pageWidth / 2 + 20;  // División exacta en dos columnas
+    
+    // Izquierda - formato CSS exacto
+    doc.setFont('helvetica', 'bold');
+    doc.text('TERAPEUTA:', CSS_MEASUREMENTS.content.padding.left, infoY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(` ${therapist}`, CSS_MEASUREMENTS.content.padding.left + doc.getTextWidth('TERAPEUTA:') + 2, infoY);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('FECHA:', CSS_MEASUREMENTS.content.padding.left, infoY + 10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(` ${fechaFormateada}`, CSS_MEASUREMENTS.content.padding.left + doc.getTextWidth('FECHA:') + 2, infoY + 10);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('SESIONES:', CSS_MEASUREMENTS.content.padding.left, infoY + 20);
+    doc.setFont('helvetica', 'normal');
+    doc.text(` ${cantidadSesiones} atendidas`, CSS_MEASUREMENTS.content.padding.left + doc.getTextWidth('SESIONES:') + 2, infoY + 20);
+    
+    // Derecha - formato CSS exacto
+    doc.setFont('helvetica', 'bold');
+    doc.text('COMPROBANTE:', rightColumnX, infoY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(` #${numeroComprobante}`, rightColumnX + doc.getTextWidth('COMPROBANTE:') + 2, infoY);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('HORA:', rightColumnX, infoY + 10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(` ${horaActual}`, rightColumnX + doc.getTextWidth('HORA:') + 2, infoY + 10);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('ESTADO:', rightColumnX, infoY + 20);
+    doc.setFont('helvetica', 'normal');
+    doc.text(` ${estado}`, rightColumnX + doc.getTextWidth('ESTADO:') + 2, infoY + 20);
+    
+    // Línea separadora con spacing exacto del CSS
+    doc.setDrawColor(0, 0, 0);
+    doc.line(CSS_MEASUREMENTS.content.padding.left, infoY + 30, 
+             pageWidth - CSS_MEASUREMENTS.content.padding.right, infoY + 30);
+    
+    return infoY + 30 + CSS_MEASUREMENTS.spacing.infoBottom + CSS_MEASUREMENTS.content.sectionSpacing;
+}
+
+function generateSessionsTable(doc, therapistSessions, yPos, colors) {
+    const pageWidth = doc.internal.pageSize.width;
+    const margin = 30;
+    
+    // Preparar datos para la tabla con 5 columnas exactas
+    const tableData = therapistSessions.map(session => {
+        const sessionType = session.creditUsed ? 'Credito' : 
+                           session.packageUsed ? 'Paquete' : 'Normal';
+        
+        // Valor sesión - mostrar formato especial para créditos
+        let valorSesion;
+        if (session.creditUsed && session.originalAmount) {
+            valorSesion = `0 (${formatNumber(session.originalAmount)})`;
+        } else {
+            valorSesion = formatNumber(session.sessionValue || session.amount || 0);
+        }
+        
+        const honorarios = formatNumber(session.therapistFee || session.amount || 0);
+        const aporteNeurotea = formatNumber(session.neuroteaContribution || 0);
+        
+        return [
+            session.patientName || 'Sin nombre',
+            sessionType,
+            valorSesion,
+            honorarios,
+            aporteNeurotea
+        ];
+    });
+    
+    // Crear tabla con autoTable usando estilos exactos del HTML
+    doc.autoTable({
+        startY: yPos,
+        head: [['PACIENTE', 'TIPO', 'VALOR SESION', 'HONORARIOS', 'APORTE NEUROTEA']],
+        body: tableData,
+        theme: 'grid',
+        headStyles: {
+            fillColor: [0, 0, 0],        // Negro
+            textColor: [255, 255, 255],   // Blanco
+            fontSize: 11,
+            fontStyle: 'bold',
+            halign: 'center',
+            valign: 'middle'
+        },
+        bodyStyles: {
+            fontSize: 11,
+            cellPadding: 6,
+            valign: 'middle'
+        },
+        columnStyles: {
+            0: { 
+                cellWidth: (pageWidth - margin * 2) * 0.25, 
+                halign: 'left' 
+            },
+            1: { 
+                cellWidth: (pageWidth - margin * 2) * 0.15, 
+                halign: 'center' 
+            },
+            2: { 
+                cellWidth: (pageWidth - margin * 2) * 0.20, 
+                halign: 'right' 
+            },
+            3: { 
+                cellWidth: (pageWidth - margin * 2) * 0.20, 
+                halign: 'right' 
+            },
+            4: { 
+                cellWidth: (pageWidth - margin * 2) * 0.20, 
+                halign: 'right' 
+            }
+        },
+        styles: {
+            lineColor: [0, 0, 0],        // Bordes negros
+            lineWidth: 1
+        },
+        margin: { left: margin, right: margin },
+        tableLineColor: [0, 0, 0],
+        tableLineWidth: 2
+    });
+    
+    return doc.lastAutoTable.finalY + 20;
+}
+
+function generateSubtotals(doc, therapistSessions, therapist, fecha, yPos, colors) {
+    const pageWidth = doc.internal.pageSize.width;
+    const margin = 30;
+    
+    // Calcular totales usando la misma lógica que el sistema
+    const status = calculateTherapistStatus(therapist, fecha);
+    
+    // Calcular valores específicos
+    const valorTotalSesiones = therapistSessions.reduce((sum, s) => sum + (s.sessionValue || s.amount || 0), 0);
+    const totalHonorarios = status.honorarios;
+    const totalAporteNeurotea = status.aporteNeurotea;
+    const transferenciasRecibidas = status.transferenciaATerapeuta;
+    const adelantosRecibidos = status.adelantosRecibidos;
+    
+    // Crear rectángulo con borde negro sólido
+    const rectHeight = 60;
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(2);
+    doc.rect(margin, yPos, pageWidth - (margin * 2), rectHeight, 'S');
+    
+    // Configurar texto
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    
+    // Líneas de totales con formato: concepto a la izquierda, monto a la derecha
+    const lines = [
+        ['VALOR TOTAL SESIONES:', `Gs ${formatNumber(valorTotalSesiones)}`],
+        ['TOTAL HONORARIOS:', `Gs ${formatNumber(totalHonorarios)}`],
+        ['TOTAL APORTE NEUROTEA:', `Gs ${formatNumber(totalAporteNeurotea)}`],
+        ['TRANSFERENCIAS RECIBIDAS:', `Gs ${formatNumber(transferenciasRecibidas)}`],
+        ['ADELANTOS RECIBIDOS:', `Gs ${formatNumber(adelantosRecibidos)}`]
+    ];
+    
+    lines.forEach((line, index) => {
+        const lineY = yPos + 10 + (index * 10);
+        
+        // Concepto a la izquierda (normal)
+        doc.setFont('helvetica', 'normal');
+        doc.text(line[0], margin + 5, lineY);
+        
+        // Monto a la derecha (bold)
+        doc.setFont('helvetica', 'bold');
+        const montoWidth = doc.getTextWidth(line[1]);
+        doc.text(line[1], pageWidth - margin - 5 - montoWidth, lineY);
+    });
+    
+    return yPos + rectHeight + 20;
+}
+
+function generateConciliation(doc, therapist, fecha, yPos, colors) {
+    const pageWidth = doc.internal.pageSize.width;
+    const margin = 30;
+    
+    // Obtener estado del terapeuta
+    const status = calculateTherapistStatus(therapist, fecha);
+    
+    // Crear rectángulo con borde negro
+    const rectHeight = 50;
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(1);
+    doc.rect(margin, yPos, pageWidth - (margin * 2), rectHeight, 'S');
+    
+    // Título "CALCULO FINAL" centrado
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    const titleText = 'CALCULO FINAL';
+    const titleWidth = doc.getTextWidth(titleText);
+    doc.text(titleText, (pageWidth - titleWidth) / 2, yPos + 12);
+    
+    // Líneas de cálculo
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    
+    const calcLines = [
+        ['Total Honorarios', `Gs ${formatNumber(status.honorarios)}`],
+        ['Menos: Transferencias', `Gs ${formatNumber(status.transferenciaATerapeuta)}`],
+        ['Menos: Adelantos', `Gs ${formatNumber(status.adelantosRecibidos)}`]
+    ];
+    
+    calcLines.forEach((line, index) => {
+        const lineY = yPos + 22 + (index * 8);
+        doc.text(line[0], margin + 5, lineY);
+        const montoWidth = doc.getTextWidth(line[1]);
+        doc.text(line[1], pageWidth - margin - 5 - montoWidth, lineY);
+    });
+    
+    // Línea separadora para el resultado
+    doc.setDrawColor(0, 0, 0);
+    doc.line(margin + 5, yPos + 42, pageWidth - margin - 5, yPos + 42);
+    
+    // Resultado final destacado
+    const diferencia = status.neuroteaLeDebe - status.terapeutaDebe;
+    const finalText = determineFinalText(diferencia);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    const finalTextWidth = doc.getTextWidth(finalText);
+    doc.text(finalText, (pageWidth - finalTextWidth) / 2, yPos + rectHeight - 3);
+    
+    return yPos + rectHeight + 20;
+}
+
+function generateSignatureSection(doc, therapist, fecha, yPos, colors) {
+    const pageWidth = doc.internal.pageSize.width;
+    const margin = 30;
+    
+    // OBSERVACIONES - Sección SIEMPRE presente (CSS: border: 1px solid #000)
+    const obsHeight = 40;  // Altura mínima que permite contenido
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(1);  // CSS: border: 1px solid #000
+    doc.rect(margin, yPos, pageWidth - (margin * 2), obsHeight, 'S');
+    
+    // Título - formato CSS exacto
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);  // CSS: font-size: 11px
+    doc.text('OBSERVACIONES:', margin + 10, yPos + 12);
+    
+    // Contenido dinámico de observaciones
+    const observaciones = generateDynamicObservations(therapist, fecha);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);  // CSS: font-size: 10px
+    
+    if (observaciones.length > 0) {
+        observaciones.forEach((obs, index) => {
+            doc.text(`- ${obs}`, margin + 10, yPos + 22 + (index * 8));
+        });
+    } else {
+        // Si no hay observaciones, mostrar texto placeholder
+        doc.setTextColor(128, 128, 128);
+        doc.text('(Sin observaciones especiales para este comprobante)', 
+                 margin + 10, yPos + 22);
+        doc.setTextColor(0, 0, 0);
+    }
+    
+    yPos += obsHeight + 40;  // CSS: margin-bottom: 40px
+    
+    // FIRMAS - Sección SIEMPRE presente con textos dinámicos
+    yPos += 50;  // CSS: margin-top: 50px
+    
+    // Calcular textos de firma según estado dinámico
+    const status = calculateTherapistStatus(therapist, fecha);
+    const diferencia = status.neuroteaLeDebe - status.terapeutaDebe;
+    
+    let therapistSignText, neuroteaSignText;
+    if (diferencia > 0) {
+        therapistSignText = 'RECIBI CONFORME';
+        neuroteaSignText = 'ENTREGUE CONFORME';
+    } else if (diferencia < 0) {
+        therapistSignText = 'ENTREGUE CONFORME';
+        neuroteaSignText = 'RECIBI CONFORME';
+    } else {
+        therapistSignText = 'CONFORME';
+        neuroteaSignText = 'CONFORME';
+    }
+    
+    // Renderizar firmas con formato CSS exacto (45% width cada una)
+    const leftColumnX = margin + 20;
+    const rightColumnX = pageWidth - margin - 100;
+    const lineWidth = 80;
+    
+    // Líneas y textos con medidas exactas del CSS
+    doc.setDrawColor(0, 0, 0);
+    doc.line(leftColumnX, yPos, leftColumnX + lineWidth, yPos);
+    doc.line(rightColumnX, yPos, rightColumnX + lineWidth, yPos);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);  // CSS: font-size: 11px
+    doc.text(therapistSignText, leftColumnX, yPos + 8);
+    doc.text(neuroteaSignText, rightColumnX, yPos + 8);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.text(therapist, leftColumnX, yPos + 18);
+    doc.text('Secretaría NeuroTEA', rightColumnX, yPos + 18);
+    
+    return yPos + 30;
+}
+
+function generateReceiptNumber(therapist, fecha) {
+    const cleanTherapist = therapist.replace(/[^a-zA-Z]/g, '').toUpperCase();
+    const datePart = fecha.replace(/-/g, '');
+    const timestamp = Date.now().toString().slice(-3);
+    return `${cleanTherapist}_${datePart}_${timestamp}`;
+}
+
+function generateReceiptFileName(therapist, fecha) {
+    const cleanTherapist = therapist.replace(/[^a-zA-Z\s]/g, '').replace(/\s+/g, '_');
+    return `Comprobante_${cleanTherapist}_${fecha}.pdf`;
+}
+
+// ===========================
+// FUNCIONES AUXILIARES PARA PDF INDIVIDUAL
+// ===========================
+
+function formatDateForReceipt(fecha) {
+    // Convertir fecha YYYY-MM-DD a formato legible
+    const [year, month, day] = fecha.split('-').map(Number);
+    const fechaObj = new Date(year, month - 1, day);
+
+    const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+    const diaSemana = diasSemana[fechaObj.getDay()];
+    const dia = fechaObj.getDate();
+    const mes = meses[fechaObj.getMonth()];
+    const año = fechaObj.getFullYear();
+
+    return `${diaSemana}, ${dia} de ${mes} de ${año}`;
+}
+
+/**
+ * Formatea una fecha YYYY-MM-DD a formato corto DD/MM/YYYY
+ * Usado en la UI de paquetes activos e histórico
+ */
+function formatDisplayDate(fecha) {
+    if (!fecha) return 'N/A';
+    try {
+        const [year, month, day] = fecha.split('-');
+        return `${day}/${month}/${year}`;
+    } catch (e) {
+        return fecha; // Retornar original si falla el parseo
+    }
+}
+
+function determineTherapistStatus(therapist, fecha) {
+    // Determinar el estado del terapeuta basado en los cálculos
+    const status = calculateTherapistStatus(therapist, fecha);
+    const diferencia = status.neuroteaLeDebe - status.terapeutaDebe;
+    
+    if (diferencia > 0) {
+        return 'DEBE RECIBIR';
+    } else if (diferencia < 0) {
+        return 'DEBE ENTREGAR';
+    } else {
+        return 'SALDADO';
+    }
+}
+
+function determineFinalText(diferencia) {
+    // Generar el texto final para la sección de cálculo
+    if (diferencia > 0) {
+        return `LA TERAPEUTA DEBE RECIBIR: Gs ${formatNumber(diferencia)}`;
+    } else if (diferencia < 0) {
+        return `LA TERAPEUTA DEBE ENTREGAR: Gs ${formatNumber(Math.abs(diferencia))}`;
+    } else {
+        return 'CUENTA SALDADA - Sin pendientes';
+    }
+}
+
+function generateObservations(therapist, fecha) {
+    // Generar observaciones automáticas basadas en las sesiones
+    const observaciones = [];
+    const daySessions = sessions[fecha] || [];
+    const therapistSessions = daySessions.filter(s => s.therapist === therapist);
+    
+    therapistSessions.forEach(session => {
+        if (session.creditUsed) {
+            const fechaCredito = session.creditPurchaseDate || fecha;
+            observaciones.push(`Sesion de ${session.patientName}: credito de paquete del ${fechaCredito}`);
+        } else if (session.packageUsed) {
+            observaciones.push(`Sesion de ${session.patientName}: parte de paquete familiar`);
+        }
+    });
+    
+    return observaciones;
+}
+
+// NUEVA FUNCIÓN: Generar observaciones dinámicas basadas en datos reales
+// SIMPLIFICADO: Solo mostrar info relevante de créditos usados
+function generateDynamicObservations(therapist, fecha) {
+    const observaciones = [];
+    const daySessions = sessions[fecha] || [];
+    const therapistSessions = daySessions.filter(s => s.therapist === therapist);
+
+    // SOLO mostrar observaciones para sesiones que usaron crédito
+    // Formato: "Crédito del paquete comprado el DD/MM/YYYY. Uso: X de Y sesiones"
+    therapistSessions.forEach(session => {
+        if (session.creditUsed === true) {
+            // Buscar información del crédito/paquete
+            const creditInfo = getPatientCreditsInfo(session.patientName, session.therapist);
+
+            if (creditInfo && creditInfo.packages && creditInfo.packages.length > 0) {
+                const pkg = creditInfo.packages[0]; // Paquete más reciente
+                const fechaCompra = pkg.purchaseDate || fecha;
+                const totalOriginal = pkg.total || creditInfo.totalOriginal || 0;
+                const restantes = pkg.remaining || creditInfo.totalRemaining || 0;
+                const usadas = totalOriginal - restantes;
+
+                observaciones.push(
+                    `${session.patientName}: Crédito del paquete comprado el ${formatDateForReceipt(fechaCompra)}. Uso: ${usadas} de ${totalOriginal} sesiones`
+                );
+            } else {
+                // Fallback si no encontramos info del paquete
+                observaciones.push(
+                    `${session.patientName}: Sesión pagada con crédito de paquete`
+                );
+            }
+        }
+    });
+
+    // Agregar observaciones para sesiones grupales
+    const dayGroupSessions = groupSessions[fecha] || [];
+    const therapistGroupSessions = dayGroupSessions.filter(gs =>
+        gs.therapists && gs.therapists.includes(therapist)
+    );
+
+    therapistGroupSessions.forEach(gs => {
+        const groupName = gs.groupName || 'Sin nombre';
+        const presentCount = gs.presentCount || 0;
+        const therapistCount = gs.therapistCount || gs.therapists?.length || 1;
+        const totalValue = gs.totalValue || 0;
+
+        // Calcular valor proporcional por terapeuta
+        const valorPorTerapeuta = Math.floor(totalValue / therapistCount);
+
+        observaciones.push(
+            `${groupName}: ${presentCount} niños presentes. Gs ${totalValue.toLocaleString()} ÷ ${therapistCount} = Gs ${valorPorTerapeuta.toLocaleString()} p/terapeuta`
+        );
+    });
+
+    // Si no hay observaciones, mostrar mensaje estándar
+    if (observaciones.length === 0) {
+        observaciones.push('Comprobante generado automáticamente por Sistema NeuroTEA');
+    }
+
+    return observaciones;
+}
+
+
+// ===========================
+// NUEVAS FUNCIONES - PESTAÑA ADMINISTRACIÓN
+// ===========================
+
+function switchAdminModule(moduleId) {
+    // Ocultar todos los módulos
+    document.querySelectorAll('.admin-module-content').forEach(module => {
+        module.classList.add('hidden');
+    });
+    
+    // Remover clase active de todas las pestañas
+    document.querySelectorAll('.admin-module-tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    
+    // Mostrar módulo seleccionado
+    const selectedModule = document.getElementById(`${moduleId}-module`);
+    if (selectedModule) {
+        selectedModule.classList.remove('hidden');
+    }
+    
+    // Activar pestaña correspondiente
+    const selectedTab = document.querySelector(`[onclick*="${moduleId}"]`);
+    if (selectedTab && !selectedTab.classList.contains('disabled')) {
+        selectedTab.classList.add('active');
+    }
+}
+
+function detectAvailableData() {
+    const available = {
+        base: true,
+        sessions: typeof sessions !== 'undefined' && sessions !== null,
+        egresos: typeof egresos !== 'undefined' && egresos !== null,
+        therapists: typeof therapists !== 'undefined' && therapists !== null,
+
+        // Detectar funcionalidades de fases específicas
+        credits: typeof creditPurchases !== 'undefined' && creditPurchases !== null,
+        packages: typeof dailyPackagePurchases !== 'undefined' && dailyPackagePurchases !== null,
+        confirmaciones: typeof confirmaciones !== 'undefined' && confirmaciones !== null,
+        vueltos: typeof transferConfirmationStates !== 'undefined' && transferConfirmationStates !== null,
+
+        // Detectar funcionalidad de sesiones grupales
+        groupTherapy: typeof groupTherapy !== 'undefined' && groupTherapy !== null,
+        groupSessions: typeof groupSessions !== 'undefined' && groupSessions !== null,
+
+        // Detectar datos de saldos y créditos de pacientes
+        patientCredits: typeof patientCredits !== 'undefined' && patientCredits !== null,
+        saldosIniciales: typeof saldosIniciales !== 'undefined' && saldosIniciales !== null,
+        saldosReales: typeof saldosReales !== 'undefined' && saldosReales !== null,
+        historialSaldos: typeof historialSaldos !== 'undefined' && historialSaldos !== null,
+
+        // Detectar histórico de paquetes completados
+        packageHistory: typeof packageHistory !== 'undefined' && packageHistory !== null && packageHistory.length > 0
+    };
+
+    // Guardar información detectada
+    window.detectedFeatures = available;
+
+    return available;
+}
+
+function updateSystemInfo() {
+    const available = detectAvailableData();
+    const container = document.getElementById('system-info');
+    
+    if (!container) return;
+    
+    let info = '<div class="grid grid-cols-2 gap-4">';
+    
+    // Funcionalidades detectadas
+    info += '<div><strong>Funcionalidades Detectadas:</strong><ul class="mt-1 space-y-1">';
+    info += `<li>✅ Sistema Base</li>`;
+    if (available.credits) info += `<li>✅ Sistema de Créditos (Fase 1)</li>`;
+    if (available.packages) info += `<li>✅ Paquetes de Sesiones (Fase 2)</li>`;
+    if (available.confirmaciones) info += `<li>✅ Confirmaciones (Fase 3)</li>`;
+    if (available.vueltos) info += `<li>✅ Sistema de Vueltos (Fase 4+5)</li>`;
+    if (available.groupTherapy) info += `<li>✅ Sesiones Grupales</li>`;
+    info += '</ul></div>';
+
+    // Estadísticas de datos
+    const totalSessions = Object.values(sessions || {}).flat().length;
+    const totalDays = Object.keys(sessions || {}).length;
+    const totalTherapists = (therapists || []).length;
+    const totalGroups = Object.keys(groupTherapy || {}).filter(k => groupTherapy[k].status === 'active').length;
+    const totalGroupSessions = Object.values(groupSessions || {}).flat().length;
+
+    info += '<div><strong>Estadísticas:</strong><ul class="mt-1 space-y-1">';
+    info += `<li>📊 Días con datos: ${totalDays}</li>`;
+    info += `<li>👥 Terapeutas: ${totalTherapists}</li>`;
+    info += `<li>📝 Sesiones totales: ${totalSessions}</li>`;
+    if (totalGroups > 0) info += `<li>👨‍👩‍👧‍👦 Grupos activos: ${totalGroups}</li>`;
+    if (totalGroupSessions > 0) info += `<li>🤝 Sesiones grupales: ${totalGroupSessions}</li>`;
+    info += '</ul></div>';
+    
+    info += '</div>';
+    
+    container.innerHTML = info;
+}
+
+function exportDayData() {
+    const dateInput = document.getElementById('export-date');
+    if (!dateInput.value) {
+        alert('Por favor seleccione una fecha para exportar');
+        return;
+    }
+    
+    const fecha = dateInput.value;
+    const available = detectAvailableData();
+    
+    try {
+        const exportData = generateDayDataJSON(fecha, available);
+        
+        if (!exportData.sessions || exportData.sessions.length === 0) {
+            if (!confirm(`No hay datos registrados para la fecha ${fecha}. ¿Desea exportar de todas formas?`)) {
+                return;
+            }
+        }
+        
+        // Crear archivo y descargar
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `neurotea_datos_${fecha}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        alert(`Datos del día ${fecha} exportados exitosamente`);
+        
+    } catch (error) {
+        console.error('Error exporting day data:', error);
+        alert('Error al exportar los datos. Verifique la consola para más detalles.');
+    }
+}
+
+function generateDayDataJSON(fecha, available) {
+    const exportData = {
+        exportInfo: {
+            type: 'day_data',
+            fecha: fecha,
+            exportedAt: new Date().toISOString(),
+            version: '3.0',  // v3.0: Sincronización completa de paquetes, créditos y grupos
+            detectedFeatures: available
+        },
+        // === DATOS DEL DÍA ESPECÍFICO ===
+        sessions: sessions[fecha] || [],
+        egresos: egresos[fecha] || [],
+        therapists: therapists || []
+    };
+
+    // Agregar datos de funcionalidades detectadas DEL DÍA
+    if (available.credits && typeof creditPurchases !== 'undefined') {
+        exportData.creditPurchases = creditPurchases[fecha] || [];
+    }
+
+    if (available.confirmaciones && typeof confirmaciones !== 'undefined') {
+        exportData.confirmaciones = confirmaciones[fecha] || {};
+    }
+
+    if (available.vueltos && typeof transferConfirmationStates !== 'undefined') {
+        // Filtrar por el campo timestamp del día
+        const relevantTransferStates = {};
+        Object.keys(transferConfirmationStates).forEach(key => {
+            const state = transferConfirmationStates[key];
+            let stateDate = null;
+            if (typeof state === 'object' && state.timestamp) {
+                stateDate = state.timestamp.split('T')[0];
+            }
+            if (stateDate === fecha) {
+                relevantTransferStates[key] = state;
+            }
+        });
+        exportData.transferConfirmationStates = relevantTransferStates;
+    }
+
+    // Sesiones grupales del día
+    if (available.groupSessions && typeof groupSessions !== 'undefined') {
+        exportData.groupSessions = groupSessions[fecha] || [];
+    }
+
+    // Saldos iniciales del día
+    if (available.saldosIniciales && typeof saldosIniciales !== 'undefined') {
+        exportData.saldosIniciales = saldosIniciales[fecha] || null;
+    }
+
+    // === DATOS GLOBALES PARA SINCRONIZACIÓN COMPLETA ===
+    // Estos se sobrescriben completamente al importar para tener réplica exacta
+
+    // Paquetes activos de TODAS las fechas (estado actual)
+    if (available.packages && typeof dailyPackagePurchases !== 'undefined') {
+        exportData.syncData = exportData.syncData || {};
+        exportData.syncData.dailyPackagePurchases = dailyPackagePurchases || {};
+    }
+
+    // Créditos de pacientes (estado actual completo)
+    if (available.patientCredits && typeof patientCredits !== 'undefined') {
+        exportData.syncData = exportData.syncData || {};
+        exportData.syncData.patientCredits = patientCredits || {};
+    }
+
+    // Histórico de paquetes completados (TODO el histórico)
+    if (available.packageHistory && typeof packageHistory !== 'undefined') {
+        exportData.syncData = exportData.syncData || {};
+        exportData.syncData.packageHistory = packageHistory || [];
+    }
+
+    // Configuración de grupos fijos (TODA la configuración)
+    if (available.groupTherapy && typeof groupTherapy !== 'undefined') {
+        exportData.syncData = exportData.syncData || {};
+        exportData.syncData.groupTherapy = groupTherapy || {};
+    }
+
+    return exportData;
+}
+
+function importDayData() {
+    const fileInput = document.getElementById('import-day-file');
+    if (!fileInput.files[0]) {
+        alert('Por favor seleccione un archivo JSON para importar');
+        return;
+    }
+    
+    const password = prompt('Ingrese la contraseña para importar datos:');
+    if (password !== '280208') {
+        alert('Contraseña incorrecta');
+        return;
+    }
+    
+    const file = fileInput.files[0];
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        try {
+            const importData = JSON.parse(e.target.result);
+            
+            if (!validateDayDataStructure(importData)) {
+                alert('El archivo no tiene la estructura válida para datos del día');
+                return;
+            }
+            
+            const fecha = importData.exportInfo.fecha;
+            const conflicts = detectDataConflicts(fecha, importData);
+            
+            if (conflicts.hasConflicts) {
+                showConflictResolutionDialog(fecha, importData, conflicts);
+            } else {
+                // No hay conflictos, importar directamente
+                processDayDataImport(fecha, importData, 'merge');
+            }
+            
+        } catch (error) {
+            console.error('Error parsing import file:', error);
+            alert('Error al leer el archivo. Verifique que sea un archivo JSON válido.');
+        }
+    };
+    
+    reader.readAsText(file);
+}
+
+function validateDayDataStructure(data) {
+    return data && 
+           data.exportInfo && 
+           data.exportInfo.type === 'day_data' &&
+           data.exportInfo.fecha &&
+           Array.isArray(data.sessions) &&
+           Array.isArray(data.egresos) &&
+           Array.isArray(data.therapists);
+}
+
+function detectDataConflicts(fecha, importData) {
+    const conflicts = {
+        hasConflicts: false,
+        sessions: false,
+        egresos: false,
+        details: []
+    };
+    
+    // Verificar conflictos en sesiones
+    if (sessions[fecha] && sessions[fecha].length > 0 && importData.sessions.length > 0) {
+        conflicts.hasConflicts = true;
+        conflicts.sessions = true;
+        conflicts.details.push(`${sessions[fecha].length} sesiones existentes vs ${importData.sessions.length} del archivo`);
+    }
+    
+    // Verificar conflictos en egresos
+    if (egresos[fecha] && egresos[fecha].length > 0 && importData.egresos.length > 0) {
+        conflicts.hasConflicts = true;
+        conflicts.egresos = true;
+        conflicts.details.push(`${egresos[fecha].length} egresos existentes vs ${importData.egresos.length} del archivo`);
+    }
+    
+    return conflicts;
+}
+
+function showConflictResolutionDialog(fecha, importData, conflicts) {
+    // Pasar importData al contexto global temporalmente ANTES de crear el diálogo
+    window.tempImportData = importData;
+
+    const dialog = document.createElement('div');
+    dialog.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+    dialog.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 class="text-lg font-bold mb-4 text-red-600">⚠️ Conflictos Detectados</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Ya existen datos para la fecha ${fecha}:
+            </p>
+            <ul class="text-sm mb-4 space-y-1">
+                ${conflicts.details.map(detail => `<li>• ${detail}</li>`).join('')}
+            </ul>
+            <p class="text-sm font-medium mb-4">¿Cómo desea proceder?</p>
+            <div class="space-y-2">
+                <button onclick="processDayDataImport('${fecha}', null, 'merge'); document.body.removeChild(this.closest('.fixed'))"
+                        class="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                    🔀 Fusionar (Combinar ambos)
+                </button>
+                <button onclick="processDayDataImport('${fecha}', null, 'overwrite'); document.body.removeChild(this.closest('.fixed'))"
+                        class="w-full bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
+                    📝 Sobrescribir (Reemplazar existentes)
+                </button>
+                <button onclick="delete window.tempImportData; document.body.removeChild(this.closest('.fixed'))"
+                        class="w-full bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                    ❌ Cancelar
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+}
+
+async function processDayDataImport(fecha, importData, mode) {
+    // Usar datos temporales si no están disponibles directamente
+    if (!importData && window.tempImportData) {
+        importData = window.tempImportData;
+        delete window.tempImportData;
+    }
+
+    try {
+        // Crear backup automático antes de importar
+        createAutoBackup('before_import_' + fecha);
+
+        // ✅ Validar estructura de datos importados
+        const sessionsToImport = Array.isArray(importData.sessions) ? importData.sessions : [];
+        const egresosToImport = Array.isArray(importData.egresos) ? importData.egresos : [];
+
+        if (mode === 'overwrite') {
+            // Sobrescribir: reemplazar completamente
+            sessions[fecha] = sessionsToImport;
+            egresos[fecha] = egresosToImport;
+        } else {
+            // Fusionar: combinar datos
+            if (!sessions[fecha]) sessions[fecha] = [];
+            if (!egresos[fecha]) egresos[fecha] = [];
+
+            // Combinar sesiones (evitar duplicados por ID)
+            const existingSessionIds = new Set(sessions[fecha].filter(s => s && s.id).map(s => s.id));
+            sessionsToImport.forEach(session => {
+                if (session && session.id && !existingSessionIds.has(session.id)) {
+                    sessions[fecha].push(session);
+                }
+            });
+
+            // Combinar egresos (evitar duplicados por ID)
+            const existingEgresoIds = new Set(egresos[fecha].filter(e => e && e.id).map(e => e.id));
+            egresosToImport.forEach(egreso => {
+                if (egreso && egreso.id && !existingEgresoIds.has(egreso.id)) {
+                    egresos[fecha].push(egreso);
+                }
+            });
+        }
+        
+        // Importar datos de funcionalidades adicionales si están disponibles
+        if (importData.creditPurchases && typeof creditPurchases !== 'undefined') {
+            const creditsToImport = Array.isArray(importData.creditPurchases) ? importData.creditPurchases : [];
+            if (!creditPurchases[fecha]) creditPurchases[fecha] = [];
+
+            if (mode === 'overwrite') {
+                creditPurchases[fecha] = creditsToImport;
+            } else {
+                const existingCreditIds = new Set(creditPurchases[fecha].filter(c => c && c.id).map(c => c.id));
+                creditsToImport.forEach(credit => {
+                    if (credit && credit.id && !existingCreditIds.has(credit.id)) {
+                        creditPurchases[fecha].push(credit);
+                    }
+                });
+            }
+        }
+
+        if (importData.confirmaciones && typeof confirmaciones !== 'undefined') {
+            if (!confirmaciones[fecha]) confirmaciones[fecha] = {};
+            
+            if (mode === 'overwrite') {
+                confirmaciones[fecha] = importData.confirmaciones;
+            } else {
+                Object.assign(confirmaciones[fecha], importData.confirmaciones);
+            }
+        }
+        
+        if (importData.transferConfirmationStates && typeof transferConfirmationStates !== 'undefined') {
+            if (mode === 'overwrite') {
+                // CORREGIDO: Remover estados existentes de esta fecha usando timestamp
+                Object.keys(transferConfirmationStates).forEach(key => {
+                    const state = transferConfirmationStates[key];
+                    let stateDate = null;
+                    if (typeof state === 'object' && state.timestamp) {
+                        stateDate = state.timestamp.split('T')[0];
+                    }
+                    if (stateDate === fecha) {
+                        delete transferConfirmationStates[key];
+                    }
+                });
+            }
+            Object.assign(transferConfirmationStates, importData.transferConfirmationStates);
+        }
+
+        // NUEVO: Importar sesiones grupales
+        if (importData.groupSessions && typeof groupSessions !== 'undefined') {
+            const groupSessionsToImport = Array.isArray(importData.groupSessions) ? importData.groupSessions : [];
+            if (mode === 'overwrite') {
+                groupSessions[fecha] = groupSessionsToImport;
+            } else {
+                if (!groupSessions[fecha]) groupSessions[fecha] = [];
+                const existingGroupIds = new Set(groupSessions[fecha].filter(gs => gs && gs.id).map(gs => gs.id));
+                groupSessionsToImport.forEach(gs => {
+                    if (gs && gs.id && !existingGroupIds.has(gs.id)) {
+                        groupSessions[fecha].push(gs);
+                    }
+                });
+            }
+        }
+
+        // Importar saldos iniciales del día
+        if (importData.saldosIniciales !== undefined && importData.saldosIniciales !== null && typeof saldosIniciales !== 'undefined') {
+            saldosIniciales[fecha] = importData.saldosIniciales;
+        }
+
+        // ============================================================
+        // SINCRONIZACIÓN COMPLETA (v3.0) - Sobrescribe datos globales
+        // ============================================================
+        // Esto permite tener una réplica exacta de la máquina principal
+
+        if (importData.syncData) {
+            console.log('📦 Sincronizando datos globales (v3.0)...');
+
+            // 1. Sobrescribir TODOS los paquetes activos
+            if (importData.syncData.dailyPackagePurchases && typeof dailyPackagePurchases !== 'undefined') {
+                dailyPackagePurchases = importData.syncData.dailyPackagePurchases;
+                console.log('✅ dailyPackagePurchases sincronizado');
+            }
+
+            // 2. Sobrescribir TODOS los créditos de pacientes
+            if (importData.syncData.patientCredits && typeof patientCredits !== 'undefined') {
+                patientCredits = importData.syncData.patientCredits;
+                console.log('✅ patientCredits sincronizado');
+            }
+
+            // 3. Sobrescribir TODO el histórico de paquetes
+            if (importData.syncData.packageHistory && typeof packageHistory !== 'undefined') {
+                packageHistory = Array.isArray(importData.syncData.packageHistory)
+                    ? importData.syncData.packageHistory
+                    : [];
+                console.log('✅ packageHistory sincronizado');
+            }
+
+            // 4. Sobrescribir TODA la configuración de grupos
+            if (importData.syncData.groupTherapy && typeof groupTherapy !== 'undefined') {
+                groupTherapy = importData.syncData.groupTherapy;
+                console.log('✅ groupTherapy sincronizado');
+            }
+
+        } else {
+            // ============================================================
+            // COMPATIBILIDAD CON v2.0 - Comportamiento anterior (fusionar)
+            // ============================================================
+            console.log('📦 Importando datos formato v2.0 (compatibilidad)...');
+
+            // Importar configuración de grupos (fusionar)
+            if (importData.groupTherapy && typeof groupTherapy !== 'undefined') {
+                Object.keys(importData.groupTherapy).forEach(groupId => {
+                    if (!groupTherapy[groupId]) {
+                        groupTherapy[groupId] = importData.groupTherapy[groupId];
+                    }
+                });
+            }
+
+            // Importar créditos de pacientes (fusionar)
+            if (importData.patientCredits && typeof patientCredits !== 'undefined') {
+                if (mode === 'overwrite') {
+                    patientCredits = importData.patientCredits;
+                } else {
+                    Object.keys(importData.patientCredits).forEach(patientName => {
+                        if (!patientCredits[patientName]) {
+                            patientCredits[patientName] = importData.patientCredits[patientName];
+                        } else {
+                            Object.keys(importData.patientCredits[patientName]).forEach(therapist => {
+                                if (!patientCredits[patientName][therapist]) {
+                                    patientCredits[patientName][therapist] = importData.patientCredits[patientName][therapist];
+                                }
+                            });
+                        }
+                    });
+                }
+            }
+
+            // Importar histórico de paquetes (fusionar sin duplicados)
+            if (importData.packageHistory && typeof packageHistory !== 'undefined') {
+                const historyToImport = Array.isArray(importData.packageHistory) ? importData.packageHistory : [];
+                const existingHistoryIds = new Set((packageHistory || []).filter(p => p && p.id).map(p => p.id));
+                historyToImport.forEach(pkg => {
+                    if (pkg && pkg.id && !existingHistoryIds.has(pkg.id)) {
+                        packageHistory.push(pkg);
+                        console.log(`✅ Paquete histórico importado: ${pkg.id}`);
+                    }
+                });
+            }
+
+            // Importar paquetes del día (v2.0 solo tenía del día)
+            if (importData.dailyPackagePurchases && typeof dailyPackagePurchases !== 'undefined') {
+                const packagesToImport = Array.isArray(importData.dailyPackagePurchases) ? importData.dailyPackagePurchases : [];
+                if (mode === 'overwrite') {
+                    dailyPackagePurchases[fecha] = packagesToImport;
+                } else {
+                    if (!dailyPackagePurchases[fecha]) dailyPackagePurchases[fecha] = [];
+                    const existingPackageIds = new Set(dailyPackagePurchases[fecha].filter(p => p && p.id).map(p => p.id));
+                    packagesToImport.forEach(packageData => {
+                        if (packageData && packageData.id && !existingPackageIds.has(packageData.id)) {
+                            dailyPackagePurchases[fecha].push(packageData);
+                        }
+                    });
+                }
+            }
+        }
+
+        // ============================================================
+        // AUTO-REGISTRAR TERAPEUTAS FALTANTES
+        // ============================================================
+        // Extraer terapeutas de sesiones, egresos, paquetes y grupos importados
+        const therapistsToRegister = new Set();
+
+        // De sesiones del día
+        if (sessions[fecha]) {
+            sessions[fecha].forEach(s => {
+                if (s && s.therapist) therapistsToRegister.add(s.therapist);
+            });
+        }
+
+        // De egresos (adelantos)
+        if (egresos[fecha]) {
+            egresos[fecha].forEach(e => {
+                if (e && e.therapist) therapistsToRegister.add(e.therapist);
+            });
+        }
+
+        // De sesiones grupales
+        if (groupSessions[fecha]) {
+            groupSessions[fecha].forEach(gs => {
+                if (gs && gs.therapists) {
+                    gs.therapists.forEach(t => therapistsToRegister.add(t));
+                }
+            });
+        }
+
+        // De paquetes activos (todas las fechas)
+        Object.values(dailyPackagePurchases || {}).forEach(pkgList => {
+            if (Array.isArray(pkgList)) {
+                pkgList.forEach(pkg => {
+                    if (pkg && pkg.therapist) therapistsToRegister.add(pkg.therapist);
+                });
+            }
+        });
+
+        // De créditos de pacientes
+        Object.values(patientCredits || {}).forEach(patientData => {
+            if (patientData && typeof patientData === 'object') {
+                Object.keys(patientData).forEach(therapist => therapistsToRegister.add(therapist));
+            }
+        });
+
+        // De configuración de grupos
+        Object.values(groupTherapy || {}).forEach(group => {
+            if (group && group.therapists) {
+                group.therapists.forEach(t => therapistsToRegister.add(t));
+            }
+        });
+
+        // Registrar terapeutas faltantes
+        let newTherapistsCount = 0;
+        therapistsToRegister.forEach(therapistName => {
+            if (therapistName && !therapists.includes(therapistName)) {
+                therapists.push(therapistName);
+                newTherapistsCount++;
+                console.log(`✅ Terapeuta auto-registrada: ${therapistName}`);
+            }
+        });
+
+        if (newTherapistsCount > 0) {
+            console.log(`📋 ${newTherapistsCount} terapeuta(s) auto-registrada(s)`);
+        }
+
+        // Guardar datos
+        await saveToStorageAsync();
+
+        // Actualizar vistas si la fecha actual coincide
+        const dateInput = document.getElementById('date-input');
+        if (dateInput && fecha === dateInput.value) {
+            updateAllViews(fecha);
+        }
+
+        // Actualizar información del sistema
+        updateSystemInfo();
+
+        // ✅ FIX: Resetear el input de archivo para permitir reimportar el mismo archivo
+        const fileInput = document.getElementById('import-day-file');
+        if (fileInput) {
+            fileInput.value = '';
+        }
+
+        // Mensaje de éxito diferenciado según versión
+        const isV3 = !!importData.syncData;
+        const modeText = mode === 'overwrite' ? 'sobrescribiendo' : 'fusionando';
+        const syncText = isV3
+            ? '\n\n✅ Sincronización completa:\n• Paquetes activos\n• Créditos de pacientes\n• Histórico de paquetes\n• Configuración de grupos'
+            : '';
+        const therapistText = newTherapistsCount > 0
+            ? `\n\n👩‍⚕️ ${newTherapistsCount} terapeuta(s) auto-registrada(s)`
+            : '';
+        alert(`Datos del día ${fecha} importados exitosamente (${modeText})${syncText}${therapistText}`);
+
+    } catch (error) {
+        console.error('Error importing day data:', error);
+        alert('Error al importar los datos. Verifique la consola para más detalles.');
+    }
+}
+
+function createFullBackup() {
+    try {
+        const available = detectAvailableData();
+        const backupData = generateFullBackupJSON(available);
+        
+        // Crear archivo y descargar
+        const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `neurotea_backup_completo_${getLocalDateString()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        alert('Backup completo creado exitosamente');
+        
+    } catch (error) {
+        console.error('Error creating full backup:', error);
+        alert('Error al crear el backup. Verifique la consola para más detalles.');
+    }
+}
+
+function generateFullBackupJSON(available) {
+    const backupData = {
+        backupInfo: {
+            type: 'full_backup',
+            createdAt: new Date().toISOString(),
+            version: '2.0',  // Actualizado a v2.0 con datos completos
+            detectedFeatures: available
+        },
+        // Datos base siempre incluidos
+        sessions: sessions || {},
+        egresos: egresos || {},
+        therapists: therapists || []
+    };
+
+    // Incluir datos de funcionalidades detectadas
+    if (available.credits && typeof creditPurchases !== 'undefined') {
+        backupData.creditPurchases = creditPurchases;
+    }
+
+    if (available.packages && typeof dailyPackagePurchases !== 'undefined') {
+        backupData.dailyPackagePurchases = dailyPackagePurchases;
+    }
+
+    if (available.confirmaciones && typeof confirmaciones !== 'undefined') {
+        backupData.confirmaciones = confirmaciones;
+    }
+
+    if (available.vueltos && typeof transferConfirmationStates !== 'undefined') {
+        backupData.transferConfirmationStates = transferConfirmationStates;
+    }
+
+    // Incluir datos de sesiones grupales
+    if (available.groupTherapy && typeof groupTherapy !== 'undefined') {
+        backupData.groupTherapy = groupTherapy;
+    }
+
+    if (available.groupSessions && typeof groupSessions !== 'undefined') {
+        backupData.groupSessions = groupSessions;
+    }
+
+    // NUEVO: Incluir créditos de pacientes (crítico para paquetes)
+    if (available.patientCredits && typeof patientCredits !== 'undefined') {
+        backupData.patientCredits = patientCredits;
+    }
+
+    // NUEVO: Incluir saldos iniciales por fecha
+    if (available.saldosIniciales && typeof saldosIniciales !== 'undefined') {
+        backupData.saldosIniciales = saldosIniciales;
+    }
+
+    // NUEVO: Incluir saldos reales actuales
+    if (available.saldosReales && typeof saldosReales !== 'undefined') {
+        backupData.saldosReales = saldosReales;
+    }
+
+    // NUEVO: Incluir historial de saldos
+    if (available.historialSaldos && typeof historialSaldos !== 'undefined') {
+        backupData.historialSaldos = historialSaldos;
+    }
+
+    // NUEVO: Incluir histórico de paquetes completados
+    if (available.packageHistory && typeof packageHistory !== 'undefined') {
+        backupData.packageHistory = packageHistory;
+    }
+
+    return backupData;
+}
+
+function importFullBackup() {
+    const fileInput = document.getElementById('restore-backup-file');
+    if (!fileInput.files[0]) {
+        alert('Por favor seleccione un archivo de backup para restaurar');
+        return;
+    }
+    
+    // Primera confirmación
+    if (!confirm('⚠️ ADVERTENCIA: Esta operación reemplazará TODOS los datos del sistema. ¿Está seguro?')) {
+        return;
+    }
+    
+    // Solicitar contraseña
+    const password = prompt('Ingrese la contraseña para restaurar el backup:');
+    if (password !== '280208') {
+        alert('Contraseña incorrecta');
+        return;
+    }
+    
+    // Segunda confirmación más específica
+    if (!confirm('⚠️ CONFIRMACIÓN FINAL: Se perderán TODOS los datos actuales del sistema. Esta acción NO se puede deshacer. ¿Proceder?')) {
+        return;
+    }
+    
+    const file = fileInput.files[0];
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        try {
+            const backupData = JSON.parse(e.target.result);
+            
+            if (!validateFullBackupStructure(backupData)) {
+                alert('El archivo no tiene la estructura válida para un backup completo');
+                return;
+            }
+            
+            // Crear backup automático del estado actual
+            createAutoBackup('before_restore');
+            
+            // Procesar restauración
+            processFullBackupRestore(backupData);
+            
+        } catch (error) {
+            console.error('Error parsing backup file:', error);
+            alert('Error al leer el archivo de backup. Verifique que sea un archivo JSON válido.');
+        }
+    };
+    
+    reader.readAsText(file);
+}
+
+function validateFullBackupStructure(data) {
+    return data && 
+           data.backupInfo && 
+           data.backupInfo.type === 'full_backup' &&
+           data.sessions && 
+           data.egresos && 
+           Array.isArray(data.therapists);
+}
+
+function processFullBackupRestore(backupData) {
+    try {
+        // Restaurar datos base
+        sessions = backupData.sessions || {};
+        egresos = backupData.egresos || {};
+        therapists = backupData.therapists || [];
+        
+        // Restaurar datos de funcionalidades adicionales si están disponibles
+        if (backupData.creditPurchases && typeof creditPurchases !== 'undefined') {
+            creditPurchases = backupData.creditPurchases;
+        }
+        
+        if (backupData.dailyPackagePurchases && typeof dailyPackagePurchases !== 'undefined') {
+            dailyPackagePurchases = backupData.dailyPackagePurchases;
+        }
+        
+        if (backupData.confirmaciones && typeof confirmaciones !== 'undefined') {
+            confirmaciones = backupData.confirmaciones;
+        }
+        
+        if (backupData.transferConfirmationStates && typeof transferConfirmationStates !== 'undefined') {
+            transferConfirmationStates = backupData.transferConfirmationStates;
+        }
+
+        // Restaurar datos de sesiones grupales
+        if (backupData.groupTherapy && typeof groupTherapy !== 'undefined') {
+            groupTherapy = backupData.groupTherapy;
+        }
+
+        if (backupData.groupSessions && typeof groupSessions !== 'undefined') {
+            groupSessions = backupData.groupSessions;
+        }
+
+        // NUEVO: Restaurar créditos de pacientes
+        if (backupData.patientCredits && typeof patientCredits !== 'undefined') {
+            patientCredits = backupData.patientCredits;
+        }
+
+        // NUEVO: Restaurar saldos iniciales
+        if (backupData.saldosIniciales && typeof saldosIniciales !== 'undefined') {
+            saldosIniciales = backupData.saldosIniciales;
+        }
+
+        // NUEVO: Restaurar saldos reales
+        if (backupData.saldosReales && typeof saldosReales !== 'undefined') {
+            saldosReales = backupData.saldosReales;
+        }
+
+        // NUEVO: Restaurar historial de saldos
+        if (backupData.historialSaldos && typeof historialSaldos !== 'undefined') {
+            historialSaldos = backupData.historialSaldos;
+        }
+
+        // NUEVO: Restaurar histórico de paquetes completados
+        if (backupData.packageHistory && typeof packageHistory !== 'undefined') {
+            packageHistory = backupData.packageHistory;
+        }
+
+        // ============================================================
+        // AUTO-REGISTRAR TERAPEUTAS FALTANTES (por si el backup tiene inconsistencias)
+        // ============================================================
+        const therapistsToRegister = new Set();
+
+        // De todas las sesiones
+        Object.values(sessions || {}).forEach(sessionList => {
+            if (Array.isArray(sessionList)) {
+                sessionList.forEach(s => {
+                    if (s && s.therapist) therapistsToRegister.add(s.therapist);
+                });
+            }
+        });
+
+        // De todos los egresos
+        Object.values(egresos || {}).forEach(egresoList => {
+            if (Array.isArray(egresoList)) {
+                egresoList.forEach(e => {
+                    if (e && e.therapist) therapistsToRegister.add(e.therapist);
+                });
+            }
+        });
+
+        // De todas las sesiones grupales
+        Object.values(groupSessions || {}).forEach(gsList => {
+            if (Array.isArray(gsList)) {
+                gsList.forEach(gs => {
+                    if (gs && gs.therapists) {
+                        gs.therapists.forEach(t => therapistsToRegister.add(t));
+                    }
+                });
+            }
+        });
+
+        // De todos los paquetes activos
+        Object.values(dailyPackagePurchases || {}).forEach(pkgList => {
+            if (Array.isArray(pkgList)) {
+                pkgList.forEach(pkg => {
+                    if (pkg && pkg.therapist) therapistsToRegister.add(pkg.therapist);
+                });
+            }
+        });
+
+        // De créditos de pacientes
+        Object.values(patientCredits || {}).forEach(patientData => {
+            if (patientData && typeof patientData === 'object') {
+                Object.keys(patientData).forEach(therapist => therapistsToRegister.add(therapist));
+            }
+        });
+
+        // De configuración de grupos
+        Object.values(groupTherapy || {}).forEach(group => {
+            if (group && group.therapists) {
+                group.therapists.forEach(t => therapistsToRegister.add(t));
+            }
+        });
+
+        // Registrar terapeutas faltantes
+        let newTherapistsCount = 0;
+        therapistsToRegister.forEach(therapistName => {
+            if (therapistName && !therapists.includes(therapistName)) {
+                therapists.push(therapistName);
+                newTherapistsCount++;
+                console.log(`✅ Terapeuta auto-registrada desde backup: ${therapistName}`);
+            }
+        });
+
+        if (newTherapistsCount > 0) {
+            console.log(`📋 ${newTherapistsCount} terapeuta(s) auto-registrada(s) desde backup`);
+        }
+
+        // Guardar datos restaurados
+        saveToStorageAsync();
+        
+        // Actualizar todas las vistas
+        const currentDate = document.getElementById('date-input').value;
+        if (currentDate) {
+            updateAllViews(currentDate);
+        }
+        
+        // Actualizar información del sistema
+        updateSystemInfo();
+        
+        alert('Backup restaurado exitosamente. El sistema ha sido restaurado al estado del backup.');
+        
+        // Opcional: recargar la página para asegurar que todo se reinicialice
+        if (confirm('¿Desea recargar la página para asegurar que todos los cambios se reflejen correctamente?')) {
+            location.reload();
+        }
+        
+    } catch (error) {
+        console.error('Error restoring backup:', error);
+        alert('Error al restaurar el backup. Verifique la consola para más detalles.');
+    }
+}
+
+function createAutoBackup(suffix) {
+    try {
+        const available = detectAvailableData();
+        const backupData = generateFullBackupJSON(available);
+        
+        // Guardar en localStorage temporal para recuperación de emergencia
+        localStorage.setItem(`neurotea_auto_backup_${suffix}`, JSON.stringify(backupData));
+        
+        console.log(`Auto-backup creado: neurotea_auto_backup_${suffix}`);
+        
+    } catch (error) {
+        console.error('Error creating auto backup:', error);
+    }
+}
+
+
+// ===========================
+// FUNCIONES PARA COMPROBANTES HTML - R8A
+// ===========================
+
+// Función para obtener paquetes por terapeuta y fecha
+function getPackagesByTherapistAndDate(therapist, fecha) {
+    const dayPackages = dailyPackagePurchases[fecha] || [];
+    // IMPORTANTE: Incluir paquetes del histórico que fueron COMPRADOS ese día
+    const historyPackagesForDate = (packageHistory || []).filter(p => p.purchaseDate === fecha);
+    const allDayPackages = [...dayPackages, ...historyPackagesForDate];
+    return allDayPackages.filter(pkg => pkg.therapist === therapist);
+}
+
+// Función para generar filas de paquetes y créditos
+function generatePackageAndCreditRows(therapist, fecha) {
+    const rows = [];
+    
+    // Obtener sesiones del día
+    const daySessions = sessions[fecha] || [];
+    
+    // 1. Sesiones normales (sin crédito usado)
+    const normalSessions = daySessions.filter(session => 
+        session.therapist === therapist && !session.creditUsed
+    );
+    
+    normalSessions.forEach(session => {
+        rows.push(
+            '<tr>' +
+                '<td>' + (session.patientName || 'Sin nombre') + '</td>' +
+                '<td>SESION NORMAL</td>' +
+                '<td class="currency">Gs ' + (session.sessionValue || 0).toLocaleString() + '</td>' +
+                '<td class="currency">Gs ' + (session.neuroteaContribution || 0).toLocaleString() + '</td>' +
+                '<td class="currency">Gs ' + (session.therapistFee || 0).toLocaleString() + '</td>' +
+            '</tr>'
+        );
+    });
+    
+    // 2. Sesiones con crédito usado (creditUsed: true) - Valores en 0
+    const creditUsedSessions = daySessions.filter(session => 
+        session.therapist === therapist && session.creditUsed === true
+    );
+    
+    creditUsedSessions.forEach(session => {
+        rows.push(
+            '<tr>' +
+                '<td>' + (session.patientName || 'Sin nombre') + '</td>' +
+                '<td>SESION CON CREDITO</td>' +
+                '<td class="currency">Gs 0</td>' +
+                '<td class="currency">Gs 0</td>' +
+                '<td class="currency">Gs 0</td>' +
+            '</tr>'
+        );
+    });
+    
+    // 3. Obtener paquetes del día (incluyendo histórico)
+    const dayPackages = dailyPackagePurchases[fecha] || [];
+    const historyPackagesForDate = (packageHistory || []).filter(p => p.purchaseDate === fecha);
+    const allDayPackages = [...dayPackages, ...historyPackagesForDate];
+    const therapistPackages = allDayPackages.filter(pkg => pkg.therapist === therapist);
+    
+    therapistPackages.forEach(pkg => {
+        let tipo, honorarios, aporte;
+
+        if (pkg.createdBy === 'session_combined') {
+            tipo = 'CREDITO';
+        } else if (pkg.createdBy === 'independent') {
+            tipo = 'PAQUETE';
+        } else {
+            tipo = 'PAQUETE';
+        }
+
+        // CORRECCIÓN: Usar configuración real del paquete
+        honorarios = pkg.therapistFee || 0;
+        aporte = pkg.neuroteaContribution || 0;
+
+        rows.push(
+            '<tr>' +
+                '<td>' + (pkg.patientName || 'Sin nombre') + '</td>' +
+                '<td>' + tipo + '</td>' +
+                '<td class="currency">Gs ' + (pkg.sessionValue || 0).toLocaleString() + '</td>' +
+                '<td class="currency">Gs ' + aporte.toLocaleString() + '</td>' +
+                '<td class="currency">Gs ' + honorarios.toLocaleString() + '</td>' +
+            '</tr>'
+        );
+    });
+
+    // 4. Sesiones grupales donde participó esta terapeuta
+    const dayGroupSessions = groupSessions[fecha] || [];
+    const therapistGroupSessions = dayGroupSessions.filter(gs =>
+        gs.therapists && gs.therapists.includes(therapist)
+    );
+
+    therapistGroupSessions.forEach(gs => {
+        // Calcular valor, aporte y honorarios proporcionales por terapeuta
+        // La primera terapeuta recibe el residuo de la división
+        const therapistCount = gs.therapistCount || gs.therapists?.length || 1;
+        const isFirstTherapist = gs.therapists && gs.therapists[0] === therapist;
+
+        // Valor proporcional de la sesión (totalValue / cantidad de terapeutas)
+        const baseValor = Math.floor((gs.totalValue || 0) / therapistCount);
+        const residuoValor = (gs.totalValue || 0) - (baseValor * therapistCount);
+        const valorProporcional = baseValor + (isFirstTherapist ? residuoValor : 0);
+
+        const baseAporte = Math.floor((gs.neuroteaContribution || 0) / therapistCount);
+        const residuoAporte = (gs.neuroteaContribution || 0) - (baseAporte * therapistCount);
+        const aporteProporcion = baseAporte + (isFirstTherapist ? residuoAporte : 0);
+
+        const baseHonorarios = gs.feePerTherapist || 0;
+        const residuoHonorarios = gs.feeResidue || 0;
+        const honorariosProporcion = baseHonorarios + (isFirstTherapist ? residuoHonorarios : 0);
+
+        rows.push(
+            '<tr>' +
+                '<td>' + (gs.groupName || 'Sin nombre') + '</td>' +
+                '<td>SESION GRUPAL</td>' +
+                '<td class="currency">Gs ' + valorProporcional.toLocaleString() + '</td>' +
+                '<td class="currency">Gs ' + aporteProporcion.toLocaleString() + '</td>' +
+                '<td class="currency">Gs ' + honorariosProporcion.toLocaleString() + '</td>' +
+            '</tr>'
+        );
+    });
+
+    if (rows.length === 0) {
+        return '<tr><td colspan="5" style="text-align: center; font-style: italic;">No hay registros para esta fecha</td></tr>';
+    }
+
+    return rows.join('');
+}
+
+/**
+ * ✅ NUEVA FUNCIÓN: Genera la sección de detalle del pago para el comprobante
+ * Incluye información sobre vueltos y modalidad de pago
+ */
+function generatePaymentDetailSection(status, therapist, fecha) {
+    const conf = status.confirmacionInfo;
+
+    // Si no hay confirmación, mostrar estado pendiente
+    if (!conf || !conf.confirmado) {
+        return '<div class="payment-detail-section pending">' +
+            '<div class="payment-detail-title pending">' +
+                'PAGO PENDIENTE DE CONFIRMACIÓN' +
+            '</div>' +
+            '<div class="payment-modalidad">El pago aún no ha sido procesado en el sistema.</div>' +
+        '</div>';
+    }
+
+    // Determinar modalidad de pago
+    let modalidadTexto = '';
+    let detalleHTML = '';
+    let tipoOpcion = conf.tipoOpcion || 'exacto';
+
+    // ✅ FIX: Detectar pago mixto para confirmaciones antiguas que no tienen tipoOpcion correcto
+    // Si tiene efectivo Y banco usado positivos, es un pago mixto (DAR Y TRANSFERIR)
+    if (tipoOpcion === 'exacto' && conf.efectivoUsado > 0 && conf.bancoUsado > 0) {
+        tipoOpcion = 'dar-transferir';
+    }
+
+    switch(tipoOpcion) {
+        case 'exacto':
+            modalidadTexto = 'Pago en efectivo exacto';
+            detalleHTML =
+                '<div class="payment-detail-line">' +
+                    '<span>Efectivo entregado:</span>' +
+                    '<span>Gs ' + (conf.efectivoUsado || 0).toLocaleString() + '</span>' +
+                '</div>';
+            break;
+
+        case 'vuelto':
+            const vueltoTransf = conf.vueltoTransferencia || 0;
+            const entregadoVuelto = conf.efectivoUsado || 0;
+            modalidadTexto = 'Pago en efectivo con vuelto por transferencia';
+            detalleHTML =
+                '<div class="payment-detail-line">' +
+                    '<span>Efectivo entregado:</span>' +
+                    '<span>Gs ' + entregadoVuelto.toLocaleString() + '</span>' +
+                '</div>' +
+                '<div class="payment-detail-line">' +
+                    '<span>Vuelto (transferencia a cuenta NeuroTEA):</span>' +
+                    '<span>Gs ' + vueltoTransf.toLocaleString() + '</span>' +
+                '</div>' +
+                '<div class="payment-detail-line highlight">' +
+                    '<span>Neto recibido por terapeuta:</span>' +
+                    '<span>Gs ' + (entregadoVuelto - vueltoTransf).toLocaleString() + '</span>' +
+                '</div>';
+            break;
+
+        case 'vuelto-efectivo':
+            const vueltoEfectivo = conf.vueltoEfectivo || 0;
+            const netoEfectivo = conf.efectivoUsado || 0;
+            const entregadoTotal = netoEfectivo + vueltoEfectivo;
+            modalidadTexto = 'Pago en efectivo con vuelto en efectivo';
+            detalleHTML =
+                '<div class="payment-detail-line">' +
+                    '<span>Efectivo entregado:</span>' +
+                    '<span>Gs ' + entregadoTotal.toLocaleString() + '</span>' +
+                '</div>' +
+                '<div class="payment-detail-line">' +
+                    '<span>Vuelto en efectivo (regresa a caja):</span>' +
+                    '<span>Gs ' + vueltoEfectivo.toLocaleString() + '</span>' +
+                '</div>' +
+                '<div class="payment-detail-line highlight">' +
+                    '<span>Neto recibido por terapeuta:</span>' +
+                    '<span>Gs ' + netoEfectivo.toLocaleString() + '</span>' +
+                '</div>';
+            break;
+
+        case 'transferir':
+            modalidadTexto = 'Pago por transferencia bancaria';
+            detalleHTML =
+                '<div class="payment-detail-line">' +
+                    '<span>Transferido desde cuenta NeuroTEA:</span>' +
+                    '<span>Gs ' + (conf.bancoUsado || 0).toLocaleString() + '</span>' +
+                '</div>';
+            break;
+
+        case 'dar-transferir':
+            // Caso: DAR Y TRANSFERIR - Pago mixto (efectivo de caja + transferencia)
+            const efectivoDado = conf.efectivoUsado || 0;
+            const transferenciaComplemento = conf.bancoUsado || 0;
+            const totalPagado = efectivoDado + transferenciaComplemento;
+            modalidadTexto = 'Pago mixto (efectivo + transferencia)';
+            detalleHTML =
+                '<div class="payment-detail-line">' +
+                    '<span>Efectivo entregado de caja:</span>' +
+                    '<span>Gs ' + efectivoDado.toLocaleString() + '</span>' +
+                '</div>' +
+                '<div class="payment-detail-line">' +
+                    '<span>Transferido desde cuenta NeuroTEA:</span>' +
+                    '<span>Gs ' + transferenciaComplemento.toLocaleString() + '</span>' +
+                '</div>' +
+                '<div class="payment-detail-line highlight">' +
+                    '<span>Total pagado a terapeuta:</span>' +
+                    '<span>Gs ' + totalPagado.toLocaleString() + '</span>' +
+                '</div>';
+            break;
+
+        case 'devolucion-transferencia':
+            // Caso: LA TERAPEUTA DEBE DAR - por transferencia
+            modalidadTexto = 'Devolución por transferencia bancaria';
+            detalleHTML =
+                '<div class="payment-detail-line">' +
+                    '<span>Transferencia recibida de terapeuta:</span>' +
+                    '<span>Gs ' + Math.abs(conf.bancoUsado ?? 0).toLocaleString() + '</span>' +
+                '</div>';
+            break;
+
+        case 'devolucion-efectivo':
+            // Caso: LA TERAPEUTA DEBE DAR - en efectivo
+            modalidadTexto = 'Devolución en efectivo';
+            detalleHTML =
+                '<div class="payment-detail-line">' +
+                    '<span>Efectivo recibido de terapeuta:</span>' +
+                    '<span>Gs ' + (conf.efectivoRecibido || 0).toLocaleString() + '</span>' +
+                '</div>';
+            break;
+
+        default:
+            // Para casos como DAR Y TRANSFERIR o LA TERAPEUTA DEBE DAR
+            if (conf.efectivoUsado > 0 && conf.bancoUsado > 0) {
+                modalidadTexto = 'Pago mixto (efectivo + transferencia)';
+                detalleHTML =
+                    '<div class="payment-detail-line">' +
+                        '<span>Efectivo de caja:</span>' +
+                        '<span>Gs ' + (conf.efectivoUsado || 0).toLocaleString() + '</span>' +
+                    '</div>' +
+                    '<div class="payment-detail-line">' +
+                        '<span>Transferencia desde cuenta:</span>' +
+                        '<span>Gs ' + (conf.bancoUsado || 0).toLocaleString() + '</span>' +
+                    '</div>' +
+                    '<div class="payment-detail-line highlight">' +
+                        '<span>Total pagado a terapeuta:</span>' +
+                        '<span>Gs ' + ((conf.efectivoUsado || 0) + (conf.bancoUsado || 0)).toLocaleString() + '</span>' +
+                    '</div>';
+            } else if (conf.bancoUsado < 0) {
+                // Caso: LA TERAPEUTA DEBE DAR - por transferencia
+                // bancoUsado negativo indica entrada de dinero a cuenta NeuroTEA
+                modalidadTexto = 'Devolución por transferencia bancaria';
+                detalleHTML =
+                    '<div class="payment-detail-line">' +
+                        '<span>Transferencia recibida de terapeuta:</span>' +
+                        '<span>Gs ' + Math.abs(conf.bancoUsado).toLocaleString() + '</span>' +
+                    '</div>';
+            } else if (conf.efectivoRecibido > 0) {
+                // Caso: LA TERAPEUTA DEBE DAR - en efectivo
+                modalidadTexto = 'Devolución en efectivo';
+                detalleHTML =
+                    '<div class="payment-detail-line">' +
+                        '<span>Efectivo recibido de terapeuta:</span>' +
+                        '<span>Gs ' + (conf.efectivoRecibido || 0).toLocaleString() + '</span>' +
+                    '</div>';
+            } else {
+                modalidadTexto = 'Pago procesado';
+                detalleHTML =
+                    '<div class="payment-detail-line">' +
+                        '<span>Monto procesado:</span>' +
+                        '<span>Gs ' + (conf.efectivoUsado || conf.bancoUsado || 0).toLocaleString() + '</span>' +
+                    '</div>';
+            }
+    }
+
+    // Formatear timestamp
+    const fechaConfirmacion = conf.timestamp ? new Date(conf.timestamp).toLocaleString('es-PY') : 'No disponible';
+
+    return '<div class="payment-detail-section">' +
+        '<div class="payment-detail-title">' +
+            'DETALLE DEL PAGO CONFIRMADO' +
+        '</div>' +
+        '<div class="payment-modalidad">Modalidad: ' + modalidadTexto + '</div>' +
+        detalleHTML +
+        '<div class="payment-detail-line" style="margin-top: 10px; font-size: 9px; color: #666;">' +
+            '<span>Confirmado:</span>' +
+            '<span>' + fechaConfirmacion + '</span>' +
+        '</div>' +
+    '</div>';
+}
+
+// Función principal para generar HTML del comprobante
+function generateReceiptHTMLContent(therapist, fecha, therapistSessions, therapistGroupSessions) {
+    try {
+        // Datos básicos
+        const fechaFormateada = formatDateForReceipt(fecha);
+        const horaActual = new Date().toLocaleTimeString('es-PY', { hour: '2-digit', minute: '2-digit' });
+        const numeroComprobante = '#CP-' + fecha.replace(/-/g, '') + '-001';
+
+        // CORREGIDO: Conteo total de sesiones (individuales + grupales)
+        const totalSesiones = (therapistSessions?.length || 0) + (therapistGroupSessions?.length || 0);
+
+        // Calcular totales
+        const status = calculateTherapistStatus(therapist, fecha);
+        const diferencia = (status.neuroteaLeDebe || 0) - (status.terapeutaDebe || 0);
+
+        // Generar filas de ingresos
+        const ingresoRows = generatePackageAndCreditRows(therapist, fecha);
+
+        // Texto del resultado final
+        let textoResultado;
+        if (diferencia > 0) {
+            textoResultado = 'LA TERAPEUTA DEBE RECIBIR: Gs ' + Math.abs(diferencia).toLocaleString();
+        } else if (diferencia < 0) {
+            textoResultado = 'LA TERAPEUTA DEBE DAR: Gs ' + Math.abs(diferencia).toLocaleString();
+        } else {
+            textoResultado = 'SALDOS EQUILIBRADOS: Gs 0';
+        }
+
+        // ✅ NUEVO: Generar sección de detalle del pago
+        const detallePagoHTML = generatePaymentDetailSection(status, therapist, fecha);
+
+        // Observaciones
+        const observaciones = generateDynamicObservations(therapist, fecha);
+        const observacionesHTML = observaciones.length > 0
+            ? observaciones.join('<br>')
+            : 'Comprobante generado automáticamente por Sistema NeuroTEA';
+        
+        // HTML completo con estilos exactos del ejemplo de referencia
+        return '<!DOCTYPE html>' +
+'<html lang="es">' +
+'<head>' +
+    '<meta charset="UTF-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+    '<title>Comprobante NeuroTEA - ' + therapist + '</title>' +
+    '<style>' +
+        '/* Simulación exacta del código fuente con medidas CSS corregidas */' +
+        'body {' +
+            'margin: 0;' +
+            'padding: 0;' +
+            'font-family: Helvetica, Arial, sans-serif;' +
+            'background: white;' +
+            'color: black;' +
+            'width: 210mm; /* A4 width */' +
+            'min-height: 297mm; /* A4 height */' +
+            'box-sizing: border-box;' +
+        '}' +
+        '/* ENCABEZADO - Gris con letras negras según la foto */' +
+        '.header {' +
+            'background: #e6e6e6;' +
+            'height: 60px;' +
+            'padding: 0 30px;' +
+            'position: relative;' +
+            'display: flex;' +
+            'align-items: center;' +
+            'justify-content: space-between;' +
+            'border-bottom: 1px solid #ccc;' +
+            'margin: 0 auto;' +
+            'max-width: 190mm; /* Máximo ancho para A4 con márgenes */' +
+        '}' +
+        '.header-left {' +
+            'position: relative;' +
+            'flex: 1;' +
+        '}' +
+        '.avanza-text {' +
+            'color: black;' +
+            'font-style: italic;' +
+            'font-size: 18px;' +
+            'margin-bottom: -5px; /* Clave: solapamiento según código */' +
+        '}' +
+        '.neurotea-text {' +
+            'color: black;' +
+            'font-weight: bold;' +
+            'font-size: 32px;' +
+            'margin-top: -5px; /* Permite solapamiento */' +
+        '}' +
+        '.tea-orange {' +
+            'color: black;' +
+        '}' +
+        '.header-right {' +
+            'color: black;' +
+            'font-weight: bold;' +
+            'font-size: 36px;' +
+            'padding-right: 20px; /* Espacio adicional desde el borde */' +
+            'text-align: right;' +
+            'flex: 0 0 auto;' +
+        '}' +
+        '/* CONTENIDO - Padding exacto del código */' +
+        '.content {' +
+            'padding: 20px 30px;' +
+        '}' +
+        '/* INFORMACIÓN BÁSICA - Formato de dos columnas exacto */' +
+        '.basic-info {' +
+            'margin-bottom: 20px;' +
+            'border-bottom: 1px solid #000;' +
+            'padding-bottom: 10px;' +
+        '}' +
+        '.info-grid {' +
+            'display: grid;' +
+            'grid-template-columns: 1fr 1fr;' +
+            'gap: 20px;' +
+            'margin-bottom: 10px;' +
+        '}' +
+        '.info-column {' +
+            'display: flex;' +
+            'flex-direction: column;' +
+            'gap: 8px;' +
+        '}' +
+        '.info-item {' +
+            'display: flex;' +
+            'justify-content: space-between;' +
+            'font-size: 12px;' +
+        '}' +
+        '.info-label {' +
+            'font-weight: bold;' +
+            'color: black;' +
+        '}' +
+        '.info-value {' +
+            'color: black;' +
+        '}' +
+        '/* SECCIÓN DE PAQUETES - Exacto según código fuente */' +
+        '.packages-section {' +
+            'margin: 20px 0;' +
+        '}' +
+        '.section-title {' +
+            'background-color: #f5f5f5;' +
+            'padding: 8px 12px;' +
+            'font-weight: bold;' +
+            'font-size: 12px;' +
+            'color: black;' +
+            'border: 1px solid #ddd;' +
+            'margin-bottom: 0;' +
+        '}' +
+        '.sessions-table {' +
+            'width: 100%;' +
+            'border-collapse: collapse;' +
+            'font-size: 10px;' +
+            'margin-bottom: 20px;' +
+        '}' +
+        '.sessions-table th,' +
+        '.sessions-table td {' +
+            'padding: 6px 8px;' +
+            'text-align: left;' +
+            'border: 1px solid #ddd;' +
+        '}' +
+        '.sessions-table th {' +
+            'background-color: #f5f5f5;' +
+            'font-weight: bold;' +
+            'color: black;' +
+            'font-size: 10px;' +
+        '}' +
+        '/* TOTALES - Según estructura del código */' +
+        '.totals-section {' +
+            'border: 1px solid #ddd;' +
+            'padding: 15px;' +
+            'margin: 20px 0;' +
+            'background-color: #f9f9f9;' +
+        '}' +
+        '.total-line {' +
+            'display: flex;' +
+            'justify-content: space-between;' +
+            'padding: 4px 0;' +
+            'font-size: 11px;' +
+        '}' +
+        '.total-label {' +
+            'font-weight: bold;' +
+            'color: black;' +
+        '}' +
+        '.total-value {' +
+            'color: black;' +
+            'font-weight: bold;' +
+        '}' +
+        '/* CÁLCULO FINAL */' +
+        '.calculation-section {' +
+            'border: 2px solid #000;' +
+            'padding: 15px;' +
+            'margin: 20px 0;' +
+            'background-color: #f0f0f0;' +
+        '}' +
+        '.calc-title {' +
+            'font-weight: bold;' +
+            'font-size: 12px;' +
+            'color: black;' +
+            'margin-bottom: 10px;' +
+            'text-align: center;' +
+        '}' +
+        '.calc-line {' +
+            'display: flex;' +
+            'justify-content: space-between;' +
+            'padding: 3px 0;' +
+            'font-size: 11px;' +
+            'color: black;' +
+        '}' +
+        '.calc-separator {' +
+            'border-top: 1px solid #000;' +
+            'margin: 8px 0;' +
+        '}' +
+        '.calc-result {' +
+            'font-size: 14px;' +
+            'font-weight: bold;' +
+            'text-align: center;' +
+            'color: black;' +
+            'background-color: white;' +
+            'padding: 10px;' +
+            'border: 1px solid #000;' +
+            'margin-top: 10px;' +
+        '}' +
+        '/* DETALLE DEL PAGO - TONOS GRISES */' +
+        '.payment-detail-section {' +
+            'margin: 20px 0;' +
+            'padding: 15px;' +
+            'border: 1px solid #ccc;' +
+            'background-color: #f5f5f5;' +
+            'border-radius: 0;' +
+        '}' +
+        '.payment-detail-section.pending {' +
+            'border-color: #999;' +
+            'background-color: #e8e8e8;' +
+        '}' +
+        '.payment-detail-title {' +
+            'font-weight: bold;' +
+            'font-size: 12px;' +
+            'color: #333;' +
+            'margin-bottom: 10px;' +
+            'display: flex;' +
+            'align-items: center;' +
+        '}' +
+        '.payment-detail-title.pending {' +
+            'color: #555;' +
+        '}' +
+        '.payment-detail-title .icon {' +
+            'margin-right: 8px;' +
+            'font-size: 16px;' +
+        '}' +
+        '.payment-detail-line {' +
+            'display: flex;' +
+            'justify-content: space-between;' +
+            'padding: 4px 0;' +
+            'font-size: 11px;' +
+            'color: black;' +
+        '}' +
+        '.payment-detail-line.highlight {' +
+            'font-weight: bold;' +
+            'border-top: 1px solid #999;' +
+            'padding-top: 8px;' +
+            'margin-top: 5px;' +
+        '}' +
+        '.payment-modalidad {' +
+            'font-size: 11px;' +
+            'color: #666;' +
+            'margin-bottom: 8px;' +
+            'font-style: italic;' +
+        '}' +
+        '/* OBSERVACIONES */' +
+        '.observations-section {' +
+            'margin: 20px 0;' +
+            'padding: 10px;' +
+            'border: 1px solid #ddd;' +
+            'background-color: #f9f9f9;' +
+        '}' +
+        '.obs-title {' +
+            'font-weight: bold;' +
+            'margin-bottom: 8px;' +
+            'color: black;' +
+            'font-size: 11px;' +
+        '}' +
+        '.obs-content {' +
+            'font-size: 10px;' +
+            'color: #555;' +
+            'font-style: italic;' +
+        '}' +
+        '/* FIRMAS - Espaciado exacto con líneas punteadas y centrado */' +
+        '.signatures-section {' +
+            'margin-top: 50px;' +
+            'display: grid;' +
+            'grid-template-columns: 1fr 1fr;' +
+            'gap: 60px;' +
+            'font-size: 11px;' +
+            'padding: 0 40px;' +
+        '}' +
+        '.signature-block {' +
+            'text-align: center;' +
+        '}' +
+        '.signature-line {' +
+            'border-bottom: 2px dotted #666;' +
+            'width: 150px;' +
+            'margin: 0 auto 10px auto;' +
+            'height: 40px;' +
+        '}' +
+        '.signature-text {' +
+            'font-weight: bold;' +
+            'margin-bottom: 8px;' +
+            'color: black;' +
+            'font-size: 11px;' +
+        '}' +
+        '.signature-name {' +
+            'font-weight: normal;' +
+            'color: black;' +
+            'font-size: 11px;' +
+        '}' +
+        '/* Utilidades */' +
+        '.currency {' +
+            'font-family: monospace;' +
+            'color: black;' +
+        '}' +
+    '</style>' +
+'</head>' +
+'<body>' +
+    '<!-- ENCABEZADO SEGÚN CÓDIGO FUENTE -->' +
+    '<div class="header">' +
+        '<div class="header-left">' +
+            '<div class="avanza-text">Avanza</div>' +
+            '<div class="neurotea-text">Neuro<span class="tea-orange">TEA</span></div>' +
+        '</div>' +
+        '<div class="header-right">COMPROBANTE</div>' +
+    '</div>' +
+    '<!-- CONTENIDO -->' +
+    '<div class="content">' +
+        '<!-- INFORMACIÓN BÁSICA -->' +
+        '<div class="basic-info">' +
+            '<div class="info-grid">' +
+                '<div class="info-column">' +
+                    '<div class="info-item">' +
+                        '<span class="info-label">TERAPEUTA:</span>' +
+                        '<span class="info-value">' + therapist + '</span>' +
+                    '</div>' +
+                    '<div class="info-item">' +
+                        '<span class="info-label">FECHA:</span>' +
+                        '<span class="info-value">' + fechaFormateada + '</span>' +
+                    '</div>' +
+                    '<div class="info-item">' +
+                        '<span class="info-label">SESIONES:</span>' +
+                        '<span class="info-value">' + totalSesiones + ' sesiones realizadas</span>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="info-column">' +
+                    '<div class="info-item">' +
+                        '<span class="info-label">COMPROBANTE:</span>' +
+                        '<span class="info-value">' + numeroComprobante + '</span>' +
+                    '</div>' +
+                    '<div class="info-item">' +
+                        '<span class="info-label">HORA:</span>' +
+                        '<span class="info-value">' + horaActual + '</span>' +
+                    '</div>' +
+                    '<div class="info-item">' +
+                        '<span class="info-label">ESTADO:</span>' +
+                        '<span class="info-value">' + (diferencia > 0 ? 'DEBE RECIBIR' : diferencia < 0 ? 'DEBE DAR' : 'EQUILIBRADO') + '</span>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+        '</div>' +
+        '<!-- DETALLE DE INGRESOS DEL DÍA - ESTRUCTURA REFINADA -->' +
+        '<div class="packages-section">' +
+            '<h3 class="section-title">DETALLE DE INGRESOS DEL DÍA</h3>' +
+            '<table class="sessions-table">' +
+                '<thead>' +
+                    '<tr>' +
+                        '<th style="width: 25%;">PACIENTE</th>' +
+                        '<th style="width: 20%;">TIPO</th>' +
+                        '<th style="width: 20%;">VALOR SESION</th>' +
+                        '<th style="width: 17.5%;">APORTE NEUROTEA</th>' +
+                        '<th style="width: 17.5%;">HONORARIOS</th>' +
+                    '</tr>' +
+                '</thead>' +
+                '<tbody>' +
+                    ingresoRows +
+                '</tbody>' +
+            '</table>' +
+        '</div>' +
+        '<!-- TOTALES - SEGÚN ESTRUCTURA DEL CÓDIGO -->' +
+        '<div class="totals-section">' +
+            '<div class="total-line">' +
+                '<span class="total-label">VALOR TOTAL SESIONES:</span>' +
+                '<span class="total-value currency">Gs ' + (status.valorTotalSesiones || 0).toLocaleString() + '</span>' +
+            '</div>' +
+            '<div class="total-line">' +
+                '<span class="total-label">TOTAL APORTE NEUROTEA:</span>' +
+                '<span class="total-value currency">Gs ' + (status.aporteNeuroTEA || 0).toLocaleString() + '</span>' +
+            '</div>' +
+            '<div class="total-line">' +
+                '<span class="total-label">TOTAL HONORARIOS:</span>' +
+                '<span class="total-value currency">Gs ' + (status.honorarios || 0).toLocaleString() + '</span>' +
+            '</div>' +
+            '<div class="total-line">' +
+                '<span class="total-label">TRANSFERENCIAS A TERAPEUTA:</span>' +
+                '<span class="total-value currency">Gs ' + (status.transferenciaATerapeuta || 0).toLocaleString() + '</span>' +
+            '</div>' +
+            '<div class="total-line">' +
+                '<span class="total-label">ADELANTOS RECIBIDOS:</span>' +
+                '<span class="total-value currency">Gs ' + (status.adelantosRecibidos || 0).toLocaleString() + '</span>' +
+            '</div>' +
+        '</div>' +
+        '<!-- CÁLCULO FINAL -->' +
+        '<div class="calculation-section">' +
+            '<div class="calc-title">CALCULO FINAL</div>' +
+            '<div class="calc-result">' + textoResultado + '</div>' +
+        '</div>' +
+        '<!-- DETALLE DEL PAGO - NUEVO -->' +
+        detallePagoHTML +
+        '<!-- OBSERVACIONES -->' +
+        '<div class="observations-section">' +
+            '<div class="obs-title">OBSERVACIONES:</div>' +
+            '<div class="obs-content">' +
+                observacionesHTML +
+            '</div>' +
+        '</div>' +
+        '<!-- FIRMAS -->' +
+        '<div class="signatures-section">' +
+            '<div class="signature-block">' +
+                '<div class="signature-line"></div>' +
+                '<div class="signature-text">RECIBI CONFORME</div>' +
+                '<div class="signature-name">' + therapist + '</div>' +
+            '</div>' +
+            '<div class="signature-block">' +
+                '<div class="signature-line"></div>' +
+                '<div class="signature-text">ENTREGUE CONFORME</div>' +
+                '<div class="signature-name">Secretaría NeuroTEA</div>' +
+            '</div>' +
+        '</div>' +
+    '</div>' +
+'</body>' +
+'</html>';
+        
+    } catch (error) {
+        console.error('Error en generateReceiptHTMLContent:', error);
+        return '<!DOCTYPE html><html><head><title>Error</title></head><body style="color: #000;"><h1>Error al generar comprobante</h1><p>Error: ' + error.message + '</p><p>Terapeuta: ' + therapist + '</p><p>Fecha: ' + fecha + '</p></body></html>';
+    }
+}
+
+// Función para descargar archivo HTML
+function downloadHTMLFile(htmlContent, therapist, fecha) {
+    try {
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'Comprobante_' + therapist.replace(/\s+/g, '_') + '_' + fecha + '.html';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        console.log('Comprobante HTML descargado: ' + a.download);
+    } catch (error) {
+        console.error('Error al descargar archivo HTML:', error);
+        alert('Error al descargar el comprobante HTML: ' + error.message);
+    }
+}
+

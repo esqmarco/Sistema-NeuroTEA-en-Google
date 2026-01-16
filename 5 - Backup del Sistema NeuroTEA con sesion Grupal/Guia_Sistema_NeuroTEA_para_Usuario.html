@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Guía del Sistema NeuroTEA - Para el Usuario</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        h1 {
+            color: #2563eb;
+            border-bottom: 3px solid #2563eb;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #1e40af;
+            margin-top: 30px;
+            border-left: 4px solid #2563eb;
+            padding-left: 10px;
+        }
+        h3 {
+            color: #3b82f6;
+        }
+        .highlight {
+            background-color: #dbeafe;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .warning {
+            background-color: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .success {
+            background-color: #d1fae5;
+            border-left: 4px solid #10b981;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #e5e7eb;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #2563eb;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f9fafb;
+        }
+        code {
+            background-color: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+        .emoji {
+            font-size: 1.2em;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Guía del Sistema NeuroTEA</h1>
+<p><em>Documento explicativo para entender cómo trabajo y cómo usar las herramientas de verificación</em></p>
+
+<h2>1. ¿Qué hicimos juntos?</h2>
+
+<p>Durante nuestra sesión de trabajo, realizamos las siguientes mejoras al sistema:</p>
+
+<div class="success">
+<strong>Correcciones realizadas:</strong>
+<ul>
+    <li>Eliminamos 3 funciones que estaban duplicadas (esto podía causar comportamientos inesperados)</li>
+    <li>Actualizamos la documentación técnica para que refleje el estado real del sistema</li>
+    <li>Creamos un sistema de pruebas automatizadas con 76 verificaciones</li>
+    <li>Creamos 3 "agentes especializados" que te ayudarán a verificar el sistema</li>
+</ul>
+</div>
+
+<h2>2. ¿Qué son las pruebas automatizadas?</h2>
+
+<p>Imagina que tienes una lista de 76 cosas que verificar cada vez que alguien toca el sistema. Sería muy tedioso hacerlo manualmente, ¿verdad?</p>
+
+<p>Las <strong>pruebas automatizadas</strong> son exactamente eso: una lista de verificaciones que la computadora ejecuta automáticamente. En segundos, el sistema revisa:</p>
+
+<ul>
+    <li>Que los cálculos de dinero sean correctos</li>
+    <li>Que los créditos de paquetes funcionen bien</li>
+    <li>Que al eliminar algo, se elimine de todas partes</li>
+    <li>Que las sesiones grupales dividan el dinero correctamente</li>
+    <li>Y 72 cosas más...</li>
+</ul>
+
+<div class="highlight">
+<strong>Resultado esperado:</strong><br>
+Cuando todo funciona bien, verás un mensaje que dice:<br>
+<code>✅ Pasadas: 76 | ❌ Fallidas: 0</code><br><br>
+Si alguna prueba falla, sabremos exactamente qué función hay que revisar.
+</div>
+
+<h2>3. ¿Qué son los agentes especializados?</h2>
+
+<p>Los agentes son como "asistentes expertos" que yo (Claude) puedo usar para tareas específicas. Cada uno sabe exactamente qué revisar.</p>
+
+<table>
+    <tr>
+        <th>Agente</th>
+        <th>¿Qué hace?</th>
+        <th>¿Cuándo usarlo?</th>
+    </tr>
+    <tr>
+        <td><code>/test-neurotea</code></td>
+        <td>Ejecuta las 76 pruebas automáticas</td>
+        <td>Después de cualquier cambio en el código</td>
+    </tr>
+    <tr>
+        <td><code>/verify-neurotea</code></td>
+        <td>Verifica que todos los archivos estén completos y no falte nada</td>
+        <td>Después de cambios grandes o cuando algo parece raro</td>
+    </tr>
+    <tr>
+        <td><code>/audit-coherence</code></td>
+        <td>Audita que el sistema siga las "reglas de oro" (coherencia)</td>
+        <td>Antes de hacer un backup importante</td>
+    </tr>
+</table>
+
+<h2>4. ¿Cómo usar los agentes?</h2>
+
+<p>Es muy sencillo. Cuando estés conversando conmigo (Claude), simplemente escribe el comando:</p>
+
+<div class="highlight">
+<strong>Ejemplo:</strong><br><br>
+Tú: <code>/test-neurotea</code><br><br>
+Yo ejecutaré las pruebas y te diré si todo está bien o si hay algún problema.
+</div>
+
+<h2>5. ¿Qué son las "reglas de oro" del sistema?</h2>
+
+<p>El sistema NeuroTEA sigue 3 principios fundamentales que aseguran que todo funcione correctamente:</p>
+
+<h3>Regla 1: Reversibilidad</h3>
+<p><em>"Todo se puede deshacer"</em></p>
+<p>Si registras una sesión por error, puedes eliminarla. Si confirmas un pago incorrectamente, puedes revertirlo. El sistema siempre permite volver atrás.</p>
+
+<h3>Regla 2: Coherencia</h3>
+<p><em>"El mismo dato se ve igual en todas partes"</em></p>
+<p>Si una sesión aparece en el Registro Diario, también aparece en el Resumen, en la Rendición de Cuentas, y en las Transferencias. No puede estar en un lugar y no en otro.</p>
+
+<h3>Regla 3: Cálculo dinámico</h3>
+<p><em>"Los saldos se calculan, no se guardan"</em></p>
+<p>El saldo de caja no es un número guardado que se va sumando. Cada vez que lo necesitas, el sistema lo calcula desde cero: inicial + ingresos - egresos - pagos. Esto evita errores de acumulación.</p>
+
+<h2>6. ¿Qué pasa si algo falla?</h2>
+
+<div class="warning">
+<strong>Si una prueba falla:</strong>
+<ol>
+    <li>El sistema te mostrará exactamente cuál prueba falló</li>
+    <li>Te indicará qué función está afectada</li>
+    <li>Puedes pedirme que investigue y corrija el problema</li>
+</ol>
+</div>
+
+<h2>7. ¿Cuándo debo usar cada herramienta?</h2>
+
+<table>
+    <tr>
+        <th>Situación</th>
+        <th>Qué hacer</th>
+    </tr>
+    <tr>
+        <td>Pediste un cambio pequeño en el código</td>
+        <td>Usa <code>/test-neurotea</code></td>
+    </tr>
+    <tr>
+        <td>Agregaste una nueva funcionalidad</td>
+        <td>Usa <code>/test-neurotea</code> y luego <code>/verify-neurotea</code></td>
+    </tr>
+    <tr>
+        <td>Algo no funciona como esperabas</td>
+        <td>Usa <code>/verify-neurotea</code> para diagnóstico</td>
+    </tr>
+    <tr>
+        <td>Vas a hacer un backup importante</td>
+        <td>Usa <code>/audit-coherence</code> primero</td>
+    </tr>
+    <tr>
+        <td>Importaste datos de otro día</td>
+        <td>Usa <code>/test-neurotea</code> para verificar integridad</td>
+    </tr>
+</table>
+
+<h2>8. Resumen ejecutivo</h2>
+
+<div class="success">
+<strong>Lo que tienes ahora:</strong>
+<ul>
+    <li><strong>76 pruebas automáticas</strong> que verifican que el sistema funcione correctamente</li>
+    <li><strong>3 agentes especializados</strong> que puedes invocar con comandos simples</li>
+    <li><strong>Documentación actualizada</strong> que refleja el estado real del sistema</li>
+    <li><strong>Sistema limpio</strong> sin funciones duplicadas</li>
+</ul>
+
+<p><strong>Beneficio principal:</strong> Ahora puedes hacer cambios al sistema con confianza. Después de cada modificación, las pruebas te dirán si algo se rompió, antes de que lo descubras en producción.</p>
+</div>
+
+<hr>
+<p style="text-align: center; color: #6b7280; font-size: 0.9em;">
+Documento generado para el Sistema NeuroTEA<br>
+Este archivo se puede abrir con Microsoft Word o cualquier navegador web
+</p>
+
+</body>
+</html>

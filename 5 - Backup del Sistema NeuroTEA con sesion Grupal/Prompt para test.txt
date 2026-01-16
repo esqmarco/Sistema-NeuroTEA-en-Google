@@ -1,0 +1,9 @@
+El archivo test_sistema.js queda disponible para futuras verificaciones. Puedes ejecutarlo con:
+
+node test_sistema.js
+
+COMANDOS DE AGENTES ESPECIFICOS
+
+/verify-neurotea     # Verificación completa del sistema
+/test-neurotea       # Ejecutar pruebas automatizadas
+/audit-coherence     # Auditar coherencia sistémica
