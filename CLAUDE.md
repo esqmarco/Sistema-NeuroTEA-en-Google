@@ -13,36 +13,61 @@ Sistema web de gestion para centro de terapias TEA migrado a Google Apps Script.
 - **Iconos**: Lucide Icons (CDN)
 
 ### Estructura del Proyecto
+
 ```
 /
-├── CLAUDE.md                    # Esta documentacion
-├── appsscript.json              # Configuracion del proyecto GAS
+├── CLAUDE.md                    # Documentacion (solo para desarrollo)
 │
-├── Code.gs                      # Punto de entrada, doGet(), include()
-├── Config.gs                    # Configuracion global (ID de Spreadsheet, etc)
-│
-├── services/
-│   ├── Database.gs              # Capa de acceso a Google Sheets
-│   ├── TherapistService.gs      # CRUD de terapeutas
-│   ├── SessionService.gs        # CRUD de sesiones individuales
-│   ├── GroupSessionService.gs   # CRUD de sesiones grupales
-│   ├── EgresoService.gs         # CRUD de egresos
-│   ├── PackageService.gs        # Sistema de paquetes/creditos
-│   ├── RendicionService.gs      # Calculos de rendicion
-│   ├── TransferService.gs       # Gestion de transferencias
-│   └── BackupService.gs         # Import/Export de datos
-│
-├── utils/
-│   ├── Helpers.gs               # Funciones auxiliares
-│   ├── Validators.gs            # Validaciones de datos
-│   └── Formatters.gs            # Formateo de moneda y fechas
-│
-└── frontend/
-    ├── Index.html               # Pagina principal (template)
-    ├── Styles.html              # CSS (Tailwind + custom)
-    ├── Components.html          # Componentes UI reutilizables
-    └── Scripts.html             # JavaScript del cliente
+└── gas/                         # CARPETA UNICA PARA GOOGLE APPS SCRIPT
+    │                            # (Copiar TODO el contenido a Apps Script)
+    │
+    │  ══════ ARCHIVOS .GS (Backend) ══════
+    │
+    ├── 1.  appsscript.json      # Configuracion del proyecto GAS
+    ├── 2.  Code.gs              # Punto de entrada: doGet(), include()
+    ├── 3.  Config.gs            # Configuracion global (SPREADSHEET_ID, etc)
+    ├── 4.  Database.gs          # Capa de acceso a Google Sheets
+    ├── 5.  TherapistService.gs  # CRUD de terapeutas
+    ├── 6.  SessionService.gs    # CRUD de sesiones individuales
+    ├── 7.  GroupSessionService.gs # CRUD de sesiones grupales
+    ├── 8.  GroupService.gs      # Gestion de grupos (configuracion)
+    ├── 9.  EgresoService.gs     # CRUD de egresos
+    ├── 10. PackageService.gs    # Sistema de paquetes/creditos
+    ├── 11. RendicionService.gs  # Calculos de rendicion
+    ├── 12. TransferService.gs   # Gestion de transferencias
+    ├── 13. BackupService.gs     # Import/Export de datos
+    ├── 14. Helpers.gs           # Funciones auxiliares
+    │
+    │  ══════ ARCHIVOS .HTML (Frontend) ══════
+    │
+    ├── 15. Index.html           # Pagina principal (template)
+    ├── 16. Styles.html          # CSS (Tailwind + custom)
+    └── 17. Scripts.html         # JavaScript del cliente
 ```
+
+### Orden para Crear Archivos en Apps Script
+
+Crea los archivos en este orden en Google Apps Script:
+
+| # | Archivo | Tipo | Descripcion |
+|---|---------|------|-------------|
+| 1 | `appsscript.json` | Config | Ya existe, solo editar |
+| 2 | `Code.gs` | Script | Punto de entrada principal |
+| 3 | `Config.gs` | Script | Configuracion y constantes |
+| 4 | `Database.gs` | Script | Acceso a Sheets |
+| 5 | `TherapistService.gs` | Script | Servicio terapeutas |
+| 6 | `SessionService.gs` | Script | Servicio sesiones |
+| 7 | `GroupSessionService.gs` | Script | Sesiones grupales |
+| 8 | `GroupService.gs` | Script | Gestion grupos |
+| 9 | `EgresoService.gs` | Script | Servicio egresos |
+| 10 | `PackageService.gs` | Script | Paquetes/creditos |
+| 11 | `RendicionService.gs` | Script | Rendicion cuentas |
+| 12 | `TransferService.gs` | Script | Transferencias |
+| 13 | `BackupService.gs` | Script | Backup/restore |
+| 14 | `Helpers.gs` | Script | Utilidades |
+| 15 | `Index.html` | HTML | Template principal |
+| 16 | `Styles.html` | HTML | Estilos CSS |
+| 17 | `Scripts.html` | HTML | JavaScript cliente |
 
 ## Hojas de Google Sheets (Base de Datos)
 
@@ -222,7 +247,10 @@ residuo = totalValue - (valorPorTerapeuta * therapistCount);
 
 ### Pasos para Desplegar
 1. Crear nuevo proyecto en Google Apps Script
-2. Copiar todos los archivos `.gs` y `.html`
+2. Copiar los archivos de la carpeta `gas/` en este orden:
+   - Primero `Code.gs` (renombrar el archivo default "Codigo.gs")
+   - Luego `Config.gs`, `Database.gs`, y demas archivos `.gs`
+   - Finalmente los archivos `.html` (Index, Styles, Scripts)
 3. Crear Google Spreadsheet para base de datos
 4. Actualizar `SPREADSHEET_ID` en `Config.gs`
 5. Ejecutar `initializeSpreadsheet()` para crear hojas
