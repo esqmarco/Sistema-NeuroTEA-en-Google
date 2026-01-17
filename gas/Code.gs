@@ -11,7 +11,7 @@
  * @returns {HtmlOutput} - Pagina HTML
  */
 function doGet(e) {
-  const template = HtmlService.createTemplateFromFile('frontend/Index');
+  const template = HtmlService.createTemplateFromFile('Index');
 
   return template.evaluate()
     .setTitle('Sistema NeuroTEA - Gestion de Sesiones')
