@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema NeuroTEA</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <?!= include('Styles'); ?>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white p-6 rounded-lg shadow-xl text-center">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+      <p class="mt-4 text-gray-600" id="loadingText">Cargando sistema...</p>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="bg-indigo-600 text-white shadow-lg">
+    <div class="container mx-auto px-4 py-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <i data-lucide="brain" class="w-8 h-8"></i>
+          <div>
+            <h1 class="text-xl font-bold">Sistema NeuroTEA</h1>
+            <p class="text-indigo-200 text-sm">Gestion de Sesiones y Pagos</p>
+          </div>
+        </div>
+        <div class="flex items-center space-x-4">
+          <div class="text-right">
+            <p class="text-sm text-indigo-200">Fecha actual</p>
+            <input type="date" id="fechaActual" class="bg-indigo-500 text-white border border-indigo-400 rounded px-2 py-1 text-sm">
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="bg-white shadow-sm border-b overflow-x-auto">
+    <div class="container mx-auto px-4">
+      <div class="flex space-x-1 min-w-max">
+        <button onclick="cambiarTab('registro')" class="tab-btn active px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:border-indigo-500" data-tab="registro">
+          <i data-lucide="clipboard-list" class="w-4 h-4 inline mr-1"></i>Registro
+        </button>
+        <button onclick="cambiarTab('resumen')" class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:border-indigo-500" data-tab="resumen">
+          <i data-lucide="bar-chart-3" class="w-4 h-4 inline mr-1"></i>Resumen
+        </button>
+        <button onclick="cambiarTab('transferencias')" class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:border-indigo-500" data-tab="transferencias">
+          <i data-lucide="arrow-right-left" class="w-4 h-4 inline mr-1"></i>Transferencias
+        </button>
+        <button onclick="cambiarTab('rendicion')" class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:border-indigo-500" data-tab="rendicion">
+          <i data-lucide="receipt" class="w-4 h-4 inline mr-1"></i>Rendicion
+        </button>
+        <button onclick="cambiarTab('egresos')" class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:border-indigo-500" data-tab="egresos">
+          <i data-lucide="wallet" class="w-4 h-4 inline mr-1"></i>Egresos
+        </button>
+        <button onclick="cambiarTab('terapeutas')" class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:border-indigo-500" data-tab="terapeutas">
+          <i data-lucide="users" class="w-4 h-4 inline mr-1"></i>Terapeutas
+        </button>
+        <button onclick="cambiarTab('paquetes')" class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:border-indigo-500" data-tab="paquetes">
+          <i data-lucide="package" class="w-4 h-4 inline mr-1"></i>Paquetes
+        </button>
+        <button onclick="cambiarTab('grupos')" class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:border-indigo-500" data-tab="grupos">
+          <i data-lucide="users-2" class="w-4 h-4 inline mr-1"></i>Grupos
+        </button>
+        <button onclick="cambiarTab('admin')" class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:border-indigo-500" data-tab="admin">
+          <i data-lucide="settings" class="w-4 h-4 inline mr-1"></i>Admin
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="container mx-auto px-4 py-6">
+
+    <!-- Tab: Registro Diario -->
+    <div id="tab-registro" class="tab-content">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        <!-- Formulario Sesion Individual -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-lg font-semibold mb-4 flex items-center">
+            <i data-lucide="user" class="w-5 h-5 mr-2 text-indigo-600"></i>
+            Sesion Individual
+          </h2>
+          <form id="formSesion" class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Terapeuta</label>
+                <select id="sesionTerapeuta" class="w-full border rounded-lg px-3 py-2" required>
+                  <option value="">Seleccionar...</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Paciente</label>
+                <input type="text" id="sesionPaciente" class="w-full border rounded-lg px-3 py-2" placeholder="Nombre del paciente" required>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Valor de la Sesion</label>
+              <input type="number" id="sesionValor" class="w-full border rounded-lg px-3 py-2" placeholder="0" required>
+            </div>
+
+            <div class="grid grid-cols-3 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Efectivo</label>
+                <input type="number" id="sesionEfectivo" class="w-full border rounded-lg px-3 py-2" value="0">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Trans. NeuroTEA</label>
+                <input type="number" id="sesionTransNeuro" class="w-full border rounded-lg px-3 py-2" value="0">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Trans. Terapeuta</label>
+                <input type="number" id="sesionTransTera" class="w-full border rounded-lg px-3 py-2" value="0">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de Aporte</label>
+                <select id="sesionTipoAporte" class="w-full border rounded-lg px-3 py-2">
+                  <option value="30">30%</option>
+                  <option value="35">35%</option>
+                  <option value="40">40%</option>
+                  <option value="50">50%</option>
+                </select>
+              </div>
+              <div class="flex items-end">
+                <label class="flex items-center">
+                  <input type="checkbox" id="sesionUsaCredito" class="mr-2">
+                  <span class="text-sm text-gray-700">Usar credito disponible</span>
+                </label>
+              </div>
+            </div>
+
+            <div id="creditoInfo" class="hidden bg-green-50 border border-green-200 rounded-lg p-3">
+              <p class="text-sm text-green-700"><i data-lucide="check-circle" class="w-4 h-4 inline mr-1"></i>Creditos disponibles: <span id="creditosDisponibles">0</span></p>
+            </div>
+
+            <div class="bg-gray-50 rounded-lg p-3">
+              <div class="flex justify-between text-sm">
+                <span>Aporte NeuroTEA:</span>
+                <span id="previewAporte" class="font-medium">Gs 0</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span>Honorarios Terapeuta:</span>
+                <span id="previewHonorarios" class="font-medium">Gs 0</span>
+              </div>
+            </div>
+
+            <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition">
+              <i data-lucide="plus" class="w-4 h-4 inline mr-1"></i>Registrar Sesion
+            </button>
+          </form>
+        </div>
+
+        <!-- Formulario Sesion Grupal -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-lg font-semibold mb-4 flex items-center">
+            <i data-lucide="users" class="w-5 h-5 mr-2 text-indigo-600"></i>
+            Sesion Grupal
+          </h2>
+          <form id="formSesionGrupal" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
+              <select id="grupalGrupo" class="w-full border rounded-lg px-3 py-2" required>
+                <option value="">Seleccionar grupo...</option>
+              </select>
+            </div>
+
+            <div id="grupalAsistencia" class="space-y-2">
+              <!-- Se llena dinamicamente -->
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Terapeutas Presentes</label>
+              <div id="grupalTerapeutas" class="grid grid-cols-2 gap-2">
+                <!-- Se llena dinamicamente -->
+              </div>
+            </div>
+
+            <div class="bg-gray-50 rounded-lg p-3">
+              <div class="flex justify-between text-sm">
+                <span>Valor Total:</span>
+                <span id="grupalTotal" class="font-medium">Gs 0</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span>Por Terapeuta:</span>
+                <span id="grupalPorTerapeuta" class="font-medium">Gs 0</span>
+              </div>
+            </div>
+
+            <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition">
+              <i data-lucide="plus" class="w-4 h-4 inline mr-1"></i>Registrar Sesion Grupal
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Lista de Sesiones del Dia -->
+      <div class="mt-6 bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-lg font-semibold mb-4">Sesiones del Dia</h2>
+        <div id="listaSesiones" class="space-y-2">
+          <p class="text-gray-500 text-center py-4">No hay sesiones registradas</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Resumen Global -->
+    <div id="tab-resumen" class="tab-content hidden">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-lg shadow-md p-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-500">Saldo Inicial</p>
+              <p class="text-2xl font-bold text-gray-800" id="resumenSaldoInicial">Gs 0</p>
+            </div>
+            <i data-lucide="piggy-bank" class="w-10 h-10 text-indigo-600"></i>
+          </div>
+          <button onclick="editarSaldoInicial()" class="mt-2 text-sm text-indigo-600 hover:underline">Editar</button>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-500">Saldo en Caja</p>
+              <p class="text-2xl font-bold text-green-600" id="resumenSaldoCaja">Gs 0</p>
+            </div>
+            <i data-lucide="banknote" class="w-10 h-10 text-green-600"></i>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-500">Cuenta NeuroTEA</p>
+              <p class="text-2xl font-bold text-blue-600" id="resumenCuentaNeurotea">Gs 0</p>
+            </div>
+            <i data-lucide="landmark" class="w-10 h-10 text-blue-600"></i>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-500">Total Sesiones</p>
+              <p class="text-2xl font-bold text-purple-600" id="resumenTotalSesiones">0</p>
+            </div>
+            <i data-lucide="activity" class="w-10 h-10 text-purple-600"></i>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-lg font-semibold mb-4">Detalle del Dia</h2>
+        <div id="resumenDetalle" class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-4 py-2 text-left">Terapeuta</th>
+                <th class="px-4 py-2 text-right">Sesiones</th>
+                <th class="px-4 py-2 text-right">Efectivo</th>
+                <th class="px-4 py-2 text-right">Trans. Neurotea</th>
+                <th class="px-4 py-2 text-right">Trans. Terapeuta</th>
+                <th class="px-4 py-2 text-right">Honorarios</th>
+              </tr>
+            </thead>
+            <tbody id="resumenTabla">
+              <!-- Se llena dinamicamente -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Transferencias -->
+    <div id="tab-transferencias" class="tab-content hidden">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-lg font-semibold mb-4 flex items-center text-yellow-600">
+            <i data-lucide="clock" class="w-5 h-5 mr-2"></i>
+            Transferencias Pendientes
+          </h2>
+          <div id="transferPendientes" class="space-y-2">
+            <p class="text-gray-500 text-center py-4">No hay transferencias pendientes</p>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-lg font-semibold mb-4 flex items-center text-green-600">
+            <i data-lucide="check-circle" class="w-5 h-5 mr-2"></i>
+            Transferencias Confirmadas
+          </h2>
+          <div id="transferConfirmadas" class="space-y-2">
+            <p class="text-gray-500 text-center py-4">No hay transferencias confirmadas</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Rendicion -->
+    <div id="tab-rendicion" class="tab-content hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-lg font-semibold mb-4">Rendicion de Cuentas por Terapeuta</h2>
+        <div id="rendicionLista" class="space-y-4">
+          <!-- Se llena dinamicamente -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Egresos -->
+    <div id="tab-egresos" class="tab-content hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-lg font-semibold mb-4">Registrar Egreso</h2>
+          <form id="formEgreso" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+              <select id="egresoTipo" class="w-full border rounded-lg px-3 py-2" required>
+                <option value="adelanto">Adelanto a Terapeuta</option>
+                <option value="gasto">Gasto General</option>
+              </select>
+            </div>
+
+            <div id="egresoTerapeutaDiv">
+              <label class="block text-sm font-medium text-gray-700 mb-1">Terapeuta</label>
+              <select id="egresoTerapeuta" class="w-full border rounded-lg px-3 py-2">
+                <option value="">Seleccionar...</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
+              <input type="text" id="egresoConcepto" class="w-full border rounded-lg px-3 py-2" placeholder="Descripcion del egreso" required>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Monto</label>
+              <input type="number" id="egresoMonto" class="w-full border rounded-lg px-3 py-2" placeholder="0" required>
+            </div>
+
+            <button type="submit" class="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition">
+              <i data-lucide="minus" class="w-4 h-4 inline mr-1"></i>Registrar Egreso
+            </button>
+          </form>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-lg font-semibold mb-4">Egresos del Dia</h2>
+          <div id="listaEgresos" class="space-y-2">
+            <p class="text-gray-500 text-center py-4">No hay egresos registrados</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Terapeutas -->
+    <div id="tab-terapeutas" class="tab-content hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-lg font-semibold mb-4">Agregar Terapeuta</h2>
+          <form id="formTerapeuta" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Nombre Completo</label>
+              <input type="text" id="terapeutaNombre" class="w-full border rounded-lg px-3 py-2" placeholder="Nombre del terapeuta" required>
+            </div>
+            <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition">
+              <i data-lucide="user-plus" class="w-4 h-4 inline mr-1"></i>Agregar Terapeuta
+            </button>
+          </form>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-lg font-semibold mb-4">Lista de Terapeutas</h2>
+          <div id="listaTerapeutas" class="space-y-2">
+            <p class="text-gray-500 text-center py-4">No hay terapeutas registrados</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Paquetes -->
+    <div id="tab-paquetes" class="tab-content hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-lg font-semibold mb-4">Crear Paquete de Sesiones</h2>
+          <form id="formPaquete" class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Terapeuta</label>
+                <select id="paqueteTerapeuta" class="w-full border rounded-lg px-3 py-2" required>
+                  <option value="">Seleccionar...</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Paciente</label>
+                <input type="text" id="paquetePaciente" class="w-full border rounded-lg px-3 py-2" placeholder="Nombre del paciente" required>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Cantidad de Sesiones</label>
+              <input type="number" id="paqueteSesiones" class="w-full border rounded-lg px-3 py-2" placeholder="Ej: 10" min="1" required>
+            </div>
+
+            <div class="grid grid-cols-3 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Efectivo</label>
+                <input type="number" id="paqueteEfectivo" class="w-full border rounded-lg px-3 py-2" value="0">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Trans. NeuroTEA</label>
+                <input type="number" id="paqueteTransNeuro" class="w-full border rounded-lg px-3 py-2" value="0">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Trans. Terapeuta</label>
+                <input type="number" id="paqueteTransTera" class="w-full border rounded-lg px-3 py-2" value="0">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de Aporte</label>
+              <select id="paqueteTipoAporte" class="w-full border rounded-lg px-3 py-2">
+                <option value="30">30%</option>
+                <option value="35">35%</option>
+                <option value="40">40%</option>
+                <option value="50">50%</option>
+              </select>
+            </div>
+
+            <div class="bg-gray-50 rounded-lg p-3">
+              <div class="flex justify-between text-sm">
+                <span>Valor Total:</span>
+                <span id="paqueteValorTotal" class="font-medium">Gs 0</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span>Valor por Sesion:</span>
+                <span id="paqueteValorSesion" class="font-medium">Gs 0</span>
+              </div>
+            </div>
+
+            <button type="submit" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition">
+              <i data-lucide="package-plus" class="w-4 h-4 inline mr-1"></i>Crear Paquete
+            </button>
+          </form>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-lg font-semibold mb-4">Paquetes Activos</h2>
+          <div id="listaPaquetes" class="space-y-2">
+            <p class="text-gray-500 text-center py-4">No hay paquetes activos</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Grupos -->
+    <div id="tab-grupos" class="tab-content hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-lg font-semibold mb-4">Crear Grupo de Terapia</h2>
+          <form id="formGrupo" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Nombre del Grupo</label>
+              <input type="text" id="grupoNombre" class="w-full border rounded-lg px-3 py-2" placeholder="Ej: Grupo Martes" required>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Porcentaje de Aporte</label>
+              <select id="grupoPorcentaje" class="w-full border rounded-lg px-3 py-2">
+                <option value="30">30%</option>
+                <option value="35">35%</option>
+                <option value="40">40%</option>
+                <option value="50">50%</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Ninos del Grupo</label>
+              <div id="grupoNinos" class="space-y-2">
+                <!-- Se llena dinamicamente -->
+              </div>
+              <button type="button" onclick="agregarNinoFormulario()" class="mt-2 text-sm text-indigo-600 hover:underline">
+                <i data-lucide="plus" class="w-4 h-4 inline"></i> Agregar nino
+              </button>
+            </div>
+
+            <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition">
+              <i data-lucide="users-2" class="w-4 h-4 inline mr-1"></i>Crear Grupo
+            </button>
+          </form>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-lg font-semibold mb-4">Grupos Activos</h2>
+          <div id="listaGrupos" class="space-y-2">
+            <p class="text-gray-500 text-center py-4">No hay grupos registrados</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Administracion -->
+    <div id="tab-admin" class="tab-content hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-lg font-semibold mb-4">Backup y Restauracion</h2>
+
+          <div class="space-y-4">
+            <div>
+              <h3 class="font-medium mb-2">Exportar Datos</h3>
+              <p class="text-sm text-gray-500 mb-2">Descarga todos los datos del sistema en formato JSON</p>
+              <button onclick="exportarBackup()" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">
+                <i data-lucide="download" class="w-4 h-4 inline mr-1"></i>Exportar Backup
+              </button>
+            </div>
+
+            <hr>
+
+            <div>
+              <h3 class="font-medium mb-2">Importar Datos</h3>
+              <p class="text-sm text-gray-500 mb-2">Restaura datos desde un archivo JSON de backup</p>
+              <input type="file" id="archivoBackup" accept=".json" class="w-full border rounded-lg px-3 py-2 mb-2">
+              <button onclick="importarBackup()" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition">
+                <i data-lucide="upload" class="w-4 h-4 inline mr-1"></i>Importar Backup
+              </button>
+            </div>
+
+            <hr>
+
+            <div>
+              <h3 class="font-medium mb-2 text-red-600">Zona de Peligro</h3>
+              <p class="text-sm text-gray-500 mb-2">Elimina TODOS los datos del sistema. Esta accion no se puede deshacer.</p>
+              <button onclick="confirmarLimpiarDatos()" class="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition">
+                <i data-lucide="trash-2" class="w-4 h-4 inline mr-1"></i>Limpiar Todos los Datos
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-lg font-semibold mb-4">Estadisticas del Sistema</h2>
+          <div id="adminStats" class="space-y-2">
+            <!-- Se llena dinamicamente -->
+          </div>
+
+          <div class="mt-6">
+            <h3 class="font-medium mb-2">Informacion</h3>
+            <div class="text-sm text-gray-600 space-y-1">
+              <p><strong>Version:</strong> <span id="appVersion">1.0.0</span></p>
+              <p><strong>Base de datos:</strong> Google Sheets</p>
+              <p><strong>Zona horaria:</strong> America/Asuncion (UTC-4)</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Modal de Confirmacion -->
+  <div id="modalConfirm" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+      <h3 class="text-lg font-semibold mb-4" id="modalTitle">Confirmar</h3>
+      <p class="text-gray-600 mb-6" id="modalMessage">¿Esta seguro?</p>
+      <div class="flex space-x-3">
+        <button onclick="cerrarModal()" class="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300">
+          Cancelar
+        </button>
+        <button id="modalConfirmBtn" class="flex-1 bg-red-600 text-white py-2 rounded-lg hover:bg-red-700">
+          Confirmar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Saldo Inicial -->
+  <div id="modalSaldo" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+      <h3 class="text-lg font-semibold mb-4">Editar Saldo Inicial</h3>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Saldo en Efectivo</label>
+        <input type="number" id="nuevoSaldoInicial" class="w-full border rounded-lg px-3 py-2" value="0">
+      </div>
+      <div class="flex space-x-3">
+        <button onclick="cerrarModalSaldo()" class="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300">
+          Cancelar
+        </button>
+        <button onclick="guardarSaldoInicial()" class="flex-1 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700">
+          Guardar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notifications -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-50 space-y-2">
+  </div>
+
+  <!-- Scripts -->
+  <?!= include('Scripts'); ?>
+
+  <script>
+    // Inicializar iconos
+    lucide.createIcons();
+  </script>
+</body>
+</html>

@@ -2,19 +2,19 @@
  * ===========================
  * CONFIGURACION GLOBAL
  * ===========================
+ *
+ * INSTRUCCIONES:
+ * 1. Click en + junto a "Archivos"
+ * 2. Selecciona "Script"
+ * 3. Nombra el archivo "Config" (sin .gs)
+ * 4. Pega este contenido
  */
 
-/**
- * IMPORTANTE: Actualizar este ID con el ID de tu Google Spreadsheet
- * Para obtener el ID:
- * 1. Abre tu Google Spreadsheet
- * 2. Copia el ID de la URL: https://docs.google.com/spreadsheets/d/[ESTE_ES_EL_ID]/edit
- */
 const CONFIG = {
-  // ID del Spreadsheet (ACTUALIZAR CON TU ID)
-  SPREADSHEET_ID: 'TU_SPREADSHEET_ID_AQUI',
+  // ID del Spreadsheet - YA CONFIGURADO CON TU HOJA
+  SPREADSHEET_ID: '1YcpVqvFWXRL1SDIONaWZMwCfMIghb-P-c7qJcFijook',
 
-  // Zona horaria
+  // Zona horaria Paraguay
   TIMEZONE: 'America/Asuncion',
 
   // Locale para formato de numeros
@@ -25,9 +25,6 @@ const CONFIG = {
 
   // Porcentaje de aporte por defecto
   DEFAULT_CONTRIBUTION_PERCENTAGE: 30,
-
-  // Maximo de terapeutas permitidos
-  MAX_THERAPISTS: 20,
 
   // Version del sistema
   VERSION: '1.0.0'
@@ -53,7 +50,7 @@ const SHEETS = {
 };
 
 /**
- * Estados posibles de rendicion
+ * Estados de rendicion
  */
 const ESTADOS_RENDICION = {
   SALDADO: 'SALDADO',
@@ -65,40 +62,7 @@ const ESTADOS_RENDICION = {
 };
 
 /**
- * Tipos de aporte a NeuroTEA
- */
-const TIPOS_APORTE = {
-  PORCENTAJE_20: '20',
-  PORCENTAJE_30: '30',
-  PORCENTAJE_40: '40',
-  PORCENTAJE_50: '50',
-  FIJO: 'fixed'
-};
-
-/**
- * Tipos de egreso
- */
-const TIPOS_EGRESO = {
-  ADELANTO: 'adelanto',
-  GASTO_NEUROTEA: 'gasto-neurotea'
-};
-
-/**
- * Opciones de pago para confirmacion
- */
-const TIPOS_OPCION_PAGO = {
-  EXACTO: 'exacto',
-  VUELTO: 'vuelto',
-  VUELTO_EFECTIVO: 'vuelto-efectivo',
-  TRANSFERIR: 'transferir',
-  DAR_TRANSFERIR: 'dar-transferir',
-  DEVOLUCION_EFECTIVO: 'devolucion-efectivo',
-  DEVOLUCION_TRANSFERENCIA: 'devolucion-transferencia'
-};
-
-/**
  * Obtiene el Spreadsheet configurado
- * @returns {Spreadsheet} - Objeto Spreadsheet
  */
 function getSpreadsheet() {
   try {
@@ -109,32 +73,26 @@ function getSpreadsheet() {
 }
 
 /**
- * Obtiene una hoja especifica del Spreadsheet
- * @param {string} sheetName - Nombre de la hoja
- * @returns {Sheet} - Objeto Sheet
+ * Obtiene una hoja especifica
  */
 function getSheet(sheetName) {
   const ss = getSpreadsheet();
   const sheet = ss.getSheetByName(sheetName);
-
   if (!sheet) {
-    throw new Error(`Hoja "${sheetName}" no encontrada. Ejecuta initializeSpreadsheet() primero.`);
+    throw new Error('Hoja "' + sheetName + '" no encontrada. Ejecuta initializeSpreadsheet() primero.');
   }
-
   return sheet;
 }
 
 /**
- * Genera un ID unico basado en timestamp
- * @returns {number} - ID unico
+ * Genera ID unico
  */
 function generateId() {
   return Date.now();
 }
 
 /**
- * Obtiene timestamp actual en ISO
- * @returns {string} - Timestamp ISO
+ * Obtiene timestamp actual
  */
 function getTimestamp() {
   return new Date().toISOString();

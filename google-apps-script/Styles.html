@@ -1,0 +1,348 @@
+<style>
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #f1f1f1;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #c4c4c4;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+  }
+
+  /* Tab styles */
+  .tab-btn {
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+
+  .tab-btn.active {
+    color: #4F46E5;
+    border-bottom-color: #4F46E5;
+    font-weight: 600;
+  }
+
+  .tab-btn:hover:not(.active) {
+    color: #6366F1;
+  }
+
+  /* Card hover effects */
+  .card-hover {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Session item */
+  .session-item {
+    transition: background-color 0.2s ease;
+  }
+
+  .session-item:hover {
+    background-color: #f9fafb;
+  }
+
+  /* Input focus styles */
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: #6366F1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  }
+
+  /* Button press effect */
+  button:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  /* Disabled button */
+  button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Toast animations */
+  .toast-enter {
+    animation: toastEnter 0.3s ease;
+  }
+
+  .toast-exit {
+    animation: toastExit 0.3s ease forwards;
+  }
+
+  @keyframes toastEnter {
+    from {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes toastExit {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+  }
+
+  /* Loading spinner */
+  .animate-spin {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Estado badges */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border-radius: 9999px;
+  }
+
+  .badge-success {
+    background-color: #DEF7EC;
+    color: #03543F;
+  }
+
+  .badge-warning {
+    background-color: #FDF6B2;
+    color: #723B13;
+  }
+
+  .badge-danger {
+    background-color: #FDE8E8;
+    color: #9B1C1C;
+  }
+
+  .badge-info {
+    background-color: #E1EFFE;
+    color: #1E429F;
+  }
+
+  .badge-gray {
+    background-color: #F3F4F6;
+    color: #374151;
+  }
+
+  /* Estado rendicion colors */
+  .estado-saldado {
+    background-color: #F3F4F6;
+    border-left: 4px solid #9CA3AF;
+  }
+
+  .estado-dar-efectivo {
+    background-color: #ECFDF5;
+    border-left: 4px solid #10B981;
+  }
+
+  .estado-dar-y-transferir {
+    background-color: #FFF7ED;
+    border-left: 4px solid #F97316;
+  }
+
+  .estado-transferir {
+    background-color: #EFF6FF;
+    border-left: 4px solid #3B82F6;
+  }
+
+  .estado-terapeuta-debe-dar {
+    background-color: #FEF2F2;
+    border-left: 4px solid #EF4444;
+  }
+
+  .estado-fondos-insuficientes {
+    background-color: #FEF2F2;
+    border-left: 4px solid #DC2626;
+  }
+
+  /* Checkbox custom */
+  input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+    accent-color: #4F46E5;
+  }
+
+  /* Number input hide arrows */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+
+  /* Modal backdrop blur */
+  .modal-backdrop {
+    backdrop-filter: blur(2px);
+  }
+
+  /* Transition for tab content */
+  .tab-content {
+    animation: fadeIn 0.2s ease;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Responsive table */
+  .table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Item delete button */
+  .delete-btn {
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .item-row:hover .delete-btn {
+    opacity: 1;
+  }
+
+  /* Pulse animation for pending transfers */
+  .pulse-dot {
+    width: 8px;
+    height: 8px;
+    background-color: #F59E0B;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  /* Print styles */
+  @media print {
+    .no-print {
+      display: none !important;
+    }
+
+    body {
+      background: white;
+    }
+
+    .shadow-md, .shadow-lg, .shadow-xl {
+      box-shadow: none;
+    }
+  }
+
+  /* Mobile responsive adjustments */
+  @media (max-width: 640px) {
+    .container {
+      padding-left: 0.5rem;
+      padding-right: 0.5rem;
+    }
+
+    .tab-btn {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.75rem;
+    }
+
+    h1 {
+      font-size: 1.125rem;
+    }
+
+    .text-2xl {
+      font-size: 1.25rem;
+    }
+  }
+
+  /* Form group spacing */
+  .form-group + .form-group {
+    margin-top: 1rem;
+  }
+
+  /* Loading state for buttons */
+  .btn-loading {
+    position: relative;
+    color: transparent;
+  }
+
+  .btn-loading::after {
+    content: "";
+    position: absolute;
+    width: 1rem;
+    height: 1rem;
+    top: 50%;
+    left: 50%;
+    margin-left: -0.5rem;
+    margin-top: -0.5rem;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* Alert styles */
+  .alert {
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .alert-success {
+    background-color: #ECFDF5;
+    border: 1px solid #A7F3D0;
+    color: #065F46;
+  }
+
+  .alert-error {
+    background-color: #FEF2F2;
+    border: 1px solid #FECACA;
+    color: #991B1B;
+  }
+
+  .alert-warning {
+    background-color: #FFFBEB;
+    border: 1px solid #FDE68A;
+    color: #92400E;
+  }
+
+  .alert-info {
+    background-color: #EFF6FF;
+    border: 1px solid #BFDBFE;
+    color: #1E40AF;
+  }
+</style>

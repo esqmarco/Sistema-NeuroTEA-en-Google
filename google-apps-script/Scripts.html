@@ -1,0 +1,1483 @@
+<script>
+// ===========================
+// VARIABLES GLOBALES
+// ===========================
+let APP_DATA = {
+  fechaActual: '',
+  terapeutas: [],
+  sesiones: [],
+  sesionesGrupales: [],
+  egresos: [],
+  paquetes: [],
+  grupos: [],
+  confirmaciones: [],
+  estadosTransferencia: [],
+  saldoInicial: 0
+};
+
+let currentTab = 'registro';
+let modalCallback = null;
+
+// ===========================
+// INICIALIZACION
+// ===========================
+document.addEventListener('DOMContentLoaded', function() {
+  initializeApp();
+});
+
+function initializeApp() {
+  showLoading('Cargando datos...');
+
+  google.script.run
+    .withSuccessHandler(onDataLoaded)
+    .withFailureHandler(onError)
+    .cargarDatosIniciales();
+}
+
+function onDataLoaded(response) {
+  hideLoading();
+
+  if (!response.success) {
+    showToast('Error al cargar datos: ' + response.message, 'error');
+    return;
+  }
+
+  const data = response.data;
+  APP_DATA.fechaActual = data.fechaActual;
+  APP_DATA.terapeutas = data.terapeutas || [];
+  APP_DATA.sesiones = data.sesiones || [];
+  APP_DATA.sesionesGrupales = data.sesionesGrupales || [];
+  APP_DATA.egresos = data.egresos || [];
+  APP_DATA.paquetes = data.paquetes || [];
+  APP_DATA.grupos = data.grupos || [];
+  APP_DATA.confirmaciones = data.confirmaciones || [];
+  APP_DATA.estadosTransferencia = data.estadosTransferencia || [];
+  APP_DATA.saldoInicial = data.saldoInicial || 0;
+
+  // Establecer fecha
+  document.getElementById('fechaActual').value = APP_DATA.fechaActual;
+
+  // Configurar evento de cambio de fecha
+  document.getElementById('fechaActual').addEventListener('change', onFechaChange);
+
+  // Inicializar formularios
+  initFormularios();
+
+  // Renderizar todas las vistas
+  renderAll();
+
+  showToast('Sistema cargado correctamente', 'success');
+}
+
+function onError(error) {
+  hideLoading();
+  console.error('Error:', error);
+  showToast('Error: ' + error.message, 'error');
+}
+
+// ===========================
+// CAMBIO DE FECHA
+// ===========================
+function onFechaChange(e) {
+  const nuevaFecha = e.target.value;
+  if (nuevaFecha === APP_DATA.fechaActual) return;
+
+  showLoading('Cargando datos de ' + nuevaFecha + '...');
+  APP_DATA.fechaActual = nuevaFecha;
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      hideLoading();
+      if (response.success) {
+        const data = response.data;
+        APP_DATA.sesiones = data.sesiones || [];
+        APP_DATA.sesionesGrupales = data.sesionesGrupales || [];
+        APP_DATA.egresos = data.egresos || [];
+        APP_DATA.confirmaciones = data.confirmaciones || [];
+        APP_DATA.estadosTransferencia = data.estadosTransferencia || [];
+        APP_DATA.saldoInicial = data.saldoInicial || 0;
+        renderAll();
+      } else {
+        showToast('Error: ' + response.message, 'error');
+      }
+    })
+    .withFailureHandler(onError)
+    .cargarDatosFecha(nuevaFecha);
+}
+
+// ===========================
+// NAVEGACION POR TABS
+// ===========================
+function cambiarTab(tabId) {
+  currentTab = tabId;
+
+  // Ocultar todos los contenidos
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+
+  // Mostrar el tab seleccionado
+  document.getElementById('tab-' + tabId).classList.remove('hidden');
+
+  // Actualizar estilos de botones
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.remove('active');
+    if (btn.getAttribute('data-tab') === tabId) {
+      btn.classList.add('active');
+    }
+  });
+
+  // Actualizar iconos
+  lucide.createIcons();
+}
+
+// ===========================
+// INICIALIZACION DE FORMULARIOS
+// ===========================
+function initFormularios() {
+  // Poblar selects de terapeutas
+  poblarSelectTerapeutas();
+
+  // Form Sesion Individual
+  document.getElementById('formSesion').addEventListener('submit', onSubmitSesion);
+  document.getElementById('sesionValor').addEventListener('input', calcularPreviewSesion);
+  document.getElementById('sesionTipoAporte').addEventListener('change', calcularPreviewSesion);
+  document.getElementById('sesionUsaCredito').addEventListener('change', onUsaCreditoChange);
+  document.getElementById('sesionPaciente').addEventListener('blur', verificarCreditos);
+  document.getElementById('sesionTerapeuta').addEventListener('change', verificarCreditos);
+
+  // Form Sesion Grupal
+  document.getElementById('formSesionGrupal').addEventListener('submit', onSubmitSesionGrupal);
+  document.getElementById('grupalGrupo').addEventListener('change', onGrupoChange);
+
+  // Form Egreso
+  document.getElementById('formEgreso').addEventListener('submit', onSubmitEgreso);
+  document.getElementById('egresoTipo').addEventListener('change', onTipoEgresoChange);
+
+  // Form Terapeuta
+  document.getElementById('formTerapeuta').addEventListener('submit', onSubmitTerapeuta);
+
+  // Form Paquete
+  document.getElementById('formPaquete').addEventListener('submit', onSubmitPaquete);
+  document.getElementById('paqueteEfectivo').addEventListener('input', calcularPreviewPaquete);
+  document.getElementById('paqueteTransNeuro').addEventListener('input', calcularPreviewPaquete);
+  document.getElementById('paqueteTransTera').addEventListener('input', calcularPreviewPaquete);
+  document.getElementById('paqueteSesiones').addEventListener('input', calcularPreviewPaquete);
+
+  // Form Grupo
+  document.getElementById('formGrupo').addEventListener('submit', onSubmitGrupo);
+  agregarNinoFormulario(); // Agregar un nino por defecto
+}
+
+function poblarSelectTerapeutas() {
+  const selects = ['sesionTerapeuta', 'egresoTerapeuta', 'paqueteTerapeuta'];
+
+  selects.forEach(selectId => {
+    const select = document.getElementById(selectId);
+    select.innerHTML = '<option value="">Seleccionar...</option>';
+    APP_DATA.terapeutas.forEach(t => {
+      if (t.activo !== false) {
+        select.innerHTML += `<option value="${t.nombre}">${t.nombre}</option>`;
+      }
+    });
+  });
+
+  // Poblar select de grupos
+  const grupoSelect = document.getElementById('grupalGrupo');
+  grupoSelect.innerHTML = '<option value="">Seleccionar grupo...</option>';
+  APP_DATA.grupos.forEach(g => {
+    grupoSelect.innerHTML += `<option value="${g.id}">${g.nombre}</option>`;
+  });
+}
+
+// ===========================
+// RENDER GENERAL
+// ===========================
+function renderAll() {
+  renderSesiones();
+  renderResumen();
+  renderTransferencias();
+  renderRendicion();
+  renderEgresos();
+  renderTerapeutas();
+  renderPaquetes();
+  renderGrupos();
+  renderAdmin();
+  poblarSelectTerapeutas();
+  lucide.createIcons();
+}
+
+// ===========================
+// SESIONES INDIVIDUALES
+// ===========================
+function calcularPreviewSesion() {
+  const valor = parseInt(document.getElementById('sesionValor').value) || 0;
+  const tipoAporte = parseInt(document.getElementById('sesionTipoAporte').value) || 30;
+
+  const aporte = Math.floor(valor * tipoAporte / 100);
+  const honorarios = valor - aporte;
+
+  document.getElementById('previewAporte').textContent = formatMoney(aporte);
+  document.getElementById('previewHonorarios').textContent = formatMoney(honorarios);
+}
+
+function verificarCreditos() {
+  const paciente = document.getElementById('sesionPaciente').value.trim();
+  const terapeuta = document.getElementById('sesionTerapeuta').value;
+
+  if (!paciente || !terapeuta) {
+    document.getElementById('creditoInfo').classList.add('hidden');
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.hasCredits) {
+        document.getElementById('creditosDisponibles').textContent = result.totalRemaining;
+        document.getElementById('creditoInfo').classList.remove('hidden');
+      } else {
+        document.getElementById('creditoInfo').classList.add('hidden');
+      }
+    })
+    .verificarCreditos(paciente, terapeuta);
+}
+
+function onUsaCreditoChange(e) {
+  const usaCredito = e.target.checked;
+  if (usaCredito) {
+    document.getElementById('sesionEfectivo').value = 0;
+    document.getElementById('sesionTransNeuro').value = 0;
+    document.getElementById('sesionTransTera').value = 0;
+    document.getElementById('sesionValor').value = 0;
+    calcularPreviewSesion();
+  }
+}
+
+function onSubmitSesion(e) {
+  e.preventDefault();
+
+  const usaCredito = document.getElementById('sesionUsaCredito').checked;
+  const data = {
+    fecha: APP_DATA.fechaActual,
+    terapeuta: document.getElementById('sesionTerapeuta').value,
+    paciente: document.getElementById('sesionPaciente').value.trim(),
+    valorSesion: parseInt(document.getElementById('sesionValor').value) || 0,
+    efectivo: parseInt(document.getElementById('sesionEfectivo').value) || 0,
+    transferenciaNeurotea: parseInt(document.getElementById('sesionTransNeuro').value) || 0,
+    transferenciaTerminapeuta: parseInt(document.getElementById('sesionTransTera').value) || 0,
+    tipoAporte: document.getElementById('sesionTipoAporte').value,
+    usaCredito: usaCredito
+  };
+
+  if (!data.terapeuta) {
+    showToast('Selecciona un terapeuta', 'error');
+    return;
+  }
+
+  if (!data.paciente) {
+    showToast('Ingresa el nombre del paciente', 'error');
+    return;
+  }
+
+  showLoading('Registrando sesion...');
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      hideLoading();
+      if (response.success) {
+        APP_DATA.sesiones.push(response.data);
+        document.getElementById('formSesion').reset();
+        document.getElementById('creditoInfo').classList.add('hidden');
+        calcularPreviewSesion();
+        renderAll();
+        showToast('Sesion registrada correctamente', 'success');
+      } else {
+        showToast('Error: ' + response.message, 'error');
+      }
+    })
+    .withFailureHandler(onError)
+    .registrarSesion(data);
+}
+
+function eliminarSesion(id) {
+  showModal('Eliminar Sesion', '¿Esta seguro de eliminar esta sesion?', function() {
+    showLoading('Eliminando...');
+
+    google.script.run
+      .withSuccessHandler(function(response) {
+        hideLoading();
+        if (response.success) {
+          APP_DATA.sesiones = APP_DATA.sesiones.filter(s => s.id !== id);
+          renderAll();
+          showToast('Sesion eliminada', 'success');
+        } else {
+          showToast('Error: ' + response.message, 'error');
+        }
+      })
+      .withFailureHandler(onError)
+      .eliminarSesion(id);
+  });
+}
+
+function renderSesiones() {
+  const container = document.getElementById('listaSesiones');
+
+  const todasSesiones = [
+    ...APP_DATA.sesiones.map(s => ({ ...s, tipo: 'individual' })),
+    ...APP_DATA.sesionesGrupales.map(s => ({ ...s, tipo: 'grupal' }))
+  ];
+
+  if (todasSesiones.length === 0) {
+    container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay sesiones registradas</p>';
+    return;
+  }
+
+  let html = '';
+
+  // Sesiones individuales
+  APP_DATA.sesiones.forEach(s => {
+    html += `
+      <div class="session-item item-row flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+        <div class="flex-1">
+          <div class="flex items-center space-x-2">
+            <span class="font-medium">${s.paciente}</span>
+            ${s.usaCredito ? '<span class="badge badge-info">Credito</span>' : ''}
+          </div>
+          <p class="text-sm text-gray-500">${s.terapeuta} - ${formatMoney(s.valorSesion || s.honorarios || 0)}</p>
+        </div>
+        <button onclick="eliminarSesion(${s.id})" class="delete-btn text-red-600 hover:text-red-800 p-2">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+        </button>
+      </div>
+    `;
+  });
+
+  // Sesiones grupales
+  APP_DATA.sesionesGrupales.forEach(g => {
+    const presentes = g.cantidadPresentes || 0;
+    html += `
+      <div class="session-item item-row flex items-center justify-between p-3 bg-purple-50 rounded-lg">
+        <div class="flex-1">
+          <div class="flex items-center space-x-2">
+            <span class="font-medium">${g.grupoNombre}</span>
+            <span class="badge badge-info">Grupal</span>
+          </div>
+          <p class="text-sm text-gray-500">${presentes} presentes - ${formatMoney(g.valorTotal)}</p>
+        </div>
+        <button onclick="eliminarSesionGrupal(${g.id})" class="delete-btn text-red-600 hover:text-red-800 p-2">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+        </button>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+  lucide.createIcons();
+}
+
+// ===========================
+// SESIONES GRUPALES
+// ===========================
+function onGrupoChange(e) {
+  const grupoId = parseInt(e.target.value);
+  const grupo = APP_DATA.grupos.find(g => g.id === grupoId);
+
+  if (!grupo) {
+    document.getElementById('grupalAsistencia').innerHTML = '';
+    document.getElementById('grupalTerapeutas').innerHTML = '';
+    return;
+  }
+
+  const ninos = grupo.ninosJSON || [];
+
+  // Render asistencia
+  let asistenciaHtml = '<label class="block text-sm font-medium text-gray-700 mb-2">Asistencia</label>';
+  ninos.forEach((nino, idx) => {
+    asistenciaHtml += `
+      <div class="flex items-center justify-between p-2 bg-gray-50 rounded">
+        <label class="flex items-center">
+          <input type="checkbox" class="mr-2 grupal-asistencia" data-index="${idx}" checked>
+          <span>${nino.nombre}</span>
+        </label>
+        <select class="text-sm border rounded px-2 py-1 grupal-metodo" data-index="${idx}">
+          <option value="efectivo">Efectivo</option>
+          <option value="transferencia">Transferencia</option>
+        </select>
+      </div>
+    `;
+  });
+  document.getElementById('grupalAsistencia').innerHTML = asistenciaHtml;
+
+  // Render terapeutas
+  let terapeutasHtml = '';
+  APP_DATA.terapeutas.forEach(t => {
+    if (t.activo !== false) {
+      terapeutasHtml += `
+        <label class="flex items-center p-2 bg-gray-50 rounded">
+          <input type="checkbox" class="mr-2 grupal-terapeuta" value="${t.nombre}">
+          <span>${t.nombre}</span>
+        </label>
+      `;
+    }
+  });
+  document.getElementById('grupalTerapeutas').innerHTML = terapeutasHtml;
+
+  // Agregar listeners para calcular totales
+  document.querySelectorAll('.grupal-asistencia').forEach(el => {
+    el.addEventListener('change', calcularTotalesGrupal);
+  });
+
+  calcularTotalesGrupal();
+}
+
+function calcularTotalesGrupal() {
+  const grupoId = parseInt(document.getElementById('grupalGrupo').value);
+  const grupo = APP_DATA.grupos.find(g => g.id === grupoId);
+  if (!grupo) return;
+
+  const ninos = grupo.ninosJSON || [];
+  let total = 0;
+
+  document.querySelectorAll('.grupal-asistencia:checked').forEach(el => {
+    const idx = parseInt(el.getAttribute('data-index'));
+    total += parseInt(ninos[idx]?.valorSesion) || 0;
+  });
+
+  const terapeutasSeleccionados = document.querySelectorAll('.grupal-terapeuta:checked').length || 1;
+  const porTerapeuta = Math.floor(total / terapeutasSeleccionados);
+
+  document.getElementById('grupalTotal').textContent = formatMoney(total);
+  document.getElementById('grupalPorTerapeuta').textContent = formatMoney(porTerapeuta);
+}
+
+function onSubmitSesionGrupal(e) {
+  e.preventDefault();
+
+  const grupoId = parseInt(document.getElementById('grupalGrupo').value);
+  const grupo = APP_DATA.grupos.find(g => g.id === grupoId);
+
+  if (!grupo) {
+    showToast('Selecciona un grupo', 'error');
+    return;
+  }
+
+  const ninos = grupo.ninosJSON || [];
+  const asistencia = [];
+  let efectivoTotal = 0;
+  let transferenciaTotal = 0;
+
+  document.querySelectorAll('.grupal-asistencia').forEach(el => {
+    const idx = parseInt(el.getAttribute('data-index'));
+    const metodo = document.querySelector(`.grupal-metodo[data-index="${idx}"]`).value;
+    const presente = el.checked;
+    const nino = ninos[idx];
+
+    if (presente) {
+      if (metodo === 'efectivo') {
+        efectivoTotal += parseInt(nino.valorSesion) || 0;
+      } else {
+        transferenciaTotal += parseInt(nino.valorSesion) || 0;
+      }
+    }
+
+    asistencia.push({
+      nombre: nino.nombre,
+      terapeuta: nino.terapeuta,
+      valorSesion: nino.valorSesion,
+      presente: presente,
+      metodoPago: metodo
+    });
+  });
+
+  const terapeutas = [];
+  document.querySelectorAll('.grupal-terapeuta:checked').forEach(el => {
+    terapeutas.push(el.value);
+  });
+
+  if (terapeutas.length === 0) {
+    showToast('Selecciona al menos un terapeuta', 'error');
+    return;
+  }
+
+  const data = {
+    fecha: APP_DATA.fechaActual,
+    grupoId: grupoId,
+    grupoNombre: grupo.nombre,
+    asistencia: asistencia,
+    terapeutas: terapeutas,
+    porcentajeAporte: grupo.porcentajeAporte || 30,
+    efectivo: efectivoTotal,
+    transferenciaNeurotea: transferenciaTotal
+  };
+
+  showLoading('Registrando sesion grupal...');
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      hideLoading();
+      if (response.success) {
+        APP_DATA.sesionesGrupales.push(response.data);
+        document.getElementById('formSesionGrupal').reset();
+        document.getElementById('grupalAsistencia').innerHTML = '';
+        document.getElementById('grupalTerapeutas').innerHTML = '';
+        document.getElementById('grupalTotal').textContent = 'Gs 0';
+        document.getElementById('grupalPorTerapeuta').textContent = 'Gs 0';
+        renderAll();
+        showToast('Sesion grupal registrada', 'success');
+      } else {
+        showToast('Error: ' + response.message, 'error');
+      }
+    })
+    .withFailureHandler(onError)
+    .registrarSesionGrupal(data);
+}
+
+function eliminarSesionGrupal(id) {
+  showModal('Eliminar Sesion Grupal', '¿Esta seguro de eliminar esta sesion grupal?', function() {
+    showLoading('Eliminando...');
+
+    google.script.run
+      .withSuccessHandler(function(response) {
+        hideLoading();
+        if (response.success) {
+          APP_DATA.sesionesGrupales = APP_DATA.sesionesGrupales.filter(s => s.id !== id);
+          renderAll();
+          showToast('Sesion grupal eliminada', 'success');
+        } else {
+          showToast('Error: ' + response.message, 'error');
+        }
+      })
+      .withFailureHandler(onError)
+      .eliminarSesionGrupal(id);
+  });
+}
+
+// ===========================
+// RESUMEN
+// ===========================
+function renderResumen() {
+  // Calcular saldos
+  let saldoCaja = APP_DATA.saldoInicial;
+  let cuentaNeurotea = 0;
+  let totalSesiones = APP_DATA.sesiones.length + APP_DATA.sesionesGrupales.length;
+
+  // Sumar sesiones individuales
+  APP_DATA.sesiones.forEach(s => {
+    saldoCaja += parseInt(s.efectivo) || 0;
+    cuentaNeurotea += parseInt(s.transferenciaNeurotea) || 0;
+  });
+
+  // Sumar sesiones grupales
+  APP_DATA.sesionesGrupales.forEach(g => {
+    saldoCaja += parseInt(g.efectivo) || 0;
+    cuentaNeurotea += parseInt(g.transferenciaNeurotea) || 0;
+  });
+
+  // Sumar paquetes del dia
+  APP_DATA.paquetes.filter(p => p.fecha === APP_DATA.fechaActual).forEach(p => {
+    saldoCaja += parseInt(p.efectivo) || 0;
+    cuentaNeurotea += parseInt(p.transferenciaNeurotea) || 0;
+  });
+
+  // Restar egresos
+  APP_DATA.egresos.forEach(e => {
+    saldoCaja -= parseInt(e.monto) || 0;
+  });
+
+  // Restar confirmaciones
+  APP_DATA.confirmaciones.forEach(c => {
+    if (c.flujoJSON) {
+      saldoCaja -= parseInt(c.flujoJSON.efectivoUsado) || 0;
+      cuentaNeurotea -= parseInt(c.flujoJSON.bancoUsado) || 0;
+    }
+  });
+
+  document.getElementById('resumenSaldoInicial').textContent = formatMoney(APP_DATA.saldoInicial);
+  document.getElementById('resumenSaldoCaja').textContent = formatMoney(Math.max(0, saldoCaja));
+  document.getElementById('resumenCuentaNeurotea').textContent = formatMoney(Math.max(0, cuentaNeurotea));
+  document.getElementById('resumenTotalSesiones').textContent = totalSesiones;
+
+  // Tabla de detalle por terapeuta
+  const detallePorTerapeuta = {};
+
+  APP_DATA.terapeutas.forEach(t => {
+    if (t.activo !== false) {
+      detallePorTerapeuta[t.nombre] = {
+        sesiones: 0,
+        efectivo: 0,
+        transNeurotea: 0,
+        transTerapeuta: 0,
+        honorarios: 0
+      };
+    }
+  });
+
+  APP_DATA.sesiones.forEach(s => {
+    if (detallePorTerapeuta[s.terapeuta]) {
+      detallePorTerapeuta[s.terapeuta].sesiones++;
+      detallePorTerapeuta[s.terapeuta].efectivo += parseInt(s.efectivo) || 0;
+      detallePorTerapeuta[s.terapeuta].transNeurotea += parseInt(s.transferenciaNeurotea) || 0;
+      detallePorTerapeuta[s.terapeuta].transTerapeuta += parseInt(s.transferenciaTerminapeuta) || 0;
+      detallePorTerapeuta[s.terapeuta].honorarios += parseInt(s.honorarios) || 0;
+    }
+  });
+
+  let tablaHtml = '';
+  Object.keys(detallePorTerapeuta).forEach(nombre => {
+    const d = detallePorTerapeuta[nombre];
+    tablaHtml += `
+      <tr class="border-b">
+        <td class="px-4 py-2">${nombre}</td>
+        <td class="px-4 py-2 text-right">${d.sesiones}</td>
+        <td class="px-4 py-2 text-right">${formatMoney(d.efectivo)}</td>
+        <td class="px-4 py-2 text-right">${formatMoney(d.transNeurotea)}</td>
+        <td class="px-4 py-2 text-right">${formatMoney(d.transTerapeuta)}</td>
+        <td class="px-4 py-2 text-right font-medium">${formatMoney(d.honorarios)}</td>
+      </tr>
+    `;
+  });
+
+  document.getElementById('resumenTabla').innerHTML = tablaHtml;
+}
+
+function editarSaldoInicial() {
+  document.getElementById('nuevoSaldoInicial').value = APP_DATA.saldoInicial;
+  document.getElementById('modalSaldo').classList.remove('hidden');
+}
+
+function cerrarModalSaldo() {
+  document.getElementById('modalSaldo').classList.add('hidden');
+}
+
+function guardarSaldoInicial() {
+  const nuevoSaldo = parseInt(document.getElementById('nuevoSaldoInicial').value) || 0;
+
+  showLoading('Guardando...');
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      hideLoading();
+      cerrarModalSaldo();
+      if (response.success) {
+        APP_DATA.saldoInicial = nuevoSaldo;
+        renderResumen();
+        showToast('Saldo inicial actualizado', 'success');
+      } else {
+        showToast('Error: ' + response.message, 'error');
+      }
+    })
+    .withFailureHandler(onError)
+    .guardarSaldoInicial(APP_DATA.fechaActual, nuevoSaldo);
+}
+
+// ===========================
+// TRANSFERENCIAS
+// ===========================
+function renderTransferencias() {
+  const transferencias = [];
+
+  // De sesiones individuales
+  APP_DATA.sesiones.forEach(s => {
+    if (parseInt(s.transferenciaNeurotea) > 0) {
+      const transferId = 'sesion_' + s.id + '_' + APP_DATA.fechaActual;
+      const estado = APP_DATA.estadosTransferencia.find(e => e.id === transferId);
+      transferencias.push({
+        id: transferId,
+        descripcion: s.paciente + ' - ' + s.terapeuta,
+        monto: parseInt(s.transferenciaNeurotea),
+        confirmado: estado?.confirmado === true || estado?.confirmado === 'true'
+      });
+    }
+  });
+
+  // De sesiones grupales
+  APP_DATA.sesionesGrupales.forEach(g => {
+    if (g.asistenciaJSON) {
+      g.asistenciaJSON.forEach((a, idx) => {
+        if (a.presente && a.metodoPago === 'transferencia') {
+          const transferId = 'grupal_' + g.id + '_' + idx + '_' + APP_DATA.fechaActual;
+          const estado = APP_DATA.estadosTransferencia.find(e => e.id === transferId);
+          transferencias.push({
+            id: transferId,
+            descripcion: a.nombre + ' (Grupal: ' + g.grupoNombre + ')',
+            monto: parseInt(a.valorSesion) || 0,
+            confirmado: estado?.confirmado === true || estado?.confirmado === 'true'
+          });
+        }
+      });
+    }
+  });
+
+  // De paquetes del dia
+  APP_DATA.paquetes.filter(p => p.fecha === APP_DATA.fechaActual).forEach(p => {
+    if (parseInt(p.transferenciaNeurotea) > 0) {
+      const transferId = 'paquete_' + p.id + '_' + APP_DATA.fechaActual;
+      const estado = APP_DATA.estadosTransferencia.find(e => e.id === transferId);
+      transferencias.push({
+        id: transferId,
+        descripcion: p.paciente + ' - Paquete ' + p.sesionesTotal + ' sesiones',
+        monto: parseInt(p.transferenciaNeurotea),
+        confirmado: estado?.confirmado === true || estado?.confirmado === 'true'
+      });
+    }
+  });
+
+  const pendientes = transferencias.filter(t => !t.confirmado);
+  const confirmadas = transferencias.filter(t => t.confirmado);
+
+  // Render pendientes
+  let pendientesHtml = '';
+  if (pendientes.length === 0) {
+    pendientesHtml = '<p class="text-gray-500 text-center py-4">No hay transferencias pendientes</p>';
+  } else {
+    pendientes.forEach(t => {
+      pendientesHtml += `
+        <div class="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+          <div>
+            <p class="font-medium">${t.descripcion}</p>
+            <p class="text-sm text-yellow-700">${formatMoney(t.monto)}</p>
+          </div>
+          <button onclick="toggleTransferencia('${t.id}')" class="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600">
+            <i data-lucide="check" class="w-4 h-4"></i>
+          </button>
+        </div>
+      `;
+    });
+  }
+  document.getElementById('transferPendientes').innerHTML = pendientesHtml;
+
+  // Render confirmadas
+  let confirmadasHtml = '';
+  if (confirmadas.length === 0) {
+    confirmadasHtml = '<p class="text-gray-500 text-center py-4">No hay transferencias confirmadas</p>';
+  } else {
+    confirmadas.forEach(t => {
+      confirmadasHtml += `
+        <div class="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
+          <div>
+            <p class="font-medium">${t.descripcion}</p>
+            <p class="text-sm text-green-700">${formatMoney(t.monto)}</p>
+          </div>
+          <button onclick="toggleTransferencia('${t.id}')" class="text-gray-500 hover:text-gray-700">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+      `;
+    });
+  }
+  document.getElementById('transferConfirmadas').innerHTML = confirmadasHtml;
+
+  lucide.createIcons();
+}
+
+function toggleTransferencia(transferId) {
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response.success) {
+        // Actualizar estado local
+        const existingIdx = APP_DATA.estadosTransferencia.findIndex(e => e.id === transferId);
+        if (existingIdx >= 0) {
+          APP_DATA.estadosTransferencia[existingIdx].confirmado = response.data.confirmado;
+        } else {
+          APP_DATA.estadosTransferencia.push({ id: transferId, confirmado: response.data.confirmado });
+        }
+        renderTransferencias();
+        renderResumen();
+      }
+    })
+    .withFailureHandler(onError)
+    .toggleTransferencia(transferId);
+}
+
+// ===========================
+// RENDICION
+// ===========================
+function renderRendicion() {
+  let html = '';
+
+  APP_DATA.terapeutas.forEach(t => {
+    if (t.activo === false) return;
+
+    // Calcular estado
+    let honorarios = 0;
+    let transferenciasRecibidas = 0;
+    let egresosTotal = 0;
+
+    // Sesiones individuales
+    APP_DATA.sesiones.filter(s => s.terapeuta === t.nombre).forEach(s => {
+      honorarios += parseInt(s.honorarios) || 0;
+      transferenciasRecibidas += parseInt(s.transferenciaTerminapeuta) || 0;
+    });
+
+    // Sesiones grupales (proporcional)
+    APP_DATA.sesionesGrupales.forEach(g => {
+      if (g.terapeutasJSON && g.terapeutasJSON.includes(t.nombre)) {
+        const idx = g.terapeutasJSON.indexOf(t.nombre);
+        let honorario = parseInt(g.honorariosPorTerapeuta) || 0;
+        if (idx === 0) {
+          honorario += parseInt(g.residuoHonorarios) || 0;
+        }
+        honorarios += honorario;
+      }
+    });
+
+    // Paquetes del dia
+    APP_DATA.paquetes.filter(p => p.fecha === APP_DATA.fechaActual && p.terapeuta === t.nombre).forEach(p => {
+      honorarios += parseInt(p.honorarios) || 0;
+      transferenciasRecibidas += parseInt(p.transferenciaTerminapeuta) || 0;
+    });
+
+    // Egresos
+    APP_DATA.egresos.filter(e => e.terapeuta === t.nombre).forEach(e => {
+      egresosTotal += parseInt(e.monto) || 0;
+    });
+
+    const balance = honorarios - transferenciasRecibidas - egresosTotal;
+
+    // Verificar si ya confirmado
+    const confirmacion = APP_DATA.confirmaciones.find(c => c.terapeuta === t.nombre);
+
+    let estadoClass = 'estado-saldado';
+    let estadoText = 'SALDADO';
+    let estadoBadge = 'badge-gray';
+
+    if (balance > 0) {
+      estadoClass = 'estado-dar-efectivo';
+      estadoText = 'DAR EFECTIVO';
+      estadoBadge = 'badge-success';
+    } else if (balance < 0) {
+      estadoClass = 'estado-terapeuta-debe-dar';
+      estadoText = 'TERAPEUTA DEBE DAR';
+      estadoBadge = 'badge-danger';
+    }
+
+    html += `
+      <div class="p-4 rounded-lg ${estadoClass}">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="font-semibold">${t.nombre}</h3>
+            <p class="text-sm">Honorarios: ${formatMoney(honorarios)} | Trans. Recibidas: ${formatMoney(transferenciasRecibidas)} | Egresos: ${formatMoney(egresosTotal)}</p>
+          </div>
+          <div class="text-right">
+            <span class="badge ${estadoBadge}">${estadoText}</span>
+            <p class="font-bold mt-1">${formatMoney(Math.abs(balance))}</p>
+            ${confirmacion ? '<span class="text-xs text-green-600">Confirmado</span>' : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  document.getElementById('rendicionLista').innerHTML = html || '<p class="text-gray-500 text-center py-4">No hay terapeutas registrados</p>';
+}
+
+// ===========================
+// EGRESOS
+// ===========================
+function onTipoEgresoChange(e) {
+  const tipo = e.target.value;
+  const terapeutaDiv = document.getElementById('egresoTerapeutaDiv');
+
+  if (tipo === 'adelanto') {
+    terapeutaDiv.classList.remove('hidden');
+  } else {
+    terapeutaDiv.classList.add('hidden');
+  }
+}
+
+function onSubmitEgreso(e) {
+  e.preventDefault();
+
+  const tipo = document.getElementById('egresoTipo').value;
+  const data = {
+    fecha: APP_DATA.fechaActual,
+    tipo: tipo,
+    terapeuta: tipo === 'adelanto' ? document.getElementById('egresoTerapeuta').value : '',
+    concepto: document.getElementById('egresoConcepto').value.trim(),
+    monto: parseInt(document.getElementById('egresoMonto').value) || 0
+  };
+
+  if (!data.concepto) {
+    showToast('Ingresa el concepto del egreso', 'error');
+    return;
+  }
+
+  if (data.monto <= 0) {
+    showToast('El monto debe ser mayor a 0', 'error');
+    return;
+  }
+
+  if (tipo === 'adelanto' && !data.terapeuta) {
+    showToast('Selecciona un terapeuta para el adelanto', 'error');
+    return;
+  }
+
+  showLoading('Registrando egreso...');
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      hideLoading();
+      if (response.success) {
+        APP_DATA.egresos.push(response.data);
+        document.getElementById('formEgreso').reset();
+        renderAll();
+        showToast('Egreso registrado', 'success');
+      } else {
+        showToast('Error: ' + response.message, 'error');
+      }
+    })
+    .withFailureHandler(onError)
+    .registrarEgreso(data);
+}
+
+function eliminarEgreso(id) {
+  showModal('Eliminar Egreso', '¿Esta seguro de eliminar este egreso?', function() {
+    showLoading('Eliminando...');
+
+    google.script.run
+      .withSuccessHandler(function(response) {
+        hideLoading();
+        if (response.success) {
+          APP_DATA.egresos = APP_DATA.egresos.filter(e => e.id !== id);
+          renderAll();
+          showToast('Egreso eliminado', 'success');
+        } else {
+          showToast('Error: ' + response.message, 'error');
+        }
+      })
+      .withFailureHandler(onError)
+      .eliminarEgreso(id);
+  });
+}
+
+function renderEgresos() {
+  const container = document.getElementById('listaEgresos');
+
+  if (APP_DATA.egresos.length === 0) {
+    container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay egresos registrados</p>';
+    return;
+  }
+
+  let html = '';
+  APP_DATA.egresos.forEach(e => {
+    html += `
+      <div class="item-row flex items-center justify-between p-3 bg-red-50 rounded-lg">
+        <div class="flex-1">
+          <div class="flex items-center space-x-2">
+            <span class="font-medium">${e.concepto}</span>
+            <span class="badge ${e.tipo === 'adelanto' ? 'badge-warning' : 'badge-danger'}">${e.tipo}</span>
+          </div>
+          <p class="text-sm text-gray-500">${e.terapeuta || 'Gasto general'} - ${formatMoney(e.monto)}</p>
+        </div>
+        <button onclick="eliminarEgreso(${e.id})" class="delete-btn text-red-600 hover:text-red-800 p-2">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+        </button>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+  lucide.createIcons();
+}
+
+// ===========================
+// TERAPEUTAS
+// ===========================
+function onSubmitTerapeuta(e) {
+  e.preventDefault();
+
+  const nombre = document.getElementById('terapeutaNombre').value.trim();
+
+  if (!nombre) {
+    showToast('Ingresa el nombre del terapeuta', 'error');
+    return;
+  }
+
+  showLoading('Agregando terapeuta...');
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      hideLoading();
+      if (response.success) {
+        APP_DATA.terapeutas.push(response.data);
+        document.getElementById('formTerapeuta').reset();
+        renderAll();
+        showToast('Terapeuta agregado', 'success');
+      } else {
+        showToast('Error: ' + response.message, 'error');
+      }
+    })
+    .withFailureHandler(onError)
+    .crearTerapeuta(nombre);
+}
+
+function eliminarTerapeuta(id) {
+  showModal('Eliminar Terapeuta', '¿Esta seguro de eliminar este terapeuta?', function() {
+    showLoading('Eliminando...');
+
+    google.script.run
+      .withSuccessHandler(function(response) {
+        hideLoading();
+        if (response.success) {
+          APP_DATA.terapeutas = APP_DATA.terapeutas.filter(t => t.id !== id);
+          renderAll();
+          showToast('Terapeuta eliminado', 'success');
+        } else {
+          showToast('Error: ' + response.message, 'error');
+        }
+      })
+      .withFailureHandler(onError)
+      .eliminarTerapeuta(id);
+  });
+}
+
+function renderTerapeutas() {
+  const container = document.getElementById('listaTerapeutas');
+
+  if (APP_DATA.terapeutas.length === 0) {
+    container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay terapeutas registrados</p>';
+    return;
+  }
+
+  let html = '';
+  APP_DATA.terapeutas.forEach(t => {
+    html += `
+      <div class="item-row flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="user" class="w-5 h-5 text-indigo-600"></i>
+          <span class="font-medium">${t.nombre}</span>
+          ${t.activo === false ? '<span class="badge badge-gray">Inactivo</span>' : ''}
+        </div>
+        <button onclick="eliminarTerapeuta(${t.id})" class="delete-btn text-red-600 hover:text-red-800 p-2">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+        </button>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+  lucide.createIcons();
+}
+
+// ===========================
+// PAQUETES
+// ===========================
+function calcularPreviewPaquete() {
+  const efectivo = parseInt(document.getElementById('paqueteEfectivo').value) || 0;
+  const transNeuro = parseInt(document.getElementById('paqueteTransNeuro').value) || 0;
+  const transTera = parseInt(document.getElementById('paqueteTransTera').value) || 0;
+  const sesiones = parseInt(document.getElementById('paqueteSesiones').value) || 1;
+
+  const total = efectivo + transNeuro + transTera;
+  const porSesion = sesiones > 0 ? Math.floor(total / sesiones) : 0;
+
+  document.getElementById('paqueteValorTotal').textContent = formatMoney(total);
+  document.getElementById('paqueteValorSesion').textContent = formatMoney(porSesion);
+}
+
+function onSubmitPaquete(e) {
+  e.preventDefault();
+
+  const data = {
+    fecha: APP_DATA.fechaActual,
+    terapeuta: document.getElementById('paqueteTerapeuta').value,
+    paciente: document.getElementById('paquetePaciente').value.trim(),
+    sesionesTotal: parseInt(document.getElementById('paqueteSesiones').value) || 0,
+    efectivo: parseInt(document.getElementById('paqueteEfectivo').value) || 0,
+    transferenciaNeurotea: parseInt(document.getElementById('paqueteTransNeuro').value) || 0,
+    transferenciaTerminapeuta: parseInt(document.getElementById('paqueteTransTera').value) || 0,
+    tipoAporte: document.getElementById('paqueteTipoAporte').value
+  };
+
+  if (!data.terapeuta) {
+    showToast('Selecciona un terapeuta', 'error');
+    return;
+  }
+
+  if (!data.paciente) {
+    showToast('Ingresa el nombre del paciente', 'error');
+    return;
+  }
+
+  showLoading('Creando paquete...');
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      hideLoading();
+      if (response.success) {
+        APP_DATA.paquetes.push(response.data);
+        document.getElementById('formPaquete').reset();
+        calcularPreviewPaquete();
+        renderAll();
+        showToast('Paquete creado exitosamente', 'success');
+      } else {
+        showToast('Error: ' + response.message, 'error');
+      }
+    })
+    .withFailureHandler(onError)
+    .crearPaquete(data);
+}
+
+function eliminarPaquete(id) {
+  showModal('Eliminar Paquete', '¿Esta seguro de eliminar este paquete? Se eliminaran los creditos asociados.', function() {
+    showLoading('Eliminando...');
+
+    google.script.run
+      .withSuccessHandler(function(response) {
+        hideLoading();
+        if (response.success) {
+          APP_DATA.paquetes = APP_DATA.paquetes.filter(p => p.id !== id);
+          renderAll();
+          showToast('Paquete eliminado', 'success');
+        } else {
+          showToast('Error: ' + response.message, 'error');
+        }
+      })
+      .withFailureHandler(onError)
+      .eliminarPaquete(id);
+  });
+}
+
+function renderPaquetes() {
+  const container = document.getElementById('listaPaquetes');
+
+  if (APP_DATA.paquetes.length === 0) {
+    container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay paquetes activos</p>';
+    return;
+  }
+
+  let html = '';
+  APP_DATA.paquetes.forEach(p => {
+    const progreso = Math.round(((p.sesionesTotal - p.sesionesRestantes) / p.sesionesTotal) * 100);
+    html += `
+      <div class="item-row p-4 bg-green-50 rounded-lg border border-green-200">
+        <div class="flex justify-between items-start">
+          <div>
+            <h4 class="font-semibold">${p.paciente}</h4>
+            <p class="text-sm text-gray-600">${p.terapeuta}</p>
+          </div>
+          <button onclick="eliminarPaquete(${p.id})" class="delete-btn text-red-600 hover:text-red-800">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div class="mt-2">
+          <div class="flex justify-between text-sm mb-1">
+            <span>Sesiones: ${p.sesionesRestantes}/${p.sesionesTotal}</span>
+            <span>${progreso}%</span>
+          </div>
+          <div class="w-full bg-gray-200 rounded-full h-2">
+            <div class="bg-green-600 h-2 rounded-full" style="width: ${progreso}%"></div>
+          </div>
+        </div>
+        <p class="text-sm text-gray-500 mt-2">Valor: ${formatMoney(p.valorTotal)} (${formatMoney(p.valorPorSesion)}/sesion)</p>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+  lucide.createIcons();
+}
+
+// ===========================
+// GRUPOS
+// ===========================
+let ninoCounter = 0;
+
+function agregarNinoFormulario() {
+  const container = document.getElementById('grupoNinos');
+  const id = ninoCounter++;
+
+  const html = `
+    <div id="nino-${id}" class="flex items-center space-x-2 p-2 bg-gray-50 rounded">
+      <input type="text" placeholder="Nombre del nino" class="flex-1 border rounded px-2 py-1 nino-nombre">
+      <select class="border rounded px-2 py-1 nino-terapeuta">
+        <option value="">Terapeuta...</option>
+        ${APP_DATA.terapeutas.filter(t => t.activo !== false).map(t => `<option value="${t.nombre}">${t.nombre}</option>`).join('')}
+      </select>
+      <input type="number" placeholder="Valor" class="w-24 border rounded px-2 py-1 nino-valor">
+      <button type="button" onclick="eliminarNinoFormulario(${id})" class="text-red-600 hover:text-red-800">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+  `;
+
+  container.insertAdjacentHTML('beforeend', html);
+  lucide.createIcons();
+}
+
+function eliminarNinoFormulario(id) {
+  const el = document.getElementById('nino-' + id);
+  if (el) el.remove();
+}
+
+function onSubmitGrupo(e) {
+  e.preventDefault();
+
+  const nombre = document.getElementById('grupoNombre').value.trim();
+  const porcentaje = document.getElementById('grupoPorcentaje').value;
+
+  if (!nombre) {
+    showToast('Ingresa el nombre del grupo', 'error');
+    return;
+  }
+
+  const ninos = [];
+  document.querySelectorAll('#grupoNinos > div').forEach(div => {
+    const nombreNino = div.querySelector('.nino-nombre').value.trim();
+    const terapeuta = div.querySelector('.nino-terapeuta').value;
+    const valor = parseInt(div.querySelector('.nino-valor').value) || 0;
+
+    if (nombreNino) {
+      ninos.push({ nombre: nombreNino, terapeuta: terapeuta, valorSesion: valor });
+    }
+  });
+
+  if (ninos.length === 0) {
+    showToast('Agrega al menos un nino al grupo', 'error');
+    return;
+  }
+
+  showLoading('Creando grupo...');
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      hideLoading();
+      if (response.success) {
+        APP_DATA.grupos.push(response.data);
+        document.getElementById('formGrupo').reset();
+        document.getElementById('grupoNinos').innerHTML = '';
+        ninoCounter = 0;
+        agregarNinoFormulario();
+        renderAll();
+        showToast('Grupo creado', 'success');
+      } else {
+        showToast('Error: ' + response.message, 'error');
+      }
+    })
+    .withFailureHandler(onError)
+    .crearGrupo({ nombre: nombre, porcentajeAporte: porcentaje, ninos: ninos });
+}
+
+function eliminarGrupo(id) {
+  showModal('Eliminar Grupo', '¿Esta seguro de eliminar este grupo?', function() {
+    showLoading('Eliminando...');
+
+    google.script.run
+      .withSuccessHandler(function(response) {
+        hideLoading();
+        if (response.success) {
+          APP_DATA.grupos = APP_DATA.grupos.filter(g => g.id !== id);
+          renderAll();
+          showToast('Grupo eliminado', 'success');
+        } else {
+          showToast('Error: ' + response.message, 'error');
+        }
+      })
+      .withFailureHandler(onError)
+      .eliminarGrupo(id);
+  });
+}
+
+function renderGrupos() {
+  const container = document.getElementById('listaGrupos');
+
+  if (APP_DATA.grupos.length === 0) {
+    container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay grupos registrados</p>';
+    return;
+  }
+
+  let html = '';
+  APP_DATA.grupos.forEach(g => {
+    const ninos = g.ninosJSON || [];
+    html += `
+      <div class="item-row p-4 bg-purple-50 rounded-lg border border-purple-200">
+        <div class="flex justify-between items-start">
+          <div>
+            <h4 class="font-semibold">${g.nombre}</h4>
+            <p class="text-sm text-gray-600">Aporte: ${g.porcentajeAporte}%</p>
+          </div>
+          <button onclick="eliminarGrupo(${g.id})" class="delete-btn text-red-600 hover:text-red-800">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div class="mt-2 text-sm">
+          <p class="font-medium">Ninos (${ninos.length}):</p>
+          <ul class="list-disc list-inside text-gray-600">
+            ${ninos.map(n => `<li>${n.nombre} - ${n.terapeuta || 'Sin terapeuta'} (${formatMoney(n.valorSesion)})</li>`).join('')}
+          </ul>
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+  lucide.createIcons();
+}
+
+// ===========================
+// ADMINISTRACION
+// ===========================
+function renderAdmin() {
+  const stats = `
+    <div class="grid grid-cols-2 gap-2 text-sm">
+      <div class="p-2 bg-gray-50 rounded">Terapeutas: <span class="font-medium">${APP_DATA.terapeutas.length}</span></div>
+      <div class="p-2 bg-gray-50 rounded">Sesiones hoy: <span class="font-medium">${APP_DATA.sesiones.length}</span></div>
+      <div class="p-2 bg-gray-50 rounded">Paquetes activos: <span class="font-medium">${APP_DATA.paquetes.length}</span></div>
+      <div class="p-2 bg-gray-50 rounded">Grupos: <span class="font-medium">${APP_DATA.grupos.length}</span></div>
+    </div>
+  `;
+  document.getElementById('adminStats').innerHTML = stats;
+}
+
+function exportarBackup() {
+  showLoading('Generando backup...');
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      hideLoading();
+      if (response.success) {
+        const dataStr = JSON.stringify(response.data, null, 2);
+        const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+
+        const fecha = new Date().toISOString().split('T')[0];
+        const filename = 'neurotea_backup_' + fecha + '.json';
+
+        const link = document.createElement('a');
+        link.setAttribute('href', dataUri);
+        link.setAttribute('download', filename);
+        link.click();
+
+        showToast('Backup descargado', 'success');
+      } else {
+        showToast('Error: ' + response.message, 'error');
+      }
+    })
+    .withFailureHandler(onError)
+    .exportarBackup();
+}
+
+function importarBackup() {
+  const fileInput = document.getElementById('archivoBackup');
+  const file = fileInput.files[0];
+
+  if (!file) {
+    showToast('Selecciona un archivo de backup', 'error');
+    return;
+  }
+
+  showModal('Importar Backup', 'Esta accion reemplazara TODOS los datos actuales. ¿Continuar?', function() {
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+      try {
+        const backupData = JSON.parse(e.target.result);
+
+        showLoading('Importando datos...');
+
+        google.script.run
+          .withSuccessHandler(function(response) {
+            hideLoading();
+            if (response.success) {
+              showToast('Backup importado: ' + response.message, 'success');
+              // Recargar datos
+              initializeApp();
+            } else {
+              showToast('Error: ' + response.message, 'error');
+            }
+          })
+          .withFailureHandler(onError)
+          .importarBackup(backupData);
+      } catch (err) {
+        showToast('Archivo de backup invalido', 'error');
+      }
+    };
+
+    reader.readAsText(file);
+  });
+}
+
+function confirmarLimpiarDatos() {
+  showModal('ATENCION: Eliminar Todos los Datos', 'Esta accion eliminara PERMANENTEMENTE todos los datos del sistema. Esta operacion NO se puede deshacer. ¿Esta absolutamente seguro?', function() {
+    showLoading('Eliminando datos...');
+
+    google.script.run
+      .withSuccessHandler(function(response) {
+        hideLoading();
+        if (response.success) {
+          showToast('Todos los datos han sido eliminados', 'success');
+          // Recargar
+          initializeApp();
+        } else {
+          showToast('Error: ' + response.message, 'error');
+        }
+      })
+      .withFailureHandler(onError)
+      .limpiarTodosLosDatos();
+  });
+}
+
+// ===========================
+// UTILIDADES
+// ===========================
+function formatMoney(num) {
+  if (num === null || num === undefined) return 'Gs 0';
+  const numero = parseInt(num) || 0;
+  return 'Gs ' + numero.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+function showLoading(mensaje) {
+  document.getElementById('loadingText').textContent = mensaje || 'Cargando...';
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+}
+
+function hideLoading() {
+  document.getElementById('loadingOverlay').classList.add('hidden');
+}
+
+function showToast(message, type) {
+  const container = document.getElementById('toastContainer');
+  const id = 'toast-' + Date.now();
+
+  const colors = {
+    success: 'bg-green-500',
+    error: 'bg-red-500',
+    warning: 'bg-yellow-500',
+    info: 'bg-blue-500'
+  };
+
+  const html = `
+    <div id="${id}" class="toast-enter ${colors[type] || colors.info} text-white px-4 py-2 rounded-lg shadow-lg flex items-center space-x-2">
+      <span>${message}</span>
+      <button onclick="document.getElementById('${id}').remove()" class="ml-2 hover:opacity-75">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+  `;
+
+  container.insertAdjacentHTML('beforeend', html);
+  lucide.createIcons();
+
+  setTimeout(() => {
+    const toast = document.getElementById(id);
+    if (toast) {
+      toast.classList.add('toast-exit');
+      setTimeout(() => toast.remove(), 300);
+    }
+  }, 4000);
+}
+
+function showModal(titulo, mensaje, callback) {
+  document.getElementById('modalTitle').textContent = titulo;
+  document.getElementById('modalMessage').textContent = mensaje;
+  document.getElementById('modalConfirm').classList.remove('hidden');
+  modalCallback = callback;
+
+  document.getElementById('modalConfirmBtn').onclick = function() {
+    cerrarModal();
+    if (modalCallback) modalCallback();
+  };
+}
+
+function cerrarModal() {
+  document.getElementById('modalConfirm').classList.add('hidden');
+  modalCallback = null;
+}
+</script>
