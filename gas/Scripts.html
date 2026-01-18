@@ -1314,10 +1314,6 @@ function handleGroupSubmit(e) {
         // Nota: grupo-children-inputs no existe en el HTML actual
         // Los grupos se crean sin ninos inicialmente, se agregan despues
         // Recargar lista de grupos
-            </button>
-          </div>
-        `;
-        // Recargar grupos
         google.script.run
           .withSuccessHandler(function(groups) {
             gruposActivos = groups;
