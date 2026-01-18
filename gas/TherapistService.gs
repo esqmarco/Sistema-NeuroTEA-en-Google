@@ -256,3 +256,55 @@ function desactivarTerapeuta(nombre) {
   }
   return TherapistService.deactivate(therapist.id);
 }
+
+/**
+ * Renombra un terapeuta (para frontend)
+ * @param {string} nombreActual - Nombre actual del terapeuta
+ * @param {string} nuevoNombre - Nuevo nombre del terapeuta
+ */
+function renombrarTerapeuta(nombreActual, nuevoNombre) {
+  const therapist = TherapistService.getByName(nombreActual);
+  if (!therapist) {
+    return resultado(false, null, 'Terapeuta no encontrado');
+  }
+
+  // Actualizar el nombre en la tabla de terapeutas
+  const updateResult = TherapistService.update(therapist.id, { nombre: nuevoNombre });
+
+  if (!updateResult.success) {
+    return updateResult;
+  }
+
+  // Actualizar nombre en sesiones
+  const allSessions = Database.getByColumn(SHEETS.SESIONES, 'terapeuta', nombreActual);
+  allSessions.forEach(session => {
+    Database.update(SHEETS.SESIONES, session.id, { terapeuta: nuevoNombre });
+  });
+
+  // Actualizar nombre en egresos
+  const allEgresos = Database.getByColumn(SHEETS.EGRESOS, 'terapeuta', nombreActual);
+  allEgresos.forEach(egreso => {
+    Database.update(SHEETS.EGRESOS, egreso.id, { terapeuta: nuevoNombre });
+  });
+
+  // Actualizar nombre en paquetes
+  const allPaquetes = Database.getByColumn(SHEETS.PAQUETES, 'terapeuta', nombreActual);
+  allPaquetes.forEach(paquete => {
+    Database.update(SHEETS.PAQUETES, paquete.id, { terapeuta: nuevoNombre });
+  });
+
+  // Actualizar nombre en creditos
+  const allCreditos = Database.getByColumn(SHEETS.CREDITOS, 'terapeuta', nombreActual);
+  allCreditos.forEach(credito => {
+    Database.update(SHEETS.CREDITOS, credito.id, { terapeuta: nuevoNombre });
+  });
+
+  // Actualizar nombre en confirmaciones
+  const allConfirmaciones = Database.getByColumn(SHEETS.CONFIRMACIONES, 'terapeuta', nombreActual);
+  allConfirmaciones.forEach(conf => {
+    Database.update(SHEETS.CONFIRMACIONES, conf.id, { terapeuta: nuevoNombre });
+  });
+
+  return resultado(true, { nombreAnterior: nombreActual, nuevoNombre: nuevoNombre },
+    'Terapeuta renombrado exitosamente en todos los registros');
+}

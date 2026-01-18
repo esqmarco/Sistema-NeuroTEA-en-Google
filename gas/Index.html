@@ -1161,6 +1161,135 @@
     </div>
   </div>
 
+  <!-- Modal de Editar Sesion -->
+  <div id="edit-session-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+    <div class="flex items-center justify-center min-h-screen p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full">
+        <div class="flex justify-between items-center p-6 border-b dark:border-gray-700">
+          <h3 class="text-lg font-semibold flex items-center">
+            <i data-lucide="edit" class="w-5 h-5 mr-2"></i>
+            Editar Sesion
+          </h3>
+          <button onclick="closeEditSessionModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <div class="p-6 space-y-4">
+          <input type="hidden" id="edit-session-id">
+
+          <div>
+            <label class="block text-sm font-medium mb-1">Paciente</label>
+            <input type="text" id="edit-session-paciente" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium mb-1">Terapeuta</label>
+            <select id="edit-session-terapeuta" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+            </select>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block text-sm font-medium mb-1 label-efectivo">Efectivo</label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-2 text-gray-500 text-sm">Gs</span>
+                <input type="text" inputmode="numeric" id="edit-session-efectivo" class="w-full p-2 pl-8 border rounded-md campo-efectivo dark:bg-gray-700 dark:border-gray-600">
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1 label-transferencia-neurotea">Transf. NeuroTEA</label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-2 text-gray-500 text-sm">Gs</span>
+                <input type="text" inputmode="numeric" id="edit-session-transf-neurotea" class="w-full p-2 pl-8 border rounded-md campo-transferencia-neurotea dark:bg-gray-700 dark:border-gray-600">
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1 label-transferencia-terapeuta">Transf. Terapeuta</label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-2 text-gray-500 text-sm">Gs</span>
+                <input type="text" inputmode="numeric" id="edit-session-transf-terapeuta" class="w-full p-2 pl-8 border rounded-md campo-transferencia-terapeuta dark:bg-gray-700 dark:border-gray-600">
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-gray-50 dark:bg-gray-700 p-3 rounded-md">
+            <div class="flex justify-between text-sm">
+              <span>Valor total:</span>
+              <span id="edit-session-valor" class="font-bold text-blue-600">Gs 0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end space-x-2 p-6 border-t dark:border-gray-700">
+          <button onclick="closeEditSessionModal()" class="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-md">
+            Cancelar
+          </button>
+          <button onclick="saveSessionEdit()" class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md">
+            Guardar Cambios
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Editar Egreso -->
+  <div id="edit-egreso-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+    <div class="flex items-center justify-center min-h-screen p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full">
+        <div class="flex justify-between items-center p-6 border-b dark:border-gray-700">
+          <h3 class="text-lg font-semibold flex items-center">
+            <i data-lucide="edit" class="w-5 h-5 mr-2"></i>
+            Editar Egreso
+          </h3>
+          <button onclick="closeEditEgresoModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <div class="p-6 space-y-4">
+          <input type="hidden" id="edit-egreso-id">
+
+          <div>
+            <label class="block text-sm font-medium mb-1">Tipo de Egreso</label>
+            <select id="edit-egreso-tipo" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600" onchange="toggleEditEgresoTerapeuta()">
+              <option value="gasto-neurotea">Gasto de NeuroTEA</option>
+              <option value="adelanto">Adelanto a Terapeuta</option>
+            </select>
+          </div>
+
+          <div id="edit-egreso-terapeuta-container" style="display: none;">
+            <label class="block text-sm font-medium mb-1">Terapeuta</label>
+            <select id="edit-egreso-terapeuta" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium mb-1">Concepto</label>
+            <input type="text" id="edit-egreso-concepto" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600" placeholder="Descripcion del egreso">
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium mb-1">Monto</label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">Gs</span>
+              <input type="text" inputmode="numeric" id="edit-egreso-monto" class="w-full p-2 pl-8 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end space-x-2 p-6 border-t dark:border-gray-700">
+          <button onclick="closeEditEgresoModal()" class="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-md">
+            Cancelar
+          </button>
+          <button onclick="saveEgresoEdit()" class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md">
+            Guardar Cambios
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Notification Toast -->
   <div id="notification-container" class="fixed bottom-4 right-4 z-50 space-y-2">
   </div>

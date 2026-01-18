@@ -205,3 +205,21 @@ function eliminarEgreso(id) {
 function getTotalesEgresos(fecha) {
   return EgresoService.getTotals(fecha);
 }
+
+/**
+ * Actualiza un egreso (para frontend)
+ */
+function actualizarEgreso(id, updates) {
+  return EgresoService.update(id, updates);
+}
+
+/**
+ * Obtiene un egreso por ID (para frontend)
+ */
+function getEgresoPorId(id) {
+  const egreso = EgresoService.getById(id);
+  if (egreso) {
+    return resultado(true, egreso, 'Egreso encontrado');
+  }
+  return resultado(false, null, 'Egreso no encontrado');
+}
