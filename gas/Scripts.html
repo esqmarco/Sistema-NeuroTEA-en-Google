@@ -182,9 +182,31 @@ function setupEventListeners() {
 
   // Validacion del boton registrar - escuchar cambios en campos relevantes
   document.getElementById('therapist-select').addEventListener('change', validateRegisterButton);
-  document.getElementById('cash-to-neurotea').addEventListener('input', validateRegisterButton);
-  document.getElementById('transfer-to-neurotea').addEventListener('input', validateRegisterButton);
-  document.getElementById('transfer-to-therapist').addEventListener('input', validateRegisterButton);
+  document.getElementById('cash-to-neurotea').addEventListener('input', function() {
+    validateRegisterButton();
+    updatePaymentDisplay();
+  });
+  document.getElementById('transfer-to-neurotea').addEventListener('input', function() {
+    validateRegisterButton();
+    updatePaymentDisplay();
+  });
+  document.getElementById('transfer-to-therapist').addEventListener('input', function() {
+    validateRegisterButton();
+    updatePaymentDisplay();
+  });
+
+  // Aporte NeuroTEA - escuchar cambios
+  document.querySelectorAll('input[name="neurotea-contribution"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+      const fixedInput = document.getElementById('fixed-amount-input');
+      fixedInput.disabled = this.value !== 'fixed';
+      if (this.value !== 'fixed') {
+        fixedInput.value = '';
+      }
+      updatePaymentDisplay();
+    });
+  });
+  document.getElementById('fixed-amount-input').addEventListener('input', updatePaymentDisplay);
 
   // Modo de registro - validar al cambiar
   document.querySelectorAll('input[name="modo-registro"]').forEach(radio => {
@@ -240,6 +262,39 @@ function validateRegisterButton() {
     btn.classList.remove('bg-purple-600', 'hover:bg-purple-700');
     btn.classList.add('bg-gray-400', 'cursor-not-allowed');
   }
+}
+
+/**
+ * Actualiza el display de valores de pago en tiempo real
+ */
+function updatePaymentDisplay() {
+  // Leer valores de los campos de pago
+  const cash = parseInt(document.getElementById('cash-to-neurotea').value) || 0;
+  const transferNeurotea = parseInt(document.getElementById('transfer-to-neurotea').value) || 0;
+  const transferTerapeuta = parseInt(document.getElementById('transfer-to-therapist').value) || 0;
+
+  // Calcular valor total de la sesion
+  const valorSesion = cash + transferNeurotea + transferTerapeuta;
+
+  // Calcular aporte NeuroTEA segun seleccion
+  let aporteNeurotea = 0;
+  const contributionType = document.querySelector('input[name="neurotea-contribution"]:checked')?.value;
+
+  if (contributionType === '20') {
+    aporteNeurotea = Math.round(valorSesion * 0.20);
+  } else if (contributionType === '30') {
+    aporteNeurotea = Math.round(valorSesion * 0.30);
+  } else if (contributionType === 'fixed') {
+    aporteNeurotea = parseInt(document.getElementById('fixed-amount-input').value) || 0;
+  }
+
+  // Calcular honorarios terapeuta
+  const honorarios = valorSesion - aporteNeurotea;
+
+  // Actualizar displays
+  document.getElementById('session-value-display').textContent = formatCurrency(valorSesion);
+  document.getElementById('neurotea-contribution-display').textContent = formatCurrency(aporteNeurotea);
+  document.getElementById('therapist-fee-display').textContent = formatCurrency(honorarios);
 }
 
 // ===========================
