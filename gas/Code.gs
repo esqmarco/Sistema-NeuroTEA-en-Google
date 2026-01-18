@@ -202,6 +202,47 @@ function insertInitialConfig() {
 }
 
 /**
+ * REINICIALIZA el sistema - BORRA TODOS LOS DATOS y recrea las hojas
+ * CUIDADO: Esta funcion elimina todos los datos!
+ * @returns {Object} - Resultado de la operacion
+ */
+function reinicializarSistema() {
+  const ss = getSpreadsheet();
+
+  // Lista de hojas a reinicializar (todas excepto Autorizaciones)
+  const sheetsToClear = [
+    'Terapeutas', 'Sesiones', 'SesionesGrupales', 'Egresos',
+    'Confirmaciones', 'Paquetes', 'HistorialPaquetes', 'Grupos',
+    'Creditos', 'SaldosIniciales', 'HistorialSaldos',
+    'EstadosTransferencia', 'Configuracion'
+  ];
+
+  let cleared = 0;
+
+  sheetsToClear.forEach(sheetName => {
+    const sheet = ss.getSheetByName(sheetName);
+    if (sheet) {
+      // Mantener encabezados (fila 1), borrar todo lo demas
+      const lastRow = sheet.getLastRow();
+      if (lastRow > 1) {
+        sheet.deleteRows(2, lastRow - 1);
+      }
+      cleared++;
+      Logger.log('Limpiada hoja: ' + sheetName);
+    }
+  });
+
+  // Reinsertar configuracion inicial
+  insertInitialConfig();
+
+  Logger.log('Sistema reinicializado. Hojas limpiadas: ' + cleared);
+  return {
+    success: true,
+    message: 'Sistema reinicializado. Se limpiaron ' + cleared + ' hojas. Los datos de Autorizaciones se mantienen.'
+  };
+}
+
+/**
  * Obtiene la fecha actual en formato YYYY-MM-DD (Paraguay)
  * @returns {string} - Fecha formateada
  */
@@ -223,32 +264,62 @@ function getFechaActual() {
  * @returns {Object} - Datos iniciales del sistema
  */
 function cargarDatosIniciales() {
-  try {
-    const fecha = getFechaActual();
+  const fecha = getFechaActual();
+  const data = {
+    fechaActual: fecha,
+    terapeutas: [],
+    sesiones: [],
+    sesionesGrupales: [],
+    egresos: [],
+    paquetes: [],
+    grupos: [],
+    confirmaciones: {},
+    saldoInicial: 0,
+    estadosTransferencia: {},
+    config: {}
+  };
+  const errors = [];
 
-    return {
-      success: true,
-      data: {
-        fechaActual: fecha,
-        terapeutas: TherapistService.getAll(),
-        sesiones: SessionService.getByDate(fecha),
-        sesionesGrupales: GroupSessionService.getByDate(fecha),
-        egresos: EgresoService.getByDate(fecha),
-        paquetes: PackageService.getActive(),
-        grupos: GroupService.getActive(),
-        confirmaciones: RendicionService.getConfirmaciones(fecha),
-        saldoInicial: RendicionService.getSaldoInicial(fecha),
-        estadosTransferencia: TransferService.getEstados(fecha),
-        config: getConfiguracion()
-      }
-    };
-  } catch (error) {
-    Logger.log('Error cargando datos iniciales: ' + error.message);
-    return {
-      success: false,
-      message: 'Error cargando datos: ' + error.message
-    };
+  // Cargar cada servicio individualmente para identificar errores
+  try { data.terapeutas = TherapistService.getAll(); }
+  catch (e) { errors.push('Terapeutas: ' + e.message); }
+
+  try { data.sesiones = SessionService.getByDate(fecha); }
+  catch (e) { errors.push('Sesiones: ' + e.message); }
+
+  try { data.sesionesGrupales = GroupSessionService.getByDate(fecha); }
+  catch (e) { errors.push('SesionesGrupales: ' + e.message); }
+
+  try { data.egresos = EgresoService.getByDate(fecha); }
+  catch (e) { errors.push('Egresos: ' + e.message); }
+
+  try { data.paquetes = PackageService.getActive(); }
+  catch (e) { errors.push('Paquetes: ' + e.message); }
+
+  try { data.grupos = GroupService.getActive(); }
+  catch (e) { errors.push('Grupos: ' + e.message); }
+
+  try { data.confirmaciones = RendicionService.getConfirmaciones(fecha); }
+  catch (e) { errors.push('Confirmaciones: ' + e.message); }
+
+  try { data.saldoInicial = RendicionService.getSaldoInicial(fecha); }
+  catch (e) { errors.push('SaldoInicial: ' + e.message); }
+
+  try { data.estadosTransferencia = TransferService.getEstados(fecha); }
+  catch (e) { errors.push('EstadosTransferencia: ' + e.message); }
+
+  try { data.config = getConfiguracion(); }
+  catch (e) { errors.push('Config: ' + e.message); }
+
+  if (errors.length > 0) {
+    Logger.log('Errores cargando datos: ' + errors.join('; '));
   }
+
+  return {
+    success: true,
+    data: data,
+    errors: errors.length > 0 ? errors : null
+  };
 }
 
 /**
