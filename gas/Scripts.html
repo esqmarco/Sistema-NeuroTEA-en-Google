@@ -214,6 +214,14 @@ function updateTherapistSelects() {
     select.value = currentValue;
   });
 
+  // Actualizar contadores de terapeutas
+  const count = terapeutas.length;
+  const counterText = count + ' terapeuta' + (count !== 1 ? 's' : '');
+  const counter = document.getElementById('therapist-counter');
+  if (counter) counter.textContent = counterText;
+  const listCounter = document.getElementById('therapist-list-counter');
+  if (listCounter) listCounter.textContent = counterText;
+
   // Actualizar checkboxes de terapeutas para sesiones grupales
   updateGroupTherapistCheckboxes();
 }
