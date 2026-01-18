@@ -34,7 +34,7 @@ const Database = {
 
         // Convertir fechas de Date object a string YYYY-MM-DD
         if (value instanceof Date) {
-          value = Utilities.formatDate(value, CONFIG.TIMEZONE, 'yyyy-MM-dd');
+          value = Utilities.formatDate(value, 'America/Asuncion', 'yyyy-MM-dd');
         }
 
         // Parsear JSON si corresponde
