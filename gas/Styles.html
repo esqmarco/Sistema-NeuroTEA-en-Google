@@ -6,15 +6,367 @@
 
   /* Variables CSS */
   :root {
-    --primary-color: #3B82F6;
-    --secondary-color: #6B7280;
-    --success-color: #10B981;
-    --warning-color: #F59E0B;
-    --danger-color: #EF4444;
-    --info-color: #06B6D4;
+    --neurotea-blue: #4A90E2;
+    --neurotea-blue-dark: #357ABD;
+    --neurotea-blue-light: #6BA3E8;
   }
 
-  /* Scrollbar personalizada */
+  /* Sobrescribir colores purpura con azul NeuroTEA */
+  .bg-purple-600 { background-color: var(--neurotea-blue) !important; }
+  .bg-purple-700 { background-color: var(--neurotea-blue-dark) !important; }
+  .hover\:bg-purple-700:hover { background-color: var(--neurotea-blue-dark) !important; }
+  .text-purple-600 { color: var(--neurotea-blue) !important; }
+  .border-purple-500 { border-color: var(--neurotea-blue) !important; }
+  .focus\:border-purple-500:focus { border-color: var(--neurotea-blue) !important; }
+  .focus\:ring-purple-500:focus { --tw-ring-color: var(--neurotea-blue) !important; }
+  .dark .bg-purple-900 { background-color: #1e3a5f !important; }
+  .dark .bg-purple-800 { background-color: #2a4a6f !important; }
+
+  /* Tab activa */
+  .active-tab {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-bottom: 2px solid #fff;
+  }
+
+  /* Badges */
+  .badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .badge-success {
+    background-color: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+  }
+  .badge-primary {
+    background-color: rgba(59, 130, 246, 0.2);
+    color: #3b82f6;
+  }
+  .badge-warning {
+    background-color: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+  }
+  .badge-info {
+    background-color: rgba(14, 165, 233, 0.2);
+    color: #0ea5e9;
+  }
+  .badge-danger {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+  }
+  .badge-secondary {
+    background-color: rgba(107, 114, 128, 0.2);
+    color: #6b7280;
+  }
+
+  /* Estilos para campos de pago */
+  .campo-efectivo {
+    background-color: rgba(16, 185, 129, 0.15) !important;
+    border-color: #10b981 !important;
+    color: #065f46 !important;
+  }
+  .campo-efectivo::placeholder {
+    color: #059669 !important;
+  }
+  .label-efectivo {
+    color: #065f46 !important;
+    font-weight: 600;
+  }
+
+  .campo-transferencia-neurotea {
+    background-color: rgba(59, 130, 246, 0.15) !important;
+    border-color: #3b82f6 !important;
+    color: #1e3a8a !important;
+  }
+  .campo-transferencia-neurotea::placeholder {
+    color: #2563eb !important;
+  }
+  .label-transferencia-neurotea {
+    color: #1e3a8a !important;
+    font-weight: 600;
+  }
+
+  .campo-transferencia-terapeuta {
+    background-color: rgba(139, 92, 246, 0.15) !important;
+    border-color: #8b5cf6 !important;
+    color: #581c87 !important;
+  }
+  .campo-transferencia-terapeuta::placeholder {
+    color: #7c3aed !important;
+  }
+  .label-transferencia-terapeuta {
+    color: #581c87 !important;
+    font-weight: 600;
+  }
+
+  /* Estilos para el dashboard */
+  .dashboard-card {
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  }
+  .dashboard-card.ingreso-total {
+    background-color: #f3f4f6;
+    color: #111827;
+  }
+  .dashboard-card.aporte-neurotea {
+    background-color: rgba(20, 184, 166, 0.15);
+    color: #134e4a;
+  }
+  .dashboard-card.saldo-caja {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #92400e;
+  }
+  .dashboard-card.total-efectivo {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #065f46;
+  }
+  .dashboard-card.total-transf-neurotea {
+    background-color: rgba(59, 130, 246, 0.15);
+    color: #1e3a8a;
+  }
+  .dashboard-card.total-transf-terapeuta {
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #581c87;
+  }
+
+  /* Botones de confirmacion */
+  .btn-confirmar {
+    background-color: #10b981;
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  .btn-confirmar:hover {
+    background-color: #059669;
+  }
+
+  /* Card de egresos totales */
+  .total-egresos-card {
+    border-left: 4px solid #ef4444;
+    background-color: rgba(239, 68, 68, 0.1);
+    padding: 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+
+  /* Card de saldo en caja */
+  .saldo-caja-card {
+    background-color: rgba(245, 158, 11, 0.15);
+    border-left: 4px solid #f59e0b;
+    padding: 1rem;
+    border-radius: 0.5rem;
+  }
+
+  /* Badge de saldo inicial */
+  #saldo-inicial-badge {
+    background-color: rgba(107, 114, 128, 0.1);
+    color: #6b7280;
+    border: 1px solid rgba(107, 114, 128, 0.2);
+  }
+  #saldo-status-dot {
+    background-color: #9ca3af;
+  }
+  #saldo-status-dot.saldo-configurado {
+    background-color: #22c55e;
+  }
+  #saldo-status-dot.saldo-editado {
+    background-color: #f97316;
+  }
+
+  /* Sesiones con credito */
+  .session-credit {
+    border-left-color: inherit;
+  }
+  .therapist-section-credits {
+    background-color: #F5F1E8;
+    border-left: 4px solid #D7CCC8;
+  }
+  .therapist-section-credits:hover {
+    background-color: #F0EBE0;
+  }
+  .credit-text-primary,
+  .credit-text-secondary {
+    color: #6D4C41 !important;
+  }
+  .credit-text-bold {
+    color: #6D4C41 !important;
+    font-weight: 600;
+  }
+
+  /* Dark mode para creditos */
+  .dark .therapist-section-credits {
+    background-color: #3E2723;
+    border-left-color: #5D4037;
+  }
+  .dark .therapist-section-credits:hover {
+    background-color: #4E342E;
+  }
+  .dark .credit-text-primary,
+  .dark .credit-text-secondary {
+    color: #A1887F !important;
+  }
+  .dark .credit-text-bold {
+    color: #BCAAA4 !important;
+  }
+
+  /* Botones de transferencia */
+  .transfer-status-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    border: none;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+  .transfer-status-btn.pending {
+    background-color: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+  }
+  .transfer-status-btn.confirmed {
+    background-color: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+  }
+  .transfer-status-btn:hover {
+    opacity: 0.8;
+  }
+
+  .patient-info {
+    color: #6b7280;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+  }
+  .confirmed-count {
+    color: #059669;
+    font-weight: 600;
+  }
+  .pending-count {
+    color: #dc2626;
+    font-weight: 600;
+  }
+
+  /* Select de pago de deuda */
+  .debt-payment-select {
+    background-color: #fef2f2;
+    border: 1px solid #fca5a5;
+    color: #991b1b;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .debt-payment-select:hover {
+    background-color: #fee2e2;
+    border-color: #f87171;
+  }
+
+  /* Estilos para Administracion */
+  .admin-module-navigation {
+    margin-bottom: 1.5rem;
+  }
+  .admin-module-tab {
+    padding: 0.75rem 1rem;
+    border: none;
+    background: #f3f4f6;
+    color: #374151;
+    border-radius: 0.5rem 0.5rem 0 0;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+  .admin-module-tab:hover:not(.disabled) {
+    background: #e5e7eb;
+  }
+  .admin-module-tab.active {
+    background: #3b82f6;
+    color: white;
+  }
+  .admin-module-tab.disabled {
+    background: #f9fafb;
+    color: #9ca3af;
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+  .admin-module-content {
+    display: block;
+  }
+
+  /* Dark mode admin */
+  .dark .admin-module-tab {
+    background: #374151;
+    color: #d1d5db;
+  }
+  .dark .admin-module-tab:hover:not(.disabled) {
+    background: #4b5563;
+  }
+  .dark .admin-module-tab.active {
+    background: #3b82f6;
+    color: white;
+  }
+  .dark .admin-module-tab.disabled {
+    background: #1f2937;
+    color: #6b7280;
+  }
+
+  /* Animaciones */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(100%); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  .animate-fadeIn {
+    animation: fadeIn 0.3s ease-out;
+  }
+  .animate-slideIn {
+    animation: slideIn 0.3s ease-out;
+  }
+
+  /* Notificaciones */
+  .notification {
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    animation: slideIn 0.3s ease-out;
+  }
+  .notification.success {
+    background-color: #10b981;
+    color: white;
+  }
+  .notification.error {
+    background-color: #ef4444;
+    color: white;
+  }
+  .notification.warning {
+    background-color: #f59e0b;
+    color: white;
+  }
+  .notification.info {
+    background-color: #3b82f6;
+    color: white;
+  }
+
+  /* Ocultar scrollbar */
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
@@ -23,288 +375,50 @@
     scrollbar-width: none;
   }
 
-  /* Cards */
-  .card {
-    @apply bg-white dark:bg-gray-800 rounded-lg shadow-md p-6;
+  /* Currency input sin flechas */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
   }
 
-  .card-title {
-    @apply text-lg font-semibold text-gray-800 dark:text-white mb-4 flex items-center;
-  }
-
-  /* Form Elements */
-  .form-label {
-    @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1;
-  }
-
-  .form-input {
-    @apply w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md
-           bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-           focus:ring-2 focus:ring-blue-500 focus:border-transparent
-           placeholder-gray-400 dark:placeholder-gray-500
-           transition duration-200;
-  }
-
-  .form-select {
-    @apply form-input cursor-pointer;
-  }
-
-  .form-checkbox {
-    @apply w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500;
-  }
-
-  /* Buttons */
-  .btn {
-    @apply px-4 py-2 rounded-md font-medium transition duration-200
-           flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed;
-  }
-
-  .btn-primary {
-    @apply bg-blue-600 hover:bg-blue-700 text-white;
-  }
-
-  .btn-secondary {
-    @apply bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600
-           text-gray-800 dark:text-white;
-  }
-
-  .btn-success {
-    @apply bg-green-600 hover:bg-green-700 text-white;
-  }
-
-  .btn-warning {
-    @apply bg-yellow-500 hover:bg-yellow-600 text-white;
-  }
-
-  .btn-danger {
-    @apply bg-red-600 hover:bg-red-700 text-white;
-  }
-
-  .btn-sm {
-    @apply px-2 py-1 text-sm;
-  }
-
-  /* Tabs */
-  .tab-btn {
-    @apply px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400
-           hover:text-blue-600 dark:hover:text-blue-400
-           border-b-2 border-transparent hover:border-blue-600
-           transition duration-200 flex items-center whitespace-nowrap;
-  }
-
-  .tab-btn.active {
-    @apply text-blue-600 dark:text-blue-400 border-blue-600;
-  }
-
-  .tab-content {
-    @apply animate-fadeIn;
-  }
-
-  /* Stat Cards */
-  .stat-card {
-    @apply rounded-lg p-4 text-white flex flex-col items-center justify-center text-center;
-  }
-
-  .stat-value {
-    @apply text-2xl font-bold;
-  }
-
-  .stat-label {
-    @apply text-sm opacity-90;
-  }
-
-  /* Table */
-  .table-header {
-    @apply px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider;
-  }
-
-  .table-cell {
-    @apply px-4 py-3 text-sm text-gray-700 dark:text-gray-300;
-  }
-
-  /* Badges */
-  .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
-  }
-
-  .badge-success {
-    @apply bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300;
-  }
-
-  .badge-warning {
-    @apply bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300;
-  }
-
-  .badge-danger {
-    @apply bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300;
-  }
-
-  .badge-info {
-    @apply bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300;
-  }
-
-  .badge-secondary {
-    @apply bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300;
-  }
-
-  /* Session Item */
-  .session-item {
-    @apply bg-gray-50 dark:bg-gray-700 rounded-lg p-3 flex justify-between items-center
-           hover:bg-gray-100 dark:hover:bg-gray-600 transition;
-  }
-
-  .session-item-info {
-    @apply flex-1;
-  }
-
-  .session-item-patient {
-    @apply font-medium text-gray-800 dark:text-white;
-  }
-
-  .session-item-therapist {
-    @apply text-sm text-gray-500 dark:text-gray-400;
-  }
-
-  .session-item-amount {
-    @apply font-semibold text-green-600 dark:text-green-400;
-  }
-
-  /* Transfer Item */
-  .transfer-item {
-    @apply bg-gray-50 dark:bg-gray-700 rounded-lg p-3;
-  }
-
-  .transfer-status-btn {
-    @apply px-3 py-1 rounded-full text-xs font-medium cursor-pointer transition;
-  }
-
-  .transfer-status-btn.pending {
-    @apply bg-yellow-100 text-yellow-800 hover:bg-yellow-200;
-  }
-
-  .transfer-status-btn.confirmed {
-    @apply bg-green-100 text-green-800 hover:bg-green-200;
-  }
-
-  /* Rendicion Card */
+  /* Rendicion cards */
   .rendicion-card {
-    @apply bg-gray-50 dark:bg-gray-700 rounded-lg p-4 border-l-4;
+    background-color: #f9fafb;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    border-left: 4px solid;
   }
-
   .rendicion-card.saldado {
-    @apply border-gray-400;
+    border-left-color: #6b7280;
   }
-
   .rendicion-card.dar-efectivo {
-    @apply border-green-500;
+    border-left-color: #10b981;
   }
-
   .rendicion-card.transferir {
-    @apply border-blue-500;
+    border-left-color: #3b82f6;
   }
-
   .rendicion-card.dar-transferir {
-    @apply border-yellow-500;
+    border-left-color: #f59e0b;
   }
-
   .rendicion-card.terapeuta-debe {
-    @apply border-red-500;
+    border-left-color: #ef4444;
   }
 
-  /* Package Item */
-  .package-item {
-    @apply bg-gray-50 dark:bg-gray-700 rounded-lg p-3;
+  .dark .rendicion-card {
+    background-color: #374151;
   }
 
-  .package-progress {
-    @apply h-2 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden mt-2;
-  }
-
-  .package-progress-bar {
-    @apply h-full bg-green-500 transition-all duration-300;
-  }
-
-  /* Group Item */
-  .group-item {
-    @apply bg-gray-50 dark:bg-gray-700 rounded-lg p-3;
-  }
-
-  /* Notification Toast */
-  .notification {
-    @apply px-4 py-3 rounded-lg shadow-lg flex items-center space-x-3 animate-slideIn;
-  }
-
-  .notification.success {
-    @apply bg-green-500 text-white;
-  }
-
-  .notification.error {
-    @apply bg-red-500 text-white;
-  }
-
-  .notification.warning {
-    @apply bg-yellow-500 text-white;
-  }
-
-  .notification.info {
-    @apply bg-blue-500 text-white;
-  }
-
-  /* Animations */
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateX(100%); }
-    to { opacity: 1; transform: translateX(0); }
-  }
-
-  .animate-fadeIn {
-    animation: fadeIn 0.3s ease-out;
-  }
-
-  .animate-slideIn {
-    animation: slideIn 0.3s ease-out;
-  }
-
-  /* Loading Spinner */
-  .spinner {
-    @apply animate-spin rounded-full border-b-2 border-blue-500;
-  }
-
-  /* Confirm Dialog */
-  .confirm-overlay {
-    @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50;
-  }
-
-  .confirm-dialog {
-    @apply bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl;
-  }
-
-  /* Payment Options */
-  .payment-option {
-    @apply border rounded-lg p-3 cursor-pointer transition
-           hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20;
-  }
-
-  .payment-option.selected {
-    @apply border-blue-500 bg-blue-50 dark:bg-blue-900/20;
-  }
-
-  /* Dark mode toggle */
-  .dark body {
-    @apply bg-gray-900;
-  }
-
-  /* Responsive */
+  /* Responsive tabs */
   @media (max-width: 640px) {
-    .tab-btn span {
+    .tab-button span {
       display: none;
     }
-    .tab-btn {
-      @apply px-3;
+    .tab-button {
+      padding: 0.5rem;
     }
   }
 
@@ -313,43 +427,5 @@
     .no-print {
       display: none !important;
     }
-  }
-
-  /* Custom scrollbar for content areas */
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-track {
-    @apply bg-gray-100 dark:bg-gray-800 rounded;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    @apply bg-gray-300 dark:bg-gray-600 rounded hover:bg-gray-400 dark:hover:bg-gray-500;
-  }
-
-  /* Tooltip */
-  .tooltip {
-    @apply invisible absolute z-50 px-2 py-1 text-xs text-white bg-gray-900 rounded;
-  }
-
-  .has-tooltip:hover .tooltip {
-    @apply visible;
-  }
-
-  /* Focus states */
-  *:focus {
-    @apply outline-none;
-  }
-
-  /* Currency input */
-  input[type="number"]::-webkit-inner-spin-button,
-  input[type="number"]::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-  }
-
-  input[type="number"] {
-    -moz-appearance: textfield;
   }
 </style>
