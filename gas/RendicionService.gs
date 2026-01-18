@@ -525,3 +525,44 @@ function limpiarHistorialYSaldo(fecha) {
     return resultado(false, null, error.message);
   }
 }
+
+/**
+ * Obtiene datos para generar comprobante (para frontend)
+ */
+function getReceiptData(terapeuta, fecha) {
+  try {
+    // Obtener sesiones del terapeuta en la fecha
+    const sesiones = SessionService.getByTherapistAndDate(terapeuta, fecha);
+
+    // Obtener estado calculado
+    const status = RendicionService.calculateTherapistStatus(terapeuta, fecha);
+
+    // Verificar si hay confirmacion
+    const confirmacion = RendicionService.getConfirmacion(terapeuta, fecha);
+
+    // Obtener adelantos
+    const adelantos = EgresoService.getAdelantos(terapeuta, fecha);
+    const totalAdelantos = adelantos.reduce((sum, a) => sum + (a.monto || 0), 0);
+
+    // Preparar datos del comprobante
+    const receiptData = {
+      terapeuta: terapeuta,
+      fecha: fecha,
+      sesiones: sesiones,
+      totalSesiones: sesiones.length + status.totalSesionesGrupales,
+      valorTotal: status.valorTotalSesiones,
+      aporteTotal: status.aporteNeuroTEA,
+      honorariosNetos: status.honorarios,
+      transferenciasRecibidas: status.transferenciaATerapeuta,
+      adelantos: totalAdelantos,
+      neuroteaLeDebe: status.neuroteaLeDebe,
+      terapeutaDebe: status.terapeutaDebe,
+      estado: status.estado,
+      confirmado: !!confirmacion
+    };
+
+    return resultado(true, receiptData);
+  } catch (error) {
+    return resultado(false, null, error.message);
+  }
+}
