@@ -155,6 +155,25 @@ function setupEventListeners() {
   // Formulario de paquete
   document.getElementById('package-form').addEventListener('submit', handlePackageSubmit);
 
+  // Event listeners para calculo en tiempo real del paquete
+  ['package-sessions', 'package-cash', 'package-transfer-therapist', 'package-transfer-neurotea'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', updatePackageCalculations);
+  });
+
+  // Aporte NeuroTEA en paquetes
+  document.querySelectorAll('input[name="package-neurotea-contribution"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+      const fixedInput = document.getElementById('package-fixed-amount-input');
+      fixedInput.disabled = this.value !== 'fixed';
+      if (this.value !== 'fixed') {
+        fixedInput.value = '';
+      }
+      updatePackageCalculations();
+    });
+  });
+  document.getElementById('package-fixed-amount-input').addEventListener('input', updatePackageCalculations);
+
   // Formulario de grupo
   document.getElementById('group-form').addEventListener('submit', handleGroupSubmit);
 
@@ -295,6 +314,44 @@ function updatePaymentDisplay() {
   document.getElementById('session-value-display').textContent = formatCurrency(valorSesion);
   document.getElementById('neurotea-contribution-display').textContent = formatCurrency(aporteNeurotea);
   document.getElementById('therapist-fee-display').textContent = formatCurrency(honorarios);
+}
+
+/**
+ * Actualiza los calculos del formulario de paquetes en tiempo real
+ */
+function updatePackageCalculations() {
+  // Leer valores
+  const sessions = parseInt(document.getElementById('package-sessions').value) || 0;
+  const cash = parseNumber(document.getElementById('package-cash').value);
+  const transferTherapist = parseNumber(document.getElementById('package-transfer-therapist').value);
+  const transferNeurotea = parseNumber(document.getElementById('package-transfer-neurotea').value);
+
+  // Calcular total del paquete
+  const total = cash + transferTherapist + transferNeurotea;
+
+  // Calcular aporte NeuroTEA segun seleccion
+  let aporteNeurotea = 0;
+  const contributionType = document.querySelector('input[name="package-neurotea-contribution"]:checked')?.value;
+
+  if (contributionType === '20') {
+    aporteNeurotea = Math.round(total * 0.20);
+  } else if (contributionType === '30') {
+    aporteNeurotea = Math.round(total * 0.30);
+  } else if (contributionType === 'fixed') {
+    aporteNeurotea = parseNumber(document.getElementById('package-fixed-amount-input').value);
+  }
+
+  // Calcular honorarios terapeuta
+  const honorarios = total - aporteNeurotea;
+
+  // Calcular valor por sesion
+  const perSession = sessions > 0 ? Math.round(total / sessions) : 0;
+
+  // Actualizar displays
+  document.getElementById('package-total').textContent = formatCurrency(total);
+  document.getElementById('package-aporte-neurotea').textContent = formatCurrency(aporteNeurotea);
+  document.getElementById('package-honorarios-terapeuta').textContent = formatCurrency(honorarios);
+  document.getElementById('package-per-session').textContent = formatCurrency(perSession);
 }
 
 // ===========================
@@ -1091,12 +1148,12 @@ function handlePackageSubmit(e) {
   const packageData = {
     fecha: fechaActual,
     terapeuta: document.getElementById('package-therapist').value,
-    paciente: document.getElementById('package-patient').value.trim(),
+    paciente: document.getElementById('package-patient-name').value.trim(),
     sesionesTotal: parseInt(document.getElementById('package-sessions').value) || 0,
     efectivo: parseInt(document.getElementById('package-cash').value) || 0,
     transferenciaNeurotea: parseInt(document.getElementById('package-transfer-neurotea').value) || 0,
     transferenciaTerminapeuta: parseInt(document.getElementById('package-transfer-therapist').value) || 0,
-    tipoAporte: document.getElementById('package-contribution').value
+    tipoAporte: document.querySelector('input[name="package-neurotea-contribution"]:checked')?.value || '30'
   };
 
   if (!packageData.terapeuta) {
@@ -1266,6 +1323,15 @@ function switchTab(tabId) {
 function formatCurrency(value) {
   const num = parseInt(value) || 0;
   return 'Gs ' + num.toLocaleString('es-PY');
+}
+
+/**
+ * Parsea un valor de texto a numero (elimina caracteres no numericos)
+ * FUNCION CRITICA - usada en multiples lugares
+ */
+function parseNumber(value) {
+  if (!value) return 0;
+  return parseInt(value.toString().replace(/[^\d]/g, '')) || 0;
 }
 
 /**
@@ -3241,7 +3307,68 @@ function onGroupSelectChange() {
     </div>
   `).join('') || '<p class="text-gray-500 text-center">No hay ninos en este grupo</p>';
 
+  // Agregar event listeners a los elementos dinamicos
+  document.querySelectorAll('.group-therapist-checkbox').forEach(cb => {
+    cb.addEventListener('change', updateGroupSessionTotals);
+  });
+  document.querySelectorAll('.child-attendance-checkbox').forEach(cb => {
+    cb.addEventListener('change', updateGroupSessionTotals);
+  });
+  document.querySelectorAll('.child-value, .child-cash, .child-transfer').forEach(input => {
+    input.addEventListener('input', updateGroupSessionTotals);
+  });
+
+  // Calcular totales iniciales
+  updateGroupSessionTotals();
+
   lucide.createIcons();
+}
+
+/**
+ * Actualiza los totales de sesion grupal en tiempo real
+ */
+function updateGroupSessionTotals() {
+  const grupoId = document.getElementById('group-select').value;
+  const grupo = gruposActivos.find(g => g.id == grupoId);
+  if (!grupo) return;
+
+  // Contar terapeutas seleccionados
+  const terapeutasSeleccionados = document.querySelectorAll('.group-therapist-checkbox:checked').length;
+
+  // Calcular totales de ninos presentes
+  let childrenCount = 0;
+  let totalValue = 0;
+  let totalCash = 0;
+  let totalTransfer = 0;
+
+  document.querySelectorAll('.child-attendance-checkbox').forEach(cb => {
+    if (cb.checked) {
+      childrenCount++;
+      const childName = cb.dataset.child;
+      totalValue += parseNumber(document.querySelector(`.child-value[data-child="${childName}"]`)?.value);
+      totalCash += parseNumber(document.querySelector(`.child-cash[data-child="${childName}"]`)?.value);
+      totalTransfer += parseNumber(document.querySelector(`.child-transfer[data-child="${childName}"]`)?.value);
+    }
+  });
+
+  // Calcular aporte y honorarios
+  const aporteNeurotea = Math.round(totalValue * (grupo.porcentajeAporte / 100));
+  const honorariosTotales = totalValue - aporteNeurotea;
+  const honorariosPorTerapeuta = terapeutasSeleccionados > 0 ? Math.floor(honorariosTotales / terapeutasSeleccionados) : 0;
+
+  // Actualizar displays
+  document.getElementById('group-children-count').textContent = childrenCount;
+  document.getElementById('group-total-value').textContent = formatCurrency(totalValue);
+  document.getElementById('group-neurotea-value').textContent = formatCurrency(aporteNeurotea);
+  document.getElementById('group-therapist-fee').textContent = formatCurrency(honorariosPorTerapeuta);
+  document.getElementById('group-total-cash').textContent = formatCurrency(totalCash);
+  document.getElementById('group-total-transfer-neurotea').textContent = formatCurrency(totalTransfer);
+
+  // Habilitar/deshabilitar boton de registro
+  const registerBtn = document.getElementById('register-group-btn');
+  if (registerBtn) {
+    registerBtn.disabled = childrenCount === 0 || terapeutasSeleccionados === 0;
+  }
 }
 
 /**
