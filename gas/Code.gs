@@ -7,10 +7,26 @@
 
 /**
  * Punto de entrada para la Web App
+ * Verifica autorizacion antes de mostrar el sistema
  * @param {Object} e - Evento de solicitud
  * @returns {HtmlOutput} - Pagina HTML
  */
 function doGet(e) {
+  // Verificar si el usuario esta autorizado
+  const userEmail = Session.getActiveUser().getEmail();
+
+  if (!isUserAuthorized(userEmail)) {
+    // Mostrar pagina de acceso denegado
+    const template = HtmlService.createTemplateFromFile('AccesoDenegado');
+    template.userEmail = userEmail || 'No identificado';
+
+    return template.evaluate()
+      .setTitle('Acceso Denegado - Sistema NeuroTEA')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
+  }
+
+  // Usuario autorizado - mostrar sistema
   const template = HtmlService.createTemplateFromFile('Index');
 
   return template.evaluate()
@@ -18,6 +34,42 @@ function doGet(e) {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1.0')
     .setFaviconUrl('https://www.gstatic.com/images/branding/product/1x/apps_script_48dp.png');
+}
+
+/**
+ * Verifica si un correo esta en la lista de autorizados
+ * @param {string} email - Correo a verificar
+ * @returns {boolean} - True si esta autorizado
+ */
+function isUserAuthorized(email) {
+  if (!email) return false;
+
+  try {
+    const sheet = getSheet('Autorizaciones');
+    const data = sheet.getDataRange().getValues();
+
+    // Buscar el correo en la columna A (ignorando encabezado)
+    for (let i = 1; i < data.length; i++) {
+      const authorizedEmail = data[i][0];
+      if (authorizedEmail && authorizedEmail.toString().toLowerCase().trim() === email.toLowerCase().trim()) {
+        return true;
+      }
+    }
+
+    return false;
+  } catch (error) {
+    Logger.log('Error verificando autorizacion: ' + error.message);
+    // Si hay error (ej: hoja no existe), denegar acceso por seguridad
+    return false;
+  }
+}
+
+/**
+ * Obtiene el correo del usuario actual
+ * @returns {string} - Correo del usuario
+ */
+function getCurrentUserEmail() {
+  return Session.getActiveUser().getEmail();
 }
 
 /**
@@ -89,6 +141,10 @@ function initializeSpreadsheet() {
     {
       name: 'Configuracion',
       headers: ['clave', 'valor', 'descripcion', 'actualizadoEn']
+    },
+    {
+      name: 'Autorizaciones',
+      headers: ['correo', 'nombre', 'fechaAgregado']
     }
   ];
 

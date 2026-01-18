@@ -42,7 +42,8 @@ Sistema web de gestion para centro de terapias TEA migrado a Google Apps Script.
     │
     ├── 15. Index.html           # Pagina principal (template)
     ├── 16. Styles.html          # CSS (Tailwind + custom)
-    └── 17. Scripts.html         # JavaScript del cliente
+    ├── 17. Scripts.html         # JavaScript del cliente
+    └── 18. AccesoDenegado.html  # Pagina para usuarios no autorizados
 ```
 
 ### Orden para Crear Archivos en Apps Script
@@ -68,6 +69,7 @@ Crea los archivos en este orden en Google Apps Script:
 | 15 | `Index.html` | HTML | Template principal |
 | 16 | `Styles.html` | HTML | Estilos CSS |
 | 17 | `Scripts.html` | HTML | JavaScript cliente |
+| 18 | `AccesoDenegado.html` | HTML | Pagina acceso denegado |
 
 ## Hojas de Google Sheets (Base de Datos)
 
@@ -86,6 +88,7 @@ Crea los archivos en este orden en Google Apps Script:
 | `HistorialSaldos` | Historial de cambios | id, fecha, mensaje, timestamp |
 | `EstadosTransferencia` | Estados de confirmacion | id, confirmado, timestamp |
 | `Configuracion` | Configuracion general | clave, valor |
+| `Autorizaciones` | Correos autorizados para acceder | correo, nombre, fechaAgregado |
 
 ## Convenciones
 
@@ -243,6 +246,36 @@ residuo = totalValue - (valorPorTerapeuta * therapistCount);
 }
 ```
 
+## Control de Acceso
+
+### Sistema de Autorizacion
+El sistema verifica el correo del usuario antes de permitir acceso. Solo los correos registrados en la hoja `Autorizaciones` pueden ver la aplicacion.
+
+### Como Funciona
+1. Al abrir la app, `doGet()` obtiene el correo del usuario con `Session.getActiveUser().getEmail()`
+2. Verifica si el correo esta en la hoja `Autorizaciones`
+3. Si esta autorizado → muestra el sistema (Index.html)
+4. Si NO esta autorizado → muestra pagina de acceso denegado (AccesoDenegado.html)
+
+### Agregar Usuarios Autorizados
+1. Abrir el Google Spreadsheet (base de datos)
+2. Ir a la hoja `Autorizaciones`
+3. Agregar una fila con:
+   - Columna A: correo@gmail.com
+   - Columna B: Nombre (opcional)
+   - Columna C: Fecha (opcional)
+
+### Ejemplo de Hoja Autorizaciones
+| correo | nombre | fechaAgregado |
+|--------|--------|---------------|
+| admin@gmail.com | Administrador | 2025-01-17 |
+| usuario@gmail.com | Usuario 1 | 2025-01-17 |
+
+### Requisito de Despliegue
+Para que la autorizacion funcione, al desplegar se debe configurar:
+- **Ejecutar como**: "Usuario que accede a la aplicacion web"
+- **Quien tiene acceso**: "Cualquier persona"
+
 ## Despliegue
 
 ### Pasos para Desplegar
@@ -250,11 +283,14 @@ residuo = totalValue - (valorPorTerapeuta * therapistCount);
 2. Copiar los archivos de la carpeta `gas/` en este orden:
    - Primero `Code.gs` (renombrar el archivo default "Codigo.gs")
    - Luego `Config.gs`, `Database.gs`, y demas archivos `.gs`
-   - Finalmente los archivos `.html` (Index, Styles, Scripts)
+   - Finalmente los archivos `.html` (Index, Styles, Scripts, AccesoDenegado)
 3. Crear Google Spreadsheet para base de datos
 4. Actualizar `SPREADSHEET_ID` en `Config.gs`
-5. Ejecutar `initializeSpreadsheet()` para crear hojas
-6. Desplegar como Web App (acceso: "Cualquiera")
+5. Ejecutar `initializeSpreadsheet()` para crear hojas (incluye Autorizaciones)
+6. Agregar tu correo en la hoja `Autorizaciones`
+7. Desplegar como Web App:
+   - **Ejecutar como**: "Usuario que accede a la aplicacion web"
+   - **Quien tiene acceso**: "Cualquier persona"
 
 ### Configuracion de Spreadsheet
 ```javascript
@@ -303,6 +339,12 @@ const CONFIG = {
 - Manejar errores con try-catch
 
 ## Historial de Cambios
+
+### v1.1.0 (2025-01-17)
+- Sistema de autorizacion por correo electronico
+- Nueva hoja `Autorizaciones` para gestionar accesos
+- Pagina `AccesoDenegado.html` para usuarios no autorizados
+- Documentacion actualizada con instrucciones de control de acceso
 
 ### v1.0.0 (2025-01-16)
 - Migracion inicial desde version local (IndexedDB)
