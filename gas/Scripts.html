@@ -21,6 +21,9 @@ let estadosTransferencia = {};
 let saldoInicial = 0;
 let config = {};
 
+// Mini carrito de sesiones futuras
+let sesionesFuturasTemp = [];
+
 // ===========================
 // INICIALIZACION
 // ===========================
@@ -31,7 +34,7 @@ let config = {};
 function initializeSystem() {
   // Establecer fecha actual
   fechaActual = new Date().toISOString().split('T')[0];
-  document.getElementById('date-input').value = fechaActual;
+  document.getElementById('session-date').value = fechaActual;
 
   // Cargar datos iniciales
   loadInitialData();
@@ -80,7 +83,7 @@ function loadInitialData() {
         });
 
         // Actualizar fecha en input
-        document.getElementById('date-input').value = fechaActual;
+        document.getElementById('session-date').value = fechaActual;
 
         // Actualizar todas las vistas
         updateAllViews();
@@ -133,7 +136,7 @@ function loadDateData(fecha) {
  */
 function setupEventListeners() {
   // Cambio de fecha
-  document.getElementById('date-input').addEventListener('change', function(e) {
+  document.getElementById('session-date').addEventListener('change', function(e) {
     loadDateData(e.target.value);
   });
 
@@ -172,9 +175,71 @@ function setupEventListeners() {
 
   // Verificar creditos al escribir nombre de paciente
   document.getElementById('patient-name').addEventListener('blur', checkPatientCredits);
+  document.getElementById('patient-name').addEventListener('input', validateRegisterButton);
 
   // Seleccion de grupo
   document.getElementById('group-select').addEventListener('change', handleGroupSelection);
+
+  // Validacion del boton registrar - escuchar cambios en campos relevantes
+  document.getElementById('therapist-select').addEventListener('change', validateRegisterButton);
+  document.getElementById('cash-to-neurotea').addEventListener('input', validateRegisterButton);
+  document.getElementById('transfer-to-neurotea').addEventListener('input', validateRegisterButton);
+  document.getElementById('transfer-to-therapist').addEventListener('input', validateRegisterButton);
+
+  // Modo de registro - validar al cambiar
+  document.querySelectorAll('input[name="modo-registro"]').forEach(radio => {
+    radio.addEventListener('change', validateRegisterButton);
+  });
+
+  // Mini carrito de sesiones futuras
+  const checkboxCreditos = document.getElementById('crear-creditos-adicionales');
+  if (checkboxCreditos) {
+    checkboxCreditos.addEventListener('change', toggleSesionesFuturasContainer);
+  }
+
+  const btnAgregarFutura = document.getElementById('agregar-sesion-futura-btn');
+  if (btnAgregarFutura) {
+    btnAgregarFutura.addEventListener('click', agregarSesionFutura);
+  }
+}
+
+/**
+ * Valida si el boton de registrar debe estar habilitado
+ */
+function validateRegisterButton() {
+  const btn = document.getElementById('register-btn');
+  const therapist = document.getElementById('therapist-select').value;
+  const patient = document.getElementById('patient-name').value.trim();
+  const modoRegistro = document.querySelector('input[name="modo-registro"]:checked')?.value;
+
+  let isValid = false;
+
+  // Si es sesion grupal, la validacion es diferente (se maneja en el modal)
+  if (modoRegistro === 'sesion-grupal') {
+    isValid = false; // El boton principal no aplica para grupales
+  } else if (modoRegistro === 'usar-credito') {
+    // Para creditos, necesita terapeuta y paciente
+    isValid = therapist && patient;
+  } else {
+    // Para pago del dia, necesita terapeuta, paciente y al menos un valor de pago
+    const cash = parseInt(document.getElementById('cash-to-neurotea').value) || 0;
+    const transferNeurotea = parseInt(document.getElementById('transfer-to-neurotea').value) || 0;
+    const transferTerapeuta = parseInt(document.getElementById('transfer-to-therapist').value) || 0;
+    const totalPago = cash + transferNeurotea + transferTerapeuta;
+
+    isValid = therapist && patient && totalPago > 0;
+  }
+
+  // Actualizar estado del boton
+  if (isValid) {
+    btn.disabled = false;
+    btn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+    btn.classList.add('bg-purple-600', 'hover:bg-purple-700');
+  } else {
+    btn.disabled = true;
+    btn.classList.remove('bg-purple-600', 'hover:bg-purple-700');
+    btn.classList.add('bg-gray-400', 'cursor-not-allowed');
+  }
 }
 
 // ===========================
@@ -554,17 +619,17 @@ function updateRendicionView() {
             ` : ''}
             ${!status.confirmacionInfo ? `
               <div class="mt-3 flex space-x-2">
-                <button onclick="showPaymentOptions('${status.terapeuta}')" class="btn btn-primary btn-sm flex-1">
-                  <i data-lucide="check" class="w-4 h-4 mr-1"></i>
-                  Confirmar Pago
-                </button>
+                ${getPaymentActionHTML(status)}
                 <button onclick="generateReceipt('${status.terapeuta}')" class="btn btn-secondary btn-sm">
                   <i data-lucide="file-text" class="w-4 h-4"></i>
                 </button>
               </div>
             ` : `
               <div class="mt-3 flex items-center justify-between">
-                <span class="text-green-600 font-medium">Pago confirmado</span>
+                <span class="text-green-600 font-medium">
+                  <i data-lucide="check-circle" class="w-4 h-4 inline mr-1"></i>
+                  Pago confirmado (${status.confirmacionInfo.tipoOpcion || 'exacto'})
+                </span>
                 <button onclick="revertConfirmation('${status.terapeuta}')" class="btn btn-danger btn-sm">
                   Revertir
                 </button>
@@ -1458,26 +1523,213 @@ function toggleTransfer(transferId) {
 }
 
 /**
- * Muestra opciones de pago para confirmacion
+ * Genera HTML para el boton/dropdown de accion de pago segun el estado
  */
-function showPaymentOptions(terapeuta) {
-  // Por simplicidad, confirmamos directamente con pago exacto
-  if (!confirm(`¿Confirmar pago a ${terapeuta}?`)) return;
+function getPaymentActionHTML(status) {
+  const terapeuta = status.terapeuta.replace(/'/g, "\\'");
+  const neuroteaDebeFormatted = formatCurrency(status.neuroteaLeDebe);
 
+  // Si esta SALDADO, solo boton de confirmar simple
+  if (status.estado === 'SALDADO') {
+    return `<button onclick="confirmPaymentSimple('${terapeuta}')" class="btn btn-secondary btn-sm flex-1">
+              <i data-lucide="check" class="w-4 h-4 mr-1"></i>Confirmar
+            </button>`;
+  }
+
+  // Si terapeuta debe dar
+  if (status.estado === 'LA TERAPEUTA DEBE DAR') {
+    return `<select onchange="handlePaymentOption('${terapeuta}', this.value)" class="form-select btn-sm flex-1">
+              <option value="">Seleccionar...</option>
+              <option value="efectivo">Entrega efectivo (${formatCurrency(status.terapeutaDebe)})</option>
+              <option value="transferencia">Transfiere a cuenta</option>
+            </select>`;
+  }
+
+  // Si hay fondos insuficientes
+  if (status.estado === 'FONDOS INSUFICIENTES') {
+    return `<button class="btn btn-danger btn-sm flex-1" disabled>
+              <i data-lucide="alert-triangle" class="w-4 h-4 mr-1"></i>Fondos insuficientes
+            </button>`;
+  }
+
+  // Si NeuroTEA debe dar efectivo
+  if (status.estado === 'DAR EFECTIVO') {
+    return `<select onchange="handlePaymentOption('${terapeuta}', this.value)" class="form-select btn-sm flex-1">
+              <option value="">Seleccionar...</option>
+              <option value="exacto">Dar exacto (${neuroteaDebeFormatted})</option>
+              <option value="vuelto">Dar con vuelto (por transferencia)...</option>
+              <option value="vuelto-efectivo">Dar con vuelto en efectivo...</option>
+              <option value="transferir">Solo transferir</option>
+            </select>`;
+  }
+
+  // Si es dar y transferir (mixto)
+  if (status.estado === 'DAR Y TRANSFERIR') {
+    return `<button onclick="confirmPaymentMixed('${terapeuta}')" class="btn btn-warning btn-sm flex-1">
+              <i data-lucide="check" class="w-4 h-4 mr-1"></i>Confirmar mixto
+            </button>`;
+  }
+
+  // Si solo transferir
+  if (status.estado === 'TRANSFERIR') {
+    return `<button onclick="confirmPaymentTransfer('${terapeuta}')" class="btn btn-info btn-sm flex-1">
+              <i data-lucide="check" class="w-4 h-4 mr-1"></i>Confirmar transferencia
+            </button>`;
+  }
+
+  // Default: boton simple
+  return `<button onclick="confirmPaymentSimple('${terapeuta}')" class="btn btn-primary btn-sm flex-1">
+            <i data-lucide="check" class="w-4 h-4 mr-1"></i>Confirmar Pago
+          </button>`;
+}
+
+/**
+ * Maneja la seleccion de opcion de pago del dropdown
+ */
+function handlePaymentOption(terapeuta, option) {
+  if (!option) return;
+
+  // Resetear el select despues de procesar
+  setTimeout(() => {
+    const selects = document.querySelectorAll('select.form-select');
+    selects.forEach(s => { if (s.value === option) s.value = ''; });
+  }, 100);
+
+  switch(option) {
+    case 'exacto':
+      confirmPaymentExact(terapeuta);
+      break;
+    case 'vuelto':
+      confirmPaymentWithChange(terapeuta, 'transferencia');
+      break;
+    case 'vuelto-efectivo':
+      confirmPaymentWithChange(terapeuta, 'efectivo');
+      break;
+    case 'transferir':
+      confirmPaymentTransfer(terapeuta);
+      break;
+    case 'efectivo':
+      confirmPaymentTherapistGives(terapeuta, 'efectivo');
+      break;
+    case 'transferencia':
+      confirmPaymentTherapistGives(terapeuta, 'transferencia');
+      break;
+    default:
+      showNotification('Opcion no reconocida', 'error');
+  }
+}
+
+/**
+ * Confirma pago simple (sin opciones especiales)
+ */
+function confirmPaymentSimple(terapeuta) {
+  if (!confirm(`¿Confirmar pago a ${terapeuta}?`)) return;
+  executePaymentConfirmation(terapeuta, { tipoOpcion: 'exacto' });
+}
+
+/**
+ * Confirma pago exacto (DAR EFECTIVO)
+ */
+function confirmPaymentExact(terapeuta) {
+  if (!confirm(`¿Confirmar pago exacto a ${terapeuta}?`)) return;
+  executePaymentConfirmation(terapeuta, { tipoOpcion: 'exacto' });
+}
+
+/**
+ * Confirma pago con vuelto
+ */
+function confirmPaymentWithChange(terapeuta, tipoVuelto) {
+  // Primero obtener el estado actual
+  google.script.run
+    .withSuccessHandler(function(status) {
+      const montoADar = status.neuroteaLeDebe;
+      const mensaje = tipoVuelto === 'efectivo'
+        ? `Debe dar ${formatCurrency(montoADar)}.\n¿Cuanto va a entregar en efectivo? (Vuelto sera en efectivo)`
+        : `Debe dar ${formatCurrency(montoADar)}.\n¿Cuanto va a entregar en efectivo? (Vuelto sera por transferencia)`;
+
+      const montoReal = prompt(mensaje, montoADar);
+      if (!montoReal) return;
+
+      const monto = parseNumber(montoReal);
+      if (monto <= montoADar) {
+        alert('El monto debe ser mayor al adeudado para generar vuelto');
+        return;
+      }
+
+      const vuelto = monto - montoADar;
+      const opcion = {
+        tipoOpcion: tipoVuelto === 'efectivo' ? 'vuelto-efectivo' : 'vuelto',
+        efectivoUsado: monto,
+        vueltoEfectivo: tipoVuelto === 'efectivo' ? vuelto : 0,
+        vueltoTransferencia: tipoVuelto !== 'efectivo' ? vuelto : 0
+      };
+
+      executePaymentConfirmation(terapeuta, opcion);
+    })
+    .calcularEstadoTerapeuta(terapeuta, fechaActual);
+}
+
+/**
+ * Confirma pago por transferencia
+ */
+function confirmPaymentTransfer(terapeuta) {
+  if (!confirm(`¿Confirmar pago por transferencia a ${terapeuta}?`)) return;
+  executePaymentConfirmation(terapeuta, { tipoOpcion: 'transferir' });
+}
+
+/**
+ * Confirma pago mixto (efectivo + transferencia)
+ */
+function confirmPaymentMixed(terapeuta) {
+  if (!confirm(`¿Confirmar pago mixto (efectivo + transferencia) a ${terapeuta}?`)) return;
+  executePaymentConfirmation(terapeuta, { tipoOpcion: 'dar-transferir' });
+}
+
+/**
+ * Confirma cuando la terapeuta debe dar
+ */
+function confirmPaymentTherapistGives(terapeuta, metodo) {
+  const mensaje = metodo === 'efectivo'
+    ? `¿Confirmar que ${terapeuta} entrega efectivo?`
+    : `¿Confirmar que ${terapeuta} transfiere a cuenta NeuroTEA?`;
+
+  if (!confirm(mensaje)) return;
+
+  const opcion = {
+    tipoOpcion: metodo === 'efectivo' ? 'devolucion-efectivo' : 'devolucion-transferencia'
+  };
+  executePaymentConfirmation(terapeuta, opcion);
+}
+
+/**
+ * Ejecuta la confirmacion de pago en el backend
+ */
+function executePaymentConfirmation(terapeuta, opcionPago) {
   showLoading(true);
 
   google.script.run
     .withSuccessHandler(function(result) {
       showLoading(false);
       if (result.success) {
-        showNotification('Pago confirmado', 'success');
+        showNotification('Pago confirmado exitosamente', 'success');
         updateRendicionView();
         updateSummaryView();
       } else {
         showNotification(result.message, 'error');
       }
     })
-    .confirmarPagoTerapeuta(terapeuta, fechaActual, { tipoOpcion: 'exacto' });
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error al confirmar pago: ' + error.message, 'error');
+    })
+    .confirmarPagoTerapeuta(terapeuta, fechaActual, opcionPago);
+}
+
+/**
+ * Muestra opciones de pago para confirmacion (legacy - ahora usa dropdown)
+ */
+function showPaymentOptions(terapeuta) {
+  confirmPaymentSimple(terapeuta);
 }
 
 /**
@@ -1507,9 +1759,561 @@ function revertConfirmation(terapeuta) {
  */
 function generateReceipt(terapeuta) {
   showNotification('Generando comprobante...', 'info');
-  // Esta funcion requiere implementacion adicional para generar el HTML
-  // Por ahora muestra un mensaje
-  showNotification('Funcion de comprobante en desarrollo', 'warning');
+
+  // Obtener datos del terapeuta para la fecha actual
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success && result.data) {
+        const htmlContent = generateReceiptHTML(result.data, terapeuta, fechaActual);
+        downloadHTMLFile(htmlContent, terapeuta, fechaActual);
+        showNotification('Comprobante generado', 'success');
+      } else {
+        showNotification('No hay datos para generar comprobante', 'warning');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showNotification('Error al generar comprobante', 'error');
+    })
+    .getReceiptData(terapeuta, fechaActual);
+}
+
+/**
+ * Genera el HTML del comprobante
+ */
+function generateReceiptHTML(data, terapeuta, fecha) {
+  const numeroComprobante = '#CP-' + fecha.replace(/-/g, '') + '-001';
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Comprobante NeuroTEA - ${terapeuta}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px; color: #333; }
+    .receipt { max-width: 800px; margin: 0 auto; background: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    .header { background: #1e4d8b; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
+    .header-left { font-size: 24px; font-style: italic; }
+    .header-right { font-size: 28px; font-weight: bold; }
+    .info-section { padding: 20px; border-bottom: 1px solid #eee; }
+    .info-row { display: flex; justify-content: space-between; margin-bottom: 10px; }
+    .info-label { font-weight: bold; color: #666; }
+    .info-value { font-weight: 500; }
+    .table-section { padding: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    th { background: #f5f5f5; padding: 10px; text-align: left; border-bottom: 2px solid #ddd; }
+    td { padding: 10px; border-bottom: 1px solid #eee; }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    .summary { background: #f9f9f9; padding: 20px; }
+    .summary-row { display: flex; justify-content: space-between; padding: 8px 0; }
+    .summary-row.total { border-top: 2px solid #333; font-weight: bold; font-size: 18px; margin-top: 10px; padding-top: 15px; }
+    .footer { text-align: center; padding: 20px; color: #999; font-size: 12px; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+    .badge-success { background: #d4edda; color: #155724; }
+    .badge-info { background: #cce5ff; color: #004085; }
+    @media print { body { padding: 0; background: white; } .receipt { box-shadow: none; } }
+  </style>
+</head>
+<body>
+  <div class="receipt">
+    <div class="header">
+      <div class="header-left">Avanza<br><small style="font-style: normal; font-size: 14px;">Centro de Terapias</small></div>
+      <div class="header-right">COMPROBANTE</div>
+    </div>
+
+    <div class="info-section">
+      <div class="info-row">
+        <div><span class="info-label">TERAPEUTA:</span> <span class="info-value">${terapeuta}</span></div>
+        <div><span class="info-label">COMPROBANTE:</span> <span class="info-value">${numeroComprobante}</span></div>
+      </div>
+      <div class="info-row">
+        <div><span class="info-label">FECHA:</span> <span class="info-value">${formatDateDisplay(fecha)}</span></div>
+        <div><span class="info-label">ESTADO:</span> <span class="badge ${data.confirmado ? 'badge-success' : 'badge-info'}">${data.confirmado ? 'CONFIRMADO' : 'PENDIENTE'}</span></div>
+      </div>
+    </div>
+
+    <div class="table-section">
+      <h3 style="margin-bottom: 15px;">Detalle de Sesiones</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Paciente</th>
+            <th class="text-center">Tipo</th>
+            <th class="text-right">Valor</th>
+            <th class="text-right">Aporte</th>
+            <th class="text-right">Honorarios</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.sesiones.map(s => `
+            <tr>
+              <td>${s.paciente}</td>
+              <td class="text-center">${s.usaCredito ? 'Credito' : 'Pago'}</td>
+              <td class="text-right">${formatCurrency(s.valorSesion)}</td>
+              <td class="text-right">${formatCurrency(s.aporteNeurotea)}</td>
+              <td class="text-right">${formatCurrency(s.honorarios)}</td>
+            </tr>
+          `).join('')}
+          ${data.sesiones.length === 0 ? '<tr><td colspan="5" class="text-center">Sin sesiones individuales</td></tr>' : ''}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="summary">
+      <div class="summary-row">
+        <span>Total Sesiones:</span>
+        <span>${data.totalSesiones}</span>
+      </div>
+      <div class="summary-row">
+        <span>Valor Total:</span>
+        <span>${formatCurrency(data.valorTotal)}</span>
+      </div>
+      <div class="summary-row">
+        <span>Aporte NeuroTEA:</span>
+        <span>${formatCurrency(data.aporteTotal)}</span>
+      </div>
+      <div class="summary-row">
+        <span>Transferencias Recibidas:</span>
+        <span>${formatCurrency(data.transferenciasRecibidas)}</span>
+      </div>
+      <div class="summary-row">
+        <span>Adelantos:</span>
+        <span>${formatCurrency(data.adelantos)}</span>
+      </div>
+      <div class="summary-row total">
+        <span>HONORARIOS NETOS:</span>
+        <span>${formatCurrency(data.honorariosNetos)}</span>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>Comprobante generado por Sistema NeuroTEA</p>
+      <p>Generado el ${new Date().toLocaleString('es-PY')}</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Formatea fecha para mostrar
+ */
+function formatDateDisplay(fecha) {
+  const parts = fecha.split('-');
+  return parts[2] + '/' + parts[1] + '/' + parts[0];
+}
+
+/**
+ * Descarga archivo HTML
+ */
+function downloadHTMLFile(htmlContent, terapeuta, fecha) {
+  const blob = new Blob([htmlContent], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'Comprobante_' + terapeuta.replace(/\\s+/g, '_') + '_' + fecha + '.html';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ===========================
+// MINI CARRITO DE SESIONES FUTURAS
+// ===========================
+
+/**
+ * Inicializa el dropdown de terapeutas para sesiones futuras
+ */
+function initTerapeutasFuturasSelect() {
+  const select = document.getElementById('terapeuta-futura-select');
+  if (!select) return;
+
+  select.innerHTML = '<option value="">Seleccionar terapeuta...</option>';
+  terapeutas.forEach(t => {
+    const nombre = typeof t === 'string' ? t : t.nombre;
+    select.innerHTML += `<option value="${nombre}">${nombre}</option>`;
+  });
+}
+
+/**
+ * Toggle para mostrar/ocultar el carrito de sesiones futuras
+ */
+function toggleSesionesFuturasContainer() {
+  const checkbox = document.getElementById('crear-creditos-adicionales');
+  const container = document.getElementById('sesiones-futuras-container');
+
+  if (checkbox.checked) {
+    container.style.display = 'block';
+    initTerapeutasFuturasSelect();
+  } else {
+    container.style.display = 'none';
+    sesionesFuturasTemp = [];
+    actualizarListaSesionesFuturas();
+  }
+}
+
+/**
+ * Agrega una sesion futura al carrito temporal
+ */
+function agregarSesionFutura() {
+  const terapeutaSelect = document.getElementById('terapeuta-futura-select');
+  const cantidadInput = document.getElementById('cantidad-futura-input');
+
+  const terapeuta = terapeutaSelect.value;
+  const cantidad = parseInt(cantidadInput.value) || 1;
+
+  if (!terapeuta) {
+    showNotification('Selecciona una terapeuta', 'warning');
+    return;
+  }
+
+  if (cantidad < 1 || cantidad > 20) {
+    showNotification('La cantidad debe estar entre 1 y 20', 'warning');
+    return;
+  }
+
+  // Obtener valores de la sesion actual para calcular el precio
+  const cash = parseNumber(document.getElementById('cash-to-neurotea').value) || 0;
+  const transferNeurotea = parseNumber(document.getElementById('transfer-to-neurotea').value) || 0;
+  const transferTerapeuta = parseNumber(document.getElementById('transfer-to-therapist').value) || 0;
+  const valorSesionActual = cash + transferNeurotea + transferTerapeuta;
+
+  // Calcular aporte NeuroTEA
+  const contributionSelected = document.querySelector('input[name="neurotea-contribution"]:checked');
+  let porcentajeAporte = 30;
+  let aporteNeurotea = 0;
+
+  if (contributionSelected) {
+    if (contributionSelected.value === 'fixed') {
+      aporteNeurotea = parseNumber(document.getElementById('fixed-amount-input').value) || 0;
+    } else {
+      porcentajeAporte = parseInt(contributionSelected.value) || 30;
+      aporteNeurotea = Math.round(valorSesionActual * (porcentajeAporte / 100));
+    }
+  }
+
+  const valorPorSesion = valorSesionActual;
+  const totalFutura = valorPorSesion * cantidad;
+
+  // Verificar si ya existe una entrada para este terapeuta
+  const existingIndex = sesionesFuturasTemp.findIndex(s => s.terapeuta === terapeuta);
+
+  if (existingIndex >= 0) {
+    // Actualizar cantidad existente
+    sesionesFuturasTemp[existingIndex].cantidad += cantidad;
+    sesionesFuturasTemp[existingIndex].total = sesionesFuturasTemp[existingIndex].cantidad * valorPorSesion;
+  } else {
+    // Agregar nueva entrada
+    sesionesFuturasTemp.push({
+      id: Date.now(),
+      terapeuta: terapeuta,
+      cantidad: cantidad,
+      valorPorSesion: valorPorSesion,
+      porcentajeAporte: porcentajeAporte,
+      aporteNeurotea: aporteNeurotea,
+      total: totalFutura
+    });
+  }
+
+  // Limpiar formulario
+  terapeutaSelect.value = '';
+  cantidadInput.value = '1';
+
+  actualizarListaSesionesFuturas();
+  showNotification(`${cantidad} sesion(es) futura(s) agregada(s) para ${terapeuta}`, 'success');
+}
+
+/**
+ * Actualiza la vista de la lista de sesiones futuras
+ */
+function actualizarListaSesionesFuturas() {
+  const lista = document.getElementById('lista-sesiones-futuras');
+  const resumen = document.getElementById('resumen-sesiones-futuras');
+
+  if (sesionesFuturasTemp.length === 0) {
+    lista.innerHTML = `
+      <div class="text-gray-500 dark:text-gray-400 text-sm text-center py-2 italic">
+        No hay sesiones futuras agregadas
+      </div>
+    `;
+    resumen.style.display = 'none';
+    return;
+  }
+
+  lista.innerHTML = sesionesFuturasTemp.map(sesion => `
+    <div class="bg-white dark:bg-gray-800 p-3 rounded border flex items-center justify-between">
+      <div class="flex-1">
+        <div class="flex items-center gap-2">
+          <span class="font-medium text-gray-800 dark:text-white">${sesion.terapeuta}</span>
+          <span class="text-sm text-gray-500">x${sesion.cantidad} sesiones</span>
+        </div>
+        <div class="text-sm text-gray-600 dark:text-gray-400">
+          ${formatCurrency(sesion.valorPorSesion)}/sesion = ${formatCurrency(sesion.total)}
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="editarSesionFutura(${sesion.id})" class="text-blue-500 hover:text-blue-700 p-1" title="Editar">
+          <i data-lucide="edit-2" class="w-4 h-4"></i>
+        </button>
+        <button onclick="eliminarSesionFutura(${sesion.id})" class="text-red-500 hover:text-red-700 p-1" title="Eliminar">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+  `).join('');
+
+  resumen.style.display = 'block';
+  calcularGranTotal();
+  lucide.createIcons();
+}
+
+/**
+ * Calcula el gran total de sesion actual + sesiones futuras
+ */
+function calcularGranTotal() {
+  // Total de sesion actual
+  const cash = parseNumber(document.getElementById('cash-to-neurotea').value) || 0;
+  const transferNeurotea = parseNumber(document.getElementById('transfer-to-neurotea').value) || 0;
+  const transferTerapeuta = parseNumber(document.getElementById('transfer-to-therapist').value) || 0;
+  const totalActual = cash + transferNeurotea + transferTerapeuta;
+
+  // Total de sesiones futuras
+  const totalFuturas = sesionesFuturasTemp.reduce((sum, sesion) => sum + sesion.total, 0);
+
+  // Gran total
+  const granTotal = totalActual + totalFuturas;
+
+  // Actualizar displays
+  const totalSesionActualEl = document.getElementById('total-sesion-actual');
+  const totalSesionesFuturasEl = document.getElementById('total-sesiones-futuras');
+  const granTotalEl = document.getElementById('gran-total-pagar');
+
+  if (totalSesionActualEl) totalSesionActualEl.textContent = formatCurrency(totalActual);
+  if (totalSesionesFuturasEl) totalSesionesFuturasEl.textContent = formatCurrency(totalFuturas);
+  if (granTotalEl) granTotalEl.textContent = formatCurrency(granTotal);
+}
+
+/**
+ * Edita una sesion futura del carrito
+ */
+function editarSesionFutura(sesionId) {
+  const sesion = sesionesFuturasTemp.find(s => s.id == sesionId);
+  if (!sesion) return;
+
+  const nuevaCantidad = prompt(`Cantidad de sesiones para ${sesion.terapeuta}:`, sesion.cantidad);
+  if (nuevaCantidad === null) return;
+
+  const cantidad = parseInt(nuevaCantidad);
+  if (cantidad < 1 || cantidad > 20 || isNaN(cantidad)) {
+    showNotification('Cantidad invalida (1-20)', 'error');
+    return;
+  }
+
+  sesion.cantidad = cantidad;
+  sesion.total = sesion.valorPorSesion * cantidad;
+
+  actualizarListaSesionesFuturas();
+}
+
+/**
+ * Elimina una sesion futura del carrito
+ */
+function eliminarSesionFutura(sesionId) {
+  sesionesFuturasTemp = sesionesFuturasTemp.filter(s => s.id != sesionId);
+  actualizarListaSesionesFuturas();
+}
+
+/**
+ * Procesa y crea todos los creditos de sesiones futuras
+ * @param {string} pacienteName - Nombre del paciente
+ * @param {string} fechaCompra - Fecha de compra
+ * @returns {number} - Cantidad de creditos creados
+ */
+function procesarSesionesFuturas(pacienteName, fechaCompra) {
+  if (sesionesFuturasTemp.length === 0) return 0;
+
+  let creditosCreados = 0;
+
+  sesionesFuturasTemp.forEach(sesion => {
+    // Crear paquete/creditos para cada terapeuta
+    const paqueteData = {
+      paciente: pacienteName,
+      terapeuta: sesion.terapeuta,
+      sesionesTotal: sesion.cantidad,
+      valorTotal: sesion.total,
+      porcentajeAporte: sesion.porcentajeAporte,
+      efectivo: 0,
+      transferenciaNeurotea: 0,
+      transferenciaTerminapeuta: 0,
+      notas: 'Sesiones futuras pagadas junto con sesion principal'
+    };
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          creditosCreados += sesion.cantidad;
+          console.log('Creditos creados para ' + sesion.terapeuta + ': ' + sesion.cantidad);
+        }
+      })
+      .withFailureHandler(function(error) {
+        console.error('Error creando creditos para ' + sesion.terapeuta, error);
+      })
+      .crearPaquete(paqueteData, fechaCompra);
+  });
+
+  // Limpiar carrito temporal
+  sesionesFuturasTemp = [];
+  actualizarListaSesionesFuturas();
+
+  return creditosCreados;
+}
+
+/**
+ * Limpia el mini carrito de sesiones futuras
+ */
+function limpiarMiniCarrito() {
+  sesionesFuturasTemp = [];
+  const sesionesFuturasContainer = document.getElementById('sesiones-futuras-container');
+  if (sesionesFuturasContainer) {
+    sesionesFuturasContainer.style.display = 'none';
+  }
+  const checkboxCreditos = document.getElementById('crear-creditos-adicionales');
+  if (checkboxCreditos) {
+    checkboxCreditos.checked = false;
+  }
+  actualizarListaSesionesFuturas();
+}
+
+// ===========================
+// HISTORIAL DE PAQUETES
+// ===========================
+
+/**
+ * Abre el modal de historial de paquetes
+ */
+function openPackageHistoryModal() {
+  const modal = document.getElementById('package-history-modal');
+  modal.classList.remove('hidden');
+  loadPackageHistory();
+  lucide.createIcons();
+}
+
+/**
+ * Cierra el modal de historial de paquetes
+ */
+function closePackageHistoryModal() {
+  document.getElementById('package-history-modal').classList.add('hidden');
+}
+
+/**
+ * Carga el historial de paquetes desde el servidor
+ */
+function loadPackageHistory() {
+  const container = document.getElementById('package-history-table-container');
+  const totalDisplay = document.getElementById('package-history-total');
+
+  container.innerHTML = '<p class="text-gray-500 text-center py-4">Cargando...</p>';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success && result.data && result.data.length > 0) {
+        const history = result.data;
+
+        // Ordenar por fecha de compra descendente
+        history.sort((a, b) => {
+          const dateA = a.fechaCompletado || a.fechaCompra || '';
+          const dateB = b.fechaCompletado || b.fechaCompra || '';
+          return dateB.localeCompare(dateA);
+        });
+
+        // Generar tabla
+        container.innerHTML = `
+          <table class="min-w-full">
+            <thead class="bg-gray-50 dark:bg-gray-700">
+              <tr>
+                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Paciente</th>
+                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Terapeuta</th>
+                <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Sesiones</th>
+                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Valor</th>
+                <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">F. Compra</th>
+                <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">F. Completado</th>
+                <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Acciones</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+              ${history.map(pkg => `
+                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                  <td class="px-3 py-2 text-sm font-medium">${pkg.paciente || '-'}</td>
+                  <td class="px-3 py-2 text-sm">${pkg.terapeuta || '-'}</td>
+                  <td class="px-3 py-2 text-sm text-center">${pkg.sesionesTotal || 0}</td>
+                  <td class="px-3 py-2 text-sm text-right">${formatCurrency(pkg.valorTotal || 0)}</td>
+                  <td class="px-3 py-2 text-sm text-center">${pkg.fechaCompra || '-'}</td>
+                  <td class="px-3 py-2 text-sm text-center">${pkg.fechaCompletado || '-'}</td>
+                  <td class="px-3 py-2 text-sm text-center">
+                    <button onclick="deletePackageFromHistory(${pkg.id})" class="text-red-500 hover:text-red-700" title="Eliminar">
+                      <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+
+        totalDisplay.textContent = 'Total: ' + history.length + ' paquete' + (history.length !== 1 ? 's' : '');
+        lucide.createIcons();
+      } else {
+        container.innerHTML = '<p class="text-gray-500 text-center py-8">No hay paquetes completados en el historial</p>';
+        totalDisplay.textContent = 'Total: 0 paquetes';
+      }
+    })
+    .withFailureHandler(function(error) {
+      container.innerHTML = '<p class="text-red-500 text-center py-4">Error cargando historial</p>';
+      totalDisplay.textContent = 'Total: 0 paquetes';
+    })
+    .getHistorialPaquetes();
+}
+
+/**
+ * Elimina un paquete del historial
+ */
+function deletePackageFromHistory(packageId) {
+  if (!confirm('¿Eliminar este paquete del historial?')) return;
+
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        showNotification('Paquete eliminado del historial', 'success');
+        loadPackageHistory();
+        updatePackageHistoryCounter();
+      } else {
+        showNotification('Error: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .eliminarPaqueteHistorial(packageId);
+}
+
+/**
+ * Actualiza el contador de paquetes en historial
+ */
+function updatePackageHistoryCounter() {
+  google.script.run
+    .withSuccessHandler(function(result) {
+      const counter = document.getElementById('history-packages-counter');
+      if (counter && result.success) {
+        counter.textContent = result.data || 0;
+      }
+    })
+    .getHistorialPaquetesCount();
 }
 
 // ===========================
@@ -1671,12 +2475,24 @@ function registerSession() {
   }
   const honorarios = valorSesion - aporteNeurotea;
 
+  // Verificar si hay sesiones futuras en el carrito
+  const tieneSesionesFuturas = sesionesFuturasTemp.length > 0;
+
   showLoading(true);
   google.script.run
     .withSuccessHandler(function(result) {
       showLoading(false);
       if (result.success) {
-        showNotification('Sesion registrada correctamente', 'success');
+        // Si hay sesiones futuras, procesarlas
+        if (tieneSesionesFuturas) {
+          procesarSesionesFuturas(paciente, fechaActual);
+          showNotification('Sesion registrada con creditos futuros', 'success');
+        } else {
+          showNotification('Sesion registrada correctamente', 'success');
+        }
+
+        // Limpiar mini carrito y formulario
+        limpiarMiniCarrito();
         resetSessionForm();
         loadDateData(fechaActual);
       } else {
@@ -1930,6 +2746,105 @@ function saveSaldoInicial() {
       showNotification('Error: ' + error.message, 'error');
     })
     .establecerSaldoInicial(fechaActual, nuevoSaldo);
+}
+
+/**
+ * Toggle historial visibility
+ */
+function toggleHistorial() {
+  const content = document.getElementById('historial-content');
+  const chevron = document.getElementById('historial-chevron');
+
+  if (content.classList.contains('hidden')) {
+    content.classList.remove('hidden');
+    chevron.style.transform = 'rotate(180deg)';
+    updateHistorialDisplay();
+  } else {
+    content.classList.add('hidden');
+    chevron.style.transform = 'rotate(0deg)';
+  }
+}
+
+/**
+ * Update historial display
+ */
+function updateHistorialDisplay() {
+  const container = document.getElementById('historial-list');
+  const counter = document.getElementById('historial-counter');
+
+  // Obtener historial del servidor
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success && result.data && result.data.length > 0) {
+        const historial = result.data;
+        counter.textContent = historial.length;
+
+        container.innerHTML = historial.map(entrada => `
+          <div class="flex justify-between items-center text-sm bg-gray-50 dark:bg-gray-700 p-2 rounded">
+            <div>
+              <span class="font-medium">${formatCurrency(entrada.valorAnterior)}</span>
+              <i data-lucide="arrow-right" class="w-3 h-3 inline mx-1"></i>
+              <span class="font-medium text-blue-600">${formatCurrency(entrada.valorNuevo)}</span>
+            </div>
+            <span class="text-xs text-gray-500">${formatTimestamp(entrada.timestamp)}</span>
+          </div>
+        `).join('');
+
+        lucide.createIcons();
+      } else {
+        counter.textContent = '0';
+        container.innerHTML = '<p class="text-sm text-gray-500 text-center py-2">No hay cambios registrados</p>';
+      }
+    })
+    .withFailureHandler(function(error) {
+      counter.textContent = '0';
+      container.innerHTML = '<p class="text-sm text-red-500 text-center py-2">Error cargando historial</p>';
+    })
+    .getHistorialSaldos(fechaActual);
+}
+
+/**
+ * Format timestamp for display
+ */
+function formatTimestamp(timestamp) {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString('es-PY', { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * Clear historial saldo (with password protection)
+ */
+function clearHistorialSaldo() {
+  const password = prompt('Ingrese contrasena para limpiar historial:');
+
+  if (password !== '1234') {
+    showNotification('Contrasena incorrecta', 'error');
+    return;
+  }
+
+  if (!confirm('¿Esta seguro de que desea resetear completamente el saldo inicial? Esto limpiara el historial Y volvera el saldo a 0. Esta accion no se puede deshacer.')) {
+    return;
+  }
+
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        saldoInicial = 0;
+        showNotification('Historial y saldo limpiados', 'success');
+        closeSaldoModal();
+        updateAllViews();
+      } else {
+        showNotification('Error: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .limpiarHistorialYSaldo(fechaActual);
 }
 
 /**
