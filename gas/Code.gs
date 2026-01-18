@@ -306,3 +306,81 @@ function testConnection() {
     spreadsheetId: CONFIG.SPREADSHEET_ID
   };
 }
+
+/**
+ * FUNCION DE DIAGNOSTICO - Ejecutar desde el editor de Apps Script
+ * Muestra exactamente que datos se estan cargando
+ */
+function diagnosticoSistema() {
+  const fecha = getFechaActual();
+  Logger.log('========== DIAGNOSTICO DEL SISTEMA ==========');
+  Logger.log('Fecha actual: ' + fecha);
+
+  // 1. Verificar hoja Sesiones
+  try {
+    const sheet = getSheet('Sesiones');
+    const data = sheet.getDataRange().getValues();
+    Logger.log('\n--- HOJA SESIONES ---');
+    Logger.log('Total filas (incluyendo encabezado): ' + data.length);
+    Logger.log('Encabezados: ' + JSON.stringify(data[0]));
+
+    if (data.length > 1) {
+      Logger.log('\nPrimera fila de datos:');
+      const headers = data[0];
+      const firstRow = data[1];
+      for (let i = 0; i < headers.length; i++) {
+        const value = firstRow[i];
+        const tipo = value instanceof Date ? 'Date' : typeof value;
+        Logger.log('  ' + headers[i] + ': ' + value + ' (tipo: ' + tipo + ')');
+      }
+
+      // Verificar columna fecha
+      const fechaIndex = headers.indexOf('fecha');
+      if (fechaIndex >= 0) {
+        const fechaValue = firstRow[fechaIndex];
+        Logger.log('\nAnalisis de fecha:');
+        Logger.log('  Valor raw: ' + fechaValue);
+        Logger.log('  Es Date?: ' + (fechaValue instanceof Date));
+        if (fechaValue instanceof Date) {
+          Logger.log('  Formateada: ' + Utilities.formatDate(fechaValue, 'America/Asuncion', 'yyyy-MM-dd'));
+        } else {
+          Logger.log('  Substring(0,10): ' + String(fechaValue).substring(0, 10));
+        }
+        Logger.log('  Comparando con fecha actual (' + fecha + '): ' + (String(fechaValue).substring(0, 10) === fecha));
+      }
+    }
+  } catch (e) {
+    Logger.log('ERROR en hoja Sesiones: ' + e.message);
+  }
+
+  // 2. Probar SessionService.getByDate
+  try {
+    Logger.log('\n--- PRUEBA SessionService.getByDate ---');
+    const sesiones = SessionService.getByDate(fecha);
+    Logger.log('Sesiones encontradas: ' + sesiones.length);
+    if (sesiones.length > 0) {
+      Logger.log('Primera sesion: ' + JSON.stringify(sesiones[0]));
+    }
+  } catch (e) {
+    Logger.log('ERROR en SessionService: ' + e.message);
+  }
+
+  // 3. Probar cargarDatosIniciales
+  try {
+    Logger.log('\n--- PRUEBA cargarDatosIniciales ---');
+    const result = cargarDatosIniciales();
+    Logger.log('Success: ' + result.success);
+    if (result.success) {
+      Logger.log('Terapeutas: ' + result.data.terapeutas.length);
+      Logger.log('Sesiones: ' + result.data.sesiones.length);
+      Logger.log('Sesiones Grupales: ' + result.data.sesionesGrupales.length);
+    } else {
+      Logger.log('Error: ' + result.message);
+    }
+  } catch (e) {
+    Logger.log('ERROR en cargarDatosIniciales: ' + e.message);
+  }
+
+  Logger.log('\n========== FIN DIAGNOSTICO ==========');
+  return 'Revisa Ver > Registros para ver el resultado';
+}
