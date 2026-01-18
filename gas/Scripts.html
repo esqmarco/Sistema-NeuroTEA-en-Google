@@ -135,81 +135,72 @@ function loadDateData(fecha) {
  * Configura event listeners
  */
 function setupEventListeners() {
+  // Helper para agregar event listener de forma segura
+  function safeAddListener(id, event, handler) {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener(event, handler);
+    } else {
+      console.warn('Elemento no encontrado:', id);
+    }
+  }
+
   // Cambio de fecha
-  document.getElementById('session-date').addEventListener('change', function(e) {
+  safeAddListener('session-date', 'change', function(e) {
     loadDateData(e.target.value);
   });
 
-  // Formulario de sesion
-  document.getElementById('session-form').addEventListener('submit', handleSessionSubmit);
-
-  // Formulario de sesion grupal
-  document.getElementById('group-session-form').addEventListener('submit', handleGroupSessionSubmit);
-
-  // Formulario de egreso
-  document.getElementById('egreso-form').addEventListener('submit', handleEgresoSubmit);
-
-  // Formulario de terapeuta
-  document.getElementById('therapist-form').addEventListener('submit', handleTherapistSubmit);
-
-  // Formulario de paquete
-  document.getElementById('package-form').addEventListener('submit', handlePackageSubmit);
+  // Formulario de paquete (el unico que existe como form)
+  safeAddListener('package-form', 'submit', handlePackageSubmit);
 
   // Event listeners para calculo en tiempo real del paquete
   ['package-sessions', 'package-cash', 'package-transfer-therapist', 'package-transfer-neurotea'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('input', updatePackageCalculations);
+    safeAddListener(id, 'input', updatePackageCalculations);
   });
 
   // Aporte NeuroTEA en paquetes
   document.querySelectorAll('input[name="package-neurotea-contribution"]').forEach(radio => {
     radio.addEventListener('change', function() {
       const fixedInput = document.getElementById('package-fixed-amount-input');
-      fixedInput.disabled = this.value !== 'fixed';
-      if (this.value !== 'fixed') {
-        fixedInput.value = '';
+      if (fixedInput) {
+        fixedInput.disabled = this.value !== 'fixed';
+        if (this.value !== 'fixed') {
+          fixedInput.value = '';
+        }
       }
       updatePackageCalculations();
     });
   });
-  document.getElementById('package-fixed-amount-input').addEventListener('input', updatePackageCalculations);
+  safeAddListener('package-fixed-amount-input', 'input', updatePackageCalculations);
 
-  // Formulario de grupo
-  document.getElementById('group-form').addEventListener('submit', handleGroupSubmit);
-
-  // Formulario de saldo inicial
-  document.getElementById('saldo-form').addEventListener('submit', handleSaldoSubmit);
-
-  // Tipo de egreso
-  document.getElementById('egreso-type').addEventListener('change', function(e) {
+  // Tipo de egreso - mostrar/ocultar selector de terapeuta
+  safeAddListener('egreso-type', 'change', function(e) {
     const container = document.getElementById('egreso-therapist-container');
-    container.classList.toggle('hidden', e.target.value !== 'adelanto');
-  });
-
-  // Tipo de aporte
-  document.getElementById('contribution-type').addEventListener('change', function(e) {
-    const fixedInput = document.getElementById('fixed-contribution');
-    fixedInput.classList.toggle('hidden', e.target.value !== 'fixed');
+    if (container) {
+      container.style.display = e.target.value === 'adelanto' ? 'block' : 'none';
+    }
   });
 
   // Verificar creditos al escribir nombre de paciente
-  document.getElementById('patient-name').addEventListener('blur', checkPatientCredits);
-  document.getElementById('patient-name').addEventListener('input', validateRegisterButton);
+  safeAddListener('patient-name', 'blur', checkPatientCredits);
+  safeAddListener('patient-name', 'input', validateRegisterButton);
 
   // Seleccion de grupo
-  document.getElementById('group-select').addEventListener('change', handleGroupSelection);
+  safeAddListener('group-select', 'change', handleGroupSelection);
 
   // Validacion del boton registrar - escuchar cambios en campos relevantes
-  document.getElementById('therapist-select').addEventListener('change', validateRegisterButton);
-  document.getElementById('cash-to-neurotea').addEventListener('input', function() {
+  safeAddListener('therapist-select', 'change', validateRegisterButton);
+
+  // Campos de pago - calculos en tiempo real
+  safeAddListener('cash-to-neurotea', 'input', function() {
     validateRegisterButton();
     updatePaymentDisplay();
   });
-  document.getElementById('transfer-to-neurotea').addEventListener('input', function() {
+  safeAddListener('transfer-to-neurotea', 'input', function() {
     validateRegisterButton();
     updatePaymentDisplay();
   });
-  document.getElementById('transfer-to-therapist').addEventListener('input', function() {
+  safeAddListener('transfer-to-therapist', 'input', function() {
     validateRegisterButton();
     updatePaymentDisplay();
   });
@@ -218,14 +209,16 @@ function setupEventListeners() {
   document.querySelectorAll('input[name="neurotea-contribution"]').forEach(radio => {
     radio.addEventListener('change', function() {
       const fixedInput = document.getElementById('fixed-amount-input');
-      fixedInput.disabled = this.value !== 'fixed';
-      if (this.value !== 'fixed') {
-        fixedInput.value = '';
+      if (fixedInput) {
+        fixedInput.disabled = this.value !== 'fixed';
+        if (this.value !== 'fixed') {
+          fixedInput.value = '';
+        }
       }
       updatePaymentDisplay();
     });
   });
-  document.getElementById('fixed-amount-input').addEventListener('input', updatePaymentDisplay);
+  safeAddListener('fixed-amount-input', 'input', updatePaymentDisplay);
 
   // Modo de registro - validar al cambiar
   document.querySelectorAll('input[name="modo-registro"]').forEach(radio => {
@@ -233,15 +226,10 @@ function setupEventListeners() {
   });
 
   // Mini carrito de sesiones futuras
-  const checkboxCreditos = document.getElementById('crear-creditos-adicionales');
-  if (checkboxCreditos) {
-    checkboxCreditos.addEventListener('change', toggleSesionesFuturasContainer);
-  }
+  safeAddListener('crear-creditos-adicionales', 'change', toggleSesionesFuturasContainer);
+  safeAddListener('agregar-sesion-futura-btn', 'click', agregarSesionFutura);
 
-  const btnAgregarFutura = document.getElementById('agregar-sesion-futura-btn');
-  if (btnAgregarFutura) {
-    btnAgregarFutura.addEventListener('click', agregarSesionFutura);
-  }
+  console.log('Event listeners configurados correctamente');
 }
 
 /**
