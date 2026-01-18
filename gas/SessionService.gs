@@ -68,7 +68,7 @@ const SessionService = {
       aporteNeurotea = parseInt(sessionData.aporteNeurotea) || 0;
     } else {
       const porcentaje = parseInt(tipoAporte) || 30;
-      aporteNeurotea = Math.floor(valorSesion * porcentaje / 100);
+      aporteNeurotea = Math.round(valorSesion * porcentaje / 100);
     }
 
     // Honorarios = Valor sesion - Aporte NeuroTEA

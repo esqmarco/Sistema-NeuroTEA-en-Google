@@ -119,18 +119,26 @@ const RendicionService = {
     let confirmacionInfo = null;
 
     if (confirmacion) {
+      // Parsear flujoJSON si es string
+      let flujo = confirmacion.flujoJSON;
+      if (typeof flujo === 'string') {
+        try { flujo = JSON.parse(flujo); } catch (e) { flujo = {}; }
+      }
+      flujo = flujo || {};
+
       confirmacionInfo = {
         confirmado: true,
         tipo: confirmacion.tipo,
         tipoOpcion: confirmacion.tipoOpcion,
         timestamp: confirmacion.timestamp,
-        efectivoUsado: confirmacion.flujoJSON?.efectivoUsado || 0,
-        bancoUsado: confirmacion.flujoJSON?.bancoUsado || 0,
-        vueltoEfectivo: confirmacion.flujoJSON?.vueltoEfectivo || 0,
-        vueltoTransferencia: confirmacion.flujoJSON?.vueltoTransferencia || 0,
-        efectivoRecibido: confirmacion.flujoJSON?.efectivoRecibido || 0
+        efectivoUsado: flujo.efectivoUsado || 0,
+        bancoUsado: flujo.bancoUsado || 0,
+        vueltoEfectivo: flujo.vueltoEfectivo || 0,
+        vueltoTransferencia: flujo.vueltoTransferencia || 0,
+        efectivoRecibido: flujo.efectivoRecibido || 0
       };
-      estado = 'CONFIRMADO';
+      // NO sobrescribir estado - mantener el estado original calculado
+      // Solo cambiar el colorClass para indicar que está confirmado
       colorClass = 'badge-success';
     }
 

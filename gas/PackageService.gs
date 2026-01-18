@@ -66,7 +66,7 @@ const PackageService = {
       aporteNeurotea = parseInt(packageData.aporteNeurotea) || 0;
     } else {
       const porcentaje = parseInt(tipoAporte) || 30;
-      aporteNeurotea = Math.floor(valorTotal * porcentaje / 100);
+      aporteNeurotea = Math.round(valorTotal * porcentaje / 100);
     }
 
     // Preparar datos del paquete

@@ -76,7 +76,7 @@ const GroupSessionService = {
     });
 
     // Aporte NeuroTEA
-    const aporteNeurotea = Math.floor(valorTotal * porcentajeAporte / 100);
+    const aporteNeurotea = Math.round(valorTotal * porcentajeAporte / 100);
 
     // Honorarios totales
     const honorariosTotales = Math.max(0, valorTotal - aporteNeurotea);

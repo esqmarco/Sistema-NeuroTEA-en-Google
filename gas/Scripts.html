@@ -445,7 +445,7 @@ function updateTherapistSelects() {
  * Actualiza checkboxes de terapeutas para grupos
  */
 function updateGroupTherapistCheckboxes() {
-  const container = document.getElementById('group-therapists-select');
+  const container = document.getElementById('group-therapists-list');
   if (!container) return;
 
   container.innerHTML = '';
@@ -784,13 +784,13 @@ function updateRendicionView() {
 
       resumen.terapeutas.forEach(status => {
         const badgeClass = getBadgeClass(status.estado);
-        const ingresoTotal = (status.valorSesiones || 0) + (status.valorGrupales || 0);
+        const ingresoTotal = status.valorTotalSesiones || 0;
 
         html += `
           <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
             <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 font-medium">${status.terapeuta}</td>
             <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">${formatCurrency(ingresoTotal)}</td>
-            <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">${formatCurrency(status.aporteNeurotea || 0)}</td>
+            <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">${formatCurrency(status.aporteNeuroTEA || 0)}</td>
             <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">${formatCurrency(status.honorarios || 0)}</td>
             <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">${formatCurrency(status.transferenciaATerapeuta || 0)}</td>
             <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">${formatCurrency(status.adelantosRecibidos || 0)}</td>
@@ -980,7 +980,9 @@ function updateGroupSelects() {
  * Actualiza vista de administracion
  */
 function updateAdminView() {
-  document.getElementById('saldo-inicial').value = saldoInicial;
+  // Actualizar display de saldo (saldo-inicial no existe, usar saldo-actual-display)
+  const saldoDisplay = document.getElementById('saldo-actual-display');
+  if (saldoDisplay) saldoDisplay.textContent = formatCurrency(saldoInicial);
 
   // Cargar estadisticas
   google.script.run
@@ -1168,7 +1170,13 @@ function handleEgresoSubmit(e) {
       showLoading(false);
       if (result.success) {
         showNotification('Egreso registrado', 'success');
-        document.getElementById('egreso-form').reset();
+        // Limpiar campos de egreso manualmente (no hay form wrapper)
+        const egresoType = document.getElementById('egreso-type');
+        const egresoConcept = document.getElementById('egreso-concept');
+        const egresoValue = document.getElementById('egreso-value');
+        if (egresoType) egresoType.value = '';
+        if (egresoConcept) egresoConcept.value = '';
+        if (egresoValue) egresoValue.value = '';
         document.getElementById('egreso-therapist-container').classList.add('hidden');
         loadDateData(fechaActual);
       } else {
@@ -1338,7 +1346,8 @@ function handleGroupSubmit(e) {
 function handleSaldoSubmit(e) {
   e.preventDefault();
 
-  const efectivo = parseInt(document.getElementById('saldo-inicial').value) || 0;
+  // Usar nuevo-saldo-input (saldo-inicial no existe)
+  const efectivo = parseInt(document.getElementById('nuevo-saldo-input').value) || 0;
 
   showLoading(true);
 
