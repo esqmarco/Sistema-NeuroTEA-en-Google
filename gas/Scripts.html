@@ -1605,4 +1605,750 @@ function downloadJSON(data, filename) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// ===========================
+// FUNCIONES WRAPPER PARA BOTONES
+// ===========================
+
+/**
+ * Registrar sesion (wrapper para boton)
+ */
+function registerSession() {
+  const terapeuta = document.getElementById('therapist-select').value;
+  const paciente = document.getElementById('patient-name').value.trim();
+  const efectivo = parseFloat(document.getElementById('cash-to-neurotea').value) || 0;
+  const transferenciaNeurotea = parseFloat(document.getElementById('transfer-to-neurotea').value) || 0;
+  const transferenciaTerminapeuta = parseFloat(document.getElementById('transfer-to-therapist').value) || 0;
+
+  if (!terapeuta) {
+    showNotification('Seleccione un terapeuta', 'error');
+    return;
+  }
+  if (!paciente) {
+    showNotification('Ingrese el nombre del paciente', 'error');
+    return;
+  }
+
+  const valorSesion = efectivo + transferenciaNeurotea + transferenciaTerminapeuta;
+  if (valorSesion <= 0) {
+    showNotification('Ingrese un monto de pago', 'error');
+    return;
+  }
+
+  // Obtener tipo de aporte
+  const tipoAporteRadio = document.querySelector('input[name="neurotea-contribution"]:checked');
+  const tipoAporte = tipoAporteRadio ? tipoAporteRadio.value : '30';
+  const montoFijo = tipoAporte === 'fixed' ? parseFloat(document.getElementById('fixed-amount-input').value) || 0 : 0;
+
+  // Calcular aporte
+  let aporteNeurotea;
+  if (tipoAporte === 'fixed') {
+    aporteNeurotea = montoFijo;
+  } else {
+    aporteNeurotea = Math.round(valorSesion * (parseInt(tipoAporte) / 100));
+  }
+  const honorarios = valorSesion - aporteNeurotea;
+
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        showNotification('Sesion registrada correctamente', 'success');
+        resetSessionForm();
+        loadDateData(fechaActual);
+      } else {
+        showNotification('Error: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .crearSesion({
+      fecha: fechaActual,
+      terapeuta: terapeuta,
+      paciente: paciente,
+      efectivo: efectivo,
+      transferenciaNeurotea: transferenciaNeurotea,
+      transferenciaTerminapeuta: transferenciaTerminapeuta,
+      valorSesion: valorSesion,
+      aporteNeurotea: aporteNeurotea,
+      honorarios: honorarios,
+      tipoAporte: tipoAporte
+    });
+}
+
+/**
+ * Registrar egreso (wrapper para boton)
+ */
+function registerEgreso() {
+  const tipo = document.getElementById('egreso-type').value;
+  const concepto = document.getElementById('egreso-concept').value.trim();
+  const monto = parseFloat(document.getElementById('egreso-value').value) || 0;
+  const terapeuta = document.getElementById('egreso-therapist-select').value;
+
+  if (!tipo) {
+    showNotification('Seleccione un tipo de egreso', 'error');
+    return;
+  }
+  if (monto <= 0) {
+    showNotification('Ingrese un monto valido', 'error');
+    return;
+  }
+  if (tipo === 'adelanto' && !terapeuta) {
+    showNotification('Seleccione una terapeuta', 'error');
+    return;
+  }
+
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        showNotification('Egreso registrado correctamente', 'success');
+        document.getElementById('egreso-type').value = '';
+        document.getElementById('egreso-concept').value = '';
+        document.getElementById('egreso-value').value = '';
+        document.getElementById('egreso-therapist-container').style.display = 'none';
+        loadDateData(fechaActual);
+      } else {
+        showNotification('Error: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .crearEgreso({
+      fecha: fechaActual,
+      tipo: tipo,
+      concepto: concepto,
+      monto: monto,
+      terapeuta: tipo === 'adelanto' ? terapeuta : null
+    });
+}
+
+/**
+ * Agregar terapeuta (wrapper para boton)
+ */
+function addTherapist() {
+  const nombre = document.getElementById('new-therapist-name').value.trim();
+  if (!nombre) {
+    showNotification('Ingrese el nombre de la terapeuta', 'error');
+    return;
+  }
+
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        showNotification('Terapeuta agregada correctamente', 'success');
+        document.getElementById('new-therapist-name').value = '';
+        terapeutas.push(result.data);
+        updateTherapistSelects();
+        updateTherapistsList();
+      } else {
+        showNotification('Error: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .crearTerapeuta(nombre);
+}
+
+/**
+ * Crear grupo (wrapper para boton)
+ */
+function createGroup() {
+  const nombre = document.getElementById('new-group-name').value.trim();
+  const porcentaje = parseInt(document.getElementById('new-group-percentage').value) || 30;
+
+  if (!nombre) {
+    showNotification('Ingrese el nombre del grupo', 'error');
+    return;
+  }
+
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        showNotification('Grupo creado correctamente', 'success');
+        document.getElementById('new-group-name').value = '';
+        document.getElementById('new-group-percentage').value = '30';
+        gruposActivos.push(result.data);
+        updateGroupsList();
+        updateGroupSelects();
+      } else {
+        showNotification('Error: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .crearGrupo({
+      nombre: nombre,
+      porcentajeAporte: porcentaje,
+      ninos: []
+    });
+}
+
+/**
+ * Limpiar sesiones del dia
+ */
+function clearDaySessions() {
+  if (!confirm('Esta seguro de eliminar TODAS las sesiones de hoy?')) return;
+  showLoading(true);
+
+  // Eliminar todas las sesiones del dia actual
+  const promises = sesiones.map(s => {
+    return new Promise((resolve) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(resolve)
+        .eliminarSesion(s.id);
+    });
+  });
+
+  Promise.all(promises).then(() => {
+    showLoading(false);
+    showNotification('Sesiones eliminadas', 'success');
+    loadDateData(fechaActual);
+  });
+}
+
+/**
+ * Limpiar egresos del dia
+ */
+function clearDayEgresos() {
+  if (!confirm('Esta seguro de eliminar TODOS los egresos de hoy?')) return;
+  showLoading(true);
+
+  const promises = egresos.map(e => {
+    return new Promise((resolve) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(resolve)
+        .eliminarEgreso(e.id);
+    });
+  });
+
+  Promise.all(promises).then(() => {
+    showLoading(false);
+    showNotification('Egresos eliminados', 'success');
+    loadDateData(fechaActual);
+  });
+}
+
+// ===========================
+// FUNCIONES DE MODALES
+// ===========================
+
+/**
+ * Abrir modal de saldo inicial
+ */
+function openSaldoModal() {
+  document.getElementById('saldo-modal').classList.remove('hidden');
+  document.getElementById('saldo-actual-display').textContent = formatCurrency(saldoInicial).replace('Gs ', '');
+  lucide.createIcons();
+}
+
+/**
+ * Cerrar modal de saldo inicial
+ */
+function closeSaldoModal() {
+  document.getElementById('saldo-modal').classList.add('hidden');
+  document.getElementById('saldo-edit-section').classList.add('hidden');
+  document.getElementById('saldo-action-buttons').classList.remove('hidden');
+}
+
+/**
+ * Alternar modo edicion de saldo
+ */
+function toggleEditMode() {
+  const editSection = document.getElementById('saldo-edit-section');
+  const actionButtons = document.getElementById('saldo-action-buttons');
+
+  if (editSection.classList.contains('hidden')) {
+    editSection.classList.remove('hidden');
+    actionButtons.classList.add('hidden');
+    document.getElementById('nuevo-saldo-input').value = saldoInicial || '';
+  } else {
+    editSection.classList.add('hidden');
+    actionButtons.classList.remove('hidden');
+  }
+}
+
+/**
+ * Guardar saldo inicial
+ */
+function saveSaldoInicial() {
+  const nuevoSaldo = parseFloat(document.getElementById('nuevo-saldo-input').value) || 0;
+
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        saldoInicial = nuevoSaldo;
+        showNotification('Saldo inicial guardado', 'success');
+        closeSaldoModal();
+        updateAllViews();
+      } else {
+        showNotification('Error: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .guardarSaldoInicial(fechaActual, nuevoSaldo);
+}
+
+/**
+ * Abrir modal de sesion grupal
+ */
+function openGroupSessionModal() {
+  document.getElementById('group-session-modal').classList.remove('hidden');
+  updateGroupSelects();
+  lucide.createIcons();
+}
+
+/**
+ * Cerrar modal de sesion grupal
+ */
+function closeGroupSessionModal() {
+  document.getElementById('group-session-modal').classList.add('hidden');
+  document.getElementById('group-select').value = '';
+  document.getElementById('group-therapists-section').classList.add('hidden');
+  document.getElementById('group-attendance-section').classList.add('hidden');
+  document.getElementById('group-values-section').classList.add('hidden');
+}
+
+/**
+ * Manejar cambio de seleccion de grupo
+ */
+function onGroupSelectChange() {
+  const grupoId = document.getElementById('group-select').value;
+
+  if (!grupoId) {
+    document.getElementById('group-therapists-section').classList.add('hidden');
+    document.getElementById('group-attendance-section').classList.add('hidden');
+    document.getElementById('group-values-section').classList.add('hidden');
+    return;
+  }
+
+  const grupo = gruposActivos.find(g => g.id == grupoId);
+  if (!grupo) return;
+
+  // Mostrar secciones
+  document.getElementById('group-therapists-section').classList.remove('hidden');
+  document.getElementById('group-attendance-section').classList.remove('hidden');
+  document.getElementById('group-values-section').classList.remove('hidden');
+
+  // Llenar lista de terapeutas con checkboxes
+  const therapistsList = document.getElementById('group-therapists-list');
+  therapistsList.innerHTML = terapeutas.map(t => `
+    <label class="flex items-center space-x-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-600 rounded">
+      <input type="checkbox" class="group-therapist-checkbox" value="${t.nombre}">
+      <span>${t.nombre}</span>
+    </label>
+  `).join('');
+
+  // Llenar lista de ninos
+  const ninos = grupo.ninos || [];
+  const attendanceList = document.getElementById('group-attendance-list');
+  attendanceList.innerHTML = ninos.map(nino => `
+    <div class="border rounded p-3 bg-white dark:bg-gray-600">
+      <div class="flex items-center justify-between mb-2">
+        <label class="flex items-center space-x-2">
+          <input type="checkbox" class="child-attendance-checkbox" data-child="${nino.nombre}" checked>
+          <span class="font-medium">${nino.nombre}</span>
+        </label>
+      </div>
+      <div class="grid grid-cols-3 gap-2">
+        <div>
+          <label class="text-xs text-gray-500">Valor</label>
+          <input type="number" class="child-value w-full p-1 border rounded text-sm" data-child="${nino.nombre}" value="${nino.valor || 0}" min="0">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Efectivo</label>
+          <input type="number" class="child-cash w-full p-1 border rounded text-sm" data-child="${nino.nombre}" value="0" min="0">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Transf. NeuroTEA</label>
+          <input type="number" class="child-transfer w-full p-1 border rounded text-sm" data-child="${nino.nombre}" value="0" min="0">
+        </div>
+      </div>
+    </div>
+  `).join('') || '<p class="text-gray-500 text-center">No hay ninos en este grupo</p>';
+
+  lucide.createIcons();
+}
+
+/**
+ * Registrar sesion grupal
+ */
+function registerGroupSession() {
+  const grupoId = document.getElementById('group-select').value;
+  const grupo = gruposActivos.find(g => g.id == grupoId);
+
+  if (!grupo) {
+    showNotification('Seleccione un grupo', 'error');
+    return;
+  }
+
+  // Obtener terapeutas seleccionados
+  const therapistCheckboxes = document.querySelectorAll('.group-therapist-checkbox:checked');
+  const terapeutasSeleccionados = Array.from(therapistCheckboxes).map(cb => cb.value);
+
+  if (terapeutasSeleccionados.length === 0) {
+    showNotification('Seleccione al menos una terapeuta', 'error');
+    return;
+  }
+
+  // Obtener asistencia
+  const asistencia = [];
+  document.querySelectorAll('.child-attendance-checkbox').forEach(cb => {
+    const childName = cb.dataset.child;
+    const presente = cb.checked;
+    const valor = parseFloat(document.querySelector(`.child-value[data-child="${childName}"]`).value) || 0;
+    const efectivo = parseFloat(document.querySelector(`.child-cash[data-child="${childName}"]`).value) || 0;
+    const transferencia = parseFloat(document.querySelector(`.child-transfer[data-child="${childName}"]`).value) || 0;
+
+    asistencia.push({
+      nombre: childName,
+      presente: presente,
+      valor: valor,
+      efectivo: efectivo,
+      transferencia: transferencia
+    });
+  });
+
+  const presentes = asistencia.filter(a => a.presente);
+  if (presentes.length === 0) {
+    showNotification('Marque al menos un nino como presente', 'error');
+    return;
+  }
+
+  // Calcular totales
+  const valorTotal = presentes.reduce((sum, a) => sum + a.valor, 0);
+  const totalEfectivo = presentes.reduce((sum, a) => sum + a.efectivo, 0);
+  const totalTransferencia = presentes.reduce((sum, a) => sum + a.transferencia, 0);
+  const aporteNeurotea = Math.round(valorTotal * (grupo.porcentajeAporte / 100));
+  const honorariosTotales = valorTotal - aporteNeurotea;
+  const honorariosPorTerapeuta = Math.floor(honorariosTotales / terapeutasSeleccionados.length);
+
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        showNotification('Sesion grupal registrada correctamente', 'success');
+        closeGroupSessionModal();
+        loadDateData(fechaActual);
+      } else {
+        showNotification('Error: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .crearSesionGrupal({
+      fecha: fechaActual,
+      grupoId: grupoId,
+      grupoNombre: grupo.nombre,
+      asistencia: asistencia,
+      terapeutas: terapeutasSeleccionados,
+      cantidadTerapeutas: terapeutasSeleccionados.length,
+      cantidadPresentes: presentes.length,
+      valorTotal: valorTotal,
+      porcentajeAporte: grupo.porcentajeAporte,
+      aporteNeurotea: aporteNeurotea,
+      honorariosTotales: honorariosTotales,
+      honorariosPorTerapeuta: honorariosPorTerapeuta,
+      efectivo: totalEfectivo,
+      transferenciaNeurotea: totalTransferencia
+    });
+}
+
+// Variable para grupo en edicion
+let currentEditingGroup = null;
+
+/**
+ * Abrir modal de editar grupo
+ */
+function openEditGroupModal(grupoId) {
+  const grupo = gruposActivos.find(g => g.id == grupoId);
+  if (!grupo) return;
+
+  currentEditingGroup = grupo;
+  document.getElementById('edit-group-modal').classList.remove('hidden');
+  document.getElementById('edit-group-id').value = grupo.id;
+  document.getElementById('edit-group-title').textContent = grupo.nombre;
+  document.getElementById('edit-group-name').value = grupo.nombre;
+  document.getElementById('edit-group-percentage').value = grupo.porcentajeAporte || 30;
+
+  updateEditGroupChildrenList();
+  lucide.createIcons();
+}
+
+/**
+ * Cerrar modal de editar grupo
+ */
+function closeEditGroupModal() {
+  document.getElementById('edit-group-modal').classList.add('hidden');
+  currentEditingGroup = null;
+}
+
+/**
+ * Actualizar lista de ninos en edicion
+ */
+function updateEditGroupChildrenList() {
+  const container = document.getElementById('edit-group-children-list');
+  const ninos = currentEditingGroup?.ninos || [];
+
+  if (ninos.length === 0) {
+    container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay ninos en este grupo</p>';
+    return;
+  }
+
+  container.innerHTML = ninos.map(nino => `
+    <div class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-600 rounded">
+      <span>${nino.nombre}</span>
+      <button onclick="removeChildFromGroup('${nino.nombre}')" class="text-red-500 hover:text-red-700">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+  `).join('');
+
+  lucide.createIcons();
+}
+
+/**
+ * Agregar nino al grupo actual
+ */
+function addChildToCurrentGroup() {
+  const nombre = document.getElementById('new-child-name').value.trim();
+  if (!nombre) {
+    showNotification('Ingrese el nombre del nino', 'error');
+    return;
+  }
+
+  if (!currentEditingGroup) return;
+
+  if (!currentEditingGroup.ninos) {
+    currentEditingGroup.ninos = [];
+  }
+
+  currentEditingGroup.ninos.push({ nombre: nombre, valor: 0 });
+  document.getElementById('new-child-name').value = '';
+  updateEditGroupChildrenList();
+}
+
+/**
+ * Eliminar nino del grupo
+ */
+function removeChildFromGroup(nombre) {
+  if (!currentEditingGroup) return;
+  currentEditingGroup.ninos = currentEditingGroup.ninos.filter(n => n.nombre !== nombre);
+  updateEditGroupChildrenList();
+}
+
+/**
+ * Guardar cambios del grupo
+ */
+function saveGroupChanges() {
+  if (!currentEditingGroup) return;
+
+  const nombre = document.getElementById('edit-group-name').value.trim();
+  const porcentaje = parseInt(document.getElementById('edit-group-percentage').value) || 30;
+
+  if (!nombre) {
+    showNotification('Ingrese el nombre del grupo', 'error');
+    return;
+  }
+
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        showNotification('Grupo actualizado correctamente', 'success');
+        closeEditGroupModal();
+        // Actualizar en memoria
+        const idx = gruposActivos.findIndex(g => g.id == currentEditingGroup.id);
+        if (idx >= 0) {
+          gruposActivos[idx] = { ...gruposActivos[idx], nombre: nombre, porcentajeAporte: porcentaje, ninos: currentEditingGroup.ninos };
+        }
+        updateGroupsList();
+        updateGroupSelects();
+      } else {
+        showNotification('Error: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .actualizarGrupo(currentEditingGroup.id, {
+      nombre: nombre,
+      porcentajeAporte: porcentaje,
+      ninos: currentEditingGroup.ninos
+    });
+}
+
+// ===========================
+// FUNCIONES DE ADMINISTRACION
+// ===========================
+
+/**
+ * Cambiar modulo de administracion
+ */
+function switchAdminModule(moduleId) {
+  // Esta funcion solo cambia la apariencia, los modulos futuros no estan implementados
+  document.querySelectorAll('.admin-module-tab').forEach(tab => {
+    tab.classList.remove('active');
+  });
+  document.querySelectorAll('.admin-module-content').forEach(content => {
+    content.classList.add('hidden');
+  });
+
+  document.querySelector(`[onclick="switchAdminModule('${moduleId}')"]`)?.classList.add('active');
+  const module = document.getElementById(`${moduleId}-module`);
+  if (module) module.classList.remove('hidden');
+}
+
+/**
+ * Crear backup completo
+ */
+function createFullBackup() {
+  exportFullBackup();
+}
+
+/**
+ * Importar backup completo
+ */
+function importFullBackup() {
+  const fileInput = document.getElementById('restore-backup-file');
+  const file = fileInput.files[0];
+
+  if (!file) {
+    showNotification('Seleccione un archivo', 'error');
+    return;
+  }
+
+  if (!confirm('Esta seguro? Esta operacion reemplazara TODOS los datos actuales.')) {
+    return;
+  }
+
+  if (!confirm('ULTIMA CONFIRMACION: Se perderan todos los datos actuales. Continuar?')) {
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      showLoading(true);
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          showLoading(false);
+          if (result.success) {
+            showNotification('Backup restaurado correctamente. Recargando...', 'success');
+            setTimeout(() => location.reload(), 2000);
+          } else {
+            showNotification('Error: ' + result.message, 'error');
+          }
+        })
+        .withFailureHandler(function(error) {
+          showLoading(false);
+          showNotification('Error: ' + error.message, 'error');
+        })
+        .importarBackup(data);
+    } catch (error) {
+      showNotification('Error al leer el archivo: ' + error.message, 'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+/**
+ * Importar datos del dia
+ */
+function importDayData() {
+  const fileInput = document.getElementById('import-day-file');
+  const file = fileInput.files[0];
+
+  if (!file) {
+    showNotification('Seleccione un archivo', 'error');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      showLoading(true);
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          showLoading(false);
+          if (result.success) {
+            showNotification('Datos importados correctamente', 'success');
+            loadDateData(fechaActual);
+          } else {
+            showNotification('Error: ' + result.message, 'error');
+          }
+        })
+        .withFailureHandler(function(error) {
+          showLoading(false);
+          showNotification('Error: ' + error.message, 'error');
+        })
+        .importarDatosDia(data);
+    } catch (error) {
+      showNotification('Error al leer el archivo: ' + error.message, 'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+/**
+ * Generar reporte HTML de rendicion
+ */
+function generateRendicionHTML() {
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        // Crear y descargar archivo HTML
+        const blob = new Blob([result.data], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `rendicion_${fechaActual}.html`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showNotification('Reporte generado', 'success');
+      } else {
+        showNotification('Error: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .generarReporteRendicion(fechaActual);
+}
 </script>

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -14,12 +14,13 @@
 
   <!-- jsPDF para reportes -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://unpkg.com/jspdf-autotable@3.5.25/dist/jspdf.plugin.autotable.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
   <!-- Estilos personalizados -->
   <?!= include('Styles'); ?>
 </head>
-<body class="bg-gray-100 dark:bg-gray-900 min-h-screen">
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 min-h-screen">
 
   <!-- Loading Overlay -->
   <div id="loading-overlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -41,7 +42,7 @@
       </div>
       <div class="flex items-center space-x-4">
         <input type="date" id="date-input" class="bg-white/20 border border-white/30 rounded px-3 py-1 text-white focus:outline-none focus:ring-2 focus:ring-white/50">
-        <button onclick="toggleDarkMode()" class="p-2 rounded-md hover:bg-purple-600 transition-colors">
+        <button id="theme-toggle" onclick="toggleDarkMode()" class="p-2 rounded-md hover:bg-purple-600 transition-colors">
           <i data-lucide="moon" class="w-5 h-5"></i>
         </button>
       </div>
@@ -93,465 +94,931 @@
   </nav>
 
   <!-- Main Content -->
-  <main class="container mx-auto px-4 py-6">
+  <main class="container mx-auto p-4">
 
     <!-- Tab: Registro Diario -->
-    <section id="tab-registro" class="tab-content">
-      <div class="grid lg:grid-cols-2 gap-6">
-        <!-- Formulario de Sesion -->
-        <div class="card">
-          <h2 class="card-title">
-            <i data-lucide="plus-circle" class="w-5 h-5 mr-2 text-blue-500"></i>
-            Registrar Sesion Individual
+    <section id="tab-registro" class="tab-content space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Formulario de registro -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+          <h2 class="text-xl font-bold mb-4 flex items-center">
+            <i data-lucide="user" class="w-6 h-6 mr-2"></i>
+            Registro de Sesion
           </h2>
-          <form id="session-form" class="space-y-4">
+          <p class="text-gray-600 dark:text-gray-400 mb-4">Ingrese los datos de la sesion</p>
+
+          <!-- Badge de Saldo Inicial -->
+          <div class="mb-4">
+            <button id="saldo-inicial-badge" onclick="openSaldoModal()" class="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer hover:opacity-80">
+              <i data-lucide="coins" class="w-4 h-4 mr-2"></i>
+              <span>Saldo inicial</span>
+              <div id="saldo-status-dot" class="w-2 h-2 rounded-full ml-2"></div>
+            </button>
+          </div>
+
+          <div class="space-y-4">
             <div>
-              <label class="form-label">Terapeuta</label>
-              <select id="therapist-select" class="form-select" required>
-                <option value="">Seleccione terapeuta...</option>
-              </select>
-            </div>
-            <div>
-              <label class="form-label">Nombre del Paciente</label>
-              <input type="text" id="patient-name" class="form-input" placeholder="Ingrese nombre del paciente" required>
-              <div id="credit-indicator" class="hidden mt-2 p-2 bg-green-100 dark:bg-green-900 rounded text-sm text-green-700 dark:text-green-300">
-                <i data-lucide="check-circle" class="w-4 h-4 inline mr-1"></i>
-                <span id="credit-count">0</span> creditos disponibles
-              </div>
-            </div>
-            <div class="grid grid-cols-3 gap-3">
-              <div>
-                <label class="form-label">Efectivo</label>
-                <input type="number" id="cash-amount" class="form-input" value="0" min="0">
-              </div>
-              <div>
-                <label class="form-label">Transfer. NeuroTEA</label>
-                <input type="number" id="transfer-neurotea" class="form-input" value="0" min="0">
-              </div>
-              <div>
-                <label class="form-label">Transfer. Terapeuta</label>
-                <input type="number" id="transfer-therapist" class="form-input" value="0" min="0">
-              </div>
-            </div>
-            <div>
-              <label class="form-label">Aporte NeuroTEA</label>
+              <label class="block text-sm font-medium mb-1" for="therapist-select">
+                Terapeuta
+                <i data-lucide="info" class="w-4 h-4 inline-block ml-1 text-gray-400"></i>
+              </label>
               <div class="flex space-x-2">
-                <select id="contribution-type" class="form-select flex-1">
-                  <option value="30">30%</option>
-                  <option value="20">20%</option>
-                  <option value="40">40%</option>
-                  <option value="50">50%</option>
-                  <option value="fixed">Monto fijo</option>
+                <select id="therapist-select" class="flex-1 p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                  <option value="">Seleccionar terapeuta</option>
                 </select>
-                <input type="number" id="fixed-contribution" class="form-input w-32 hidden" placeholder="Monto" min="0">
+                <div class="text-sm text-gray-500 dark:text-gray-400 py-2" id="therapist-counter">0 terapeutas</div>
               </div>
             </div>
-            <div class="flex items-center space-x-2">
-              <input type="checkbox" id="use-credit" class="form-checkbox">
-              <label for="use-credit" class="text-sm text-gray-700 dark:text-gray-300">Usar credito de paquete</label>
-            </div>
-            <div class="flex space-x-3">
-              <button type="submit" class="btn btn-primary flex-1">
-                <i data-lucide="save" class="w-4 h-4 mr-2"></i>
-                Registrar Sesion
-              </button>
-              <button type="button" onclick="resetSessionForm()" class="btn btn-secondary">
-                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-              </button>
-            </div>
-          </form>
-        </div>
 
-        <!-- Lista de Sesiones del Dia -->
-        <div class="card">
-          <h2 class="card-title">
-            <i data-lucide="list" class="w-5 h-5 mr-2 text-green-500"></i>
-            Sesiones del Dia
-            <span id="session-count" class="ml-auto text-sm font-normal text-gray-500">(0)</span>
-          </h2>
-          <div id="sessions-list" class="space-y-2 max-h-96 overflow-y-auto">
-            <p class="text-gray-500 dark:text-gray-400 text-center py-8">No hay sesiones registradas</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Formulario Sesion Grupal -->
-      <div class="card mt-6">
-        <h2 class="card-title">
-          <i data-lucide="users-2" class="w-5 h-5 mr-2 text-purple-500"></i>
-          Registrar Sesion Grupal
-        </h2>
-        <form id="group-session-form" class="space-y-4">
-          <div class="grid md:grid-cols-2 gap-4">
             <div>
-              <label class="form-label">Grupo</label>
-              <select id="group-select" class="form-select" required>
-                <option value="">Seleccione grupo...</option>
+              <label class="block text-sm font-medium mb-1" for="patient-name">
+                Nombre y Apellido del Paciente
+                <i data-lucide="info" class="w-4 h-4 inline-block ml-1 text-gray-400"></i>
+              </label>
+              <input type="text" id="patient-name" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600" placeholder="Ej: Lucia Garcia">
+            </div>
+
+            <!-- Selector de modo de registro -->
+            <div>
+              <label class="block text-sm font-medium mb-2">
+                Modo de Registro
+                <i data-lucide="info" class="w-4 h-4 inline-block ml-1 text-gray-400"></i>
+              </label>
+              <div class="space-y-2">
+                <div class="flex items-center">
+                  <input type="radio" id="modo-pago-dia" name="modo-registro" value="pago-dia" checked class="mr-2">
+                  <label for="modo-pago-dia" class="text-sm">Pago del dia</label>
+                </div>
+                <div class="flex items-center">
+                  <input type="radio" id="modo-usar-credito" name="modo-registro" value="usar-credito" class="mr-2">
+                  <label for="modo-usar-credito" class="text-sm">Usar credito disponible</label>
+                </div>
+                <div class="flex items-center">
+                  <input type="radio" id="modo-sesion-grupal" name="modo-registro" value="sesion-grupal" class="mr-2">
+                  <label for="modo-sesion-grupal" class="text-sm text-green-600 dark:text-green-400 font-medium">Registrar sesion grupal</label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Seccion de creditos (modo usar credito) -->
+            <div id="paciente-credito-section" style="display: none;" class="border-t pt-4">
+              <label class="block text-sm font-medium mb-1">Seleccionar paciente con creditos:</label>
+              <select id="paciente-credito-select" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                <option value="">Seleccionar paciente...</option>
               </select>
+              <div id="creditos-info-display" class="mt-2 text-sm text-gray-600 dark:text-gray-400"></div>
             </div>
-            <div>
-              <label class="form-label">Terapeutas</label>
-              <div id="group-therapists-select" class="space-y-2">
-                <!-- Checkboxes de terapeutas -->
+
+            <div id="desglose-pago-section">
+              <label class="block text-sm font-medium mb-2">
+                Desglose del Pago
+                <i data-lucide="info" class="w-4 h-4 inline-block ml-1 text-gray-400"></i>
+              </label>
+              <div class="space-y-3">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium mb-1 label-efectivo">Efectivo en NeuroTEA (Caja)</label>
+                    <div class="relative">
+                      <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500 dark:text-gray-400">Gs</span>
+                      <input type="text" inputmode="numeric" pattern="[0-9]*" id="cash-to-neurotea" class="w-full p-2 pl-8 border rounded-md dark:bg-gray-700 dark:border-gray-600 campo-efectivo" placeholder="0">
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium mb-1 label-transferencia-terapeuta">Transferencia a Terapeuta</label>
+                    <div class="relative">
+                      <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500 dark:text-gray-400">Gs</span>
+                      <input type="text" inputmode="numeric" pattern="[0-9]*" id="transfer-to-therapist" class="w-full p-2 pl-8 border rounded-md dark:bg-gray-700 dark:border-gray-600 campo-transferencia-terapeuta" placeholder="0">
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium mb-1 label-transferencia-neurotea">Transferencia a NeuroTEA</label>
+                    <div class="relative">
+                      <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500 dark:text-gray-400">Gs</span>
+                      <input type="text" inputmode="numeric" pattern="[0-9]*" id="transfer-to-neurotea" class="w-full p-2 pl-8 border rounded-md dark:bg-gray-700 dark:border-gray-600 campo-transferencia-neurotea" placeholder="0">
+                    </div>
+                  </div>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 p-3 rounded-md">
+                  <div class="flex justify-between text-sm font-bold">
+                    <span>Valor de la sesion:</span>
+                    <span id="session-value-display" class="text-blue-600 dark:text-blue-400">Gs 0</span>
+                  </div>
+                  <div class="flex justify-between text-sm">
+                    <span>Aporte NeuroTEA:</span>
+                    <span id="neurotea-contribution-display" class="font-medium text-orange-600">Gs 0</span>
+                  </div>
+                  <div class="flex justify-between text-sm font-bold">
+                    <span>Honorarios terapeuta:</span>
+                    <span id="therapist-fee-display" class="text-green-600">Gs 0</span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-          <div id="group-children-list" class="hidden">
-            <label class="form-label">Asistencia de Ninos</label>
-            <div id="children-attendance" class="grid md:grid-cols-2 gap-2">
-              <!-- Lista de ninos con checkbox de asistencia -->
+
+            <div id="aporte-neurotea-section">
+              <label class="block text-sm font-medium mb-2">
+                Aporte a NeuroTEA
+                <i data-lucide="info" class="w-4 h-4 inline-block ml-1 text-gray-400"></i>
+              </label>
+              <div class="space-y-2">
+                <div class="flex items-center">
+                  <input type="radio" id="contribution-20" name="neurotea-contribution" value="20" class="mr-2">
+                  <label for="contribution-20">20%</label>
+                </div>
+                <div class="flex items-center">
+                  <input type="radio" id="contribution-30" name="neurotea-contribution" value="30" checked class="mr-2">
+                  <label for="contribution-30">30%</label>
+                </div>
+                <div class="flex items-center">
+                  <input type="radio" id="contribution-fixed" name="neurotea-contribution" value="fixed" class="mr-2">
+                  <label for="contribution-fixed">Monto Fijo</label>
+                </div>
+                <div class="relative">
+                  <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500 dark:text-gray-400">Gs</span>
+                  <input type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Monto fijo" id="fixed-amount-input" disabled class="w-full p-2 pl-8 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                </div>
+              </div>
             </div>
+
+            <button id="register-btn" onclick="registerSession()" class="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md">
+              Registrar Sesion
+            </button>
           </div>
-          <button type="submit" class="btn btn-primary">
-            <i data-lucide="save" class="w-4 h-4 mr-2"></i>
-            Registrar Sesion Grupal
-          </button>
-        </form>
+        </div>
+
+        <!-- Registros del dia -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-semibold flex items-center">
+              <i data-lucide="list" class="w-5 h-5 mr-2"></i>
+              Registros del Dia
+            </h3>
+            <button id="new-day-btn" onclick="clearDaySessions()" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm">
+              Limpiar Registros del Dia
+            </button>
+          </div>
+          <div id="daily-sessions-container" class="space-y-3 max-h-96 overflow-y-auto">
+            <p class="text-gray-500 text-center py-4">No hay sesiones registradas para este dia</p>
+          </div>
+        </div>
       </div>
     </section>
 
     <!-- Tab: Resumen Global -->
-    <section id="tab-resumen" class="tab-content hidden">
-      <div class="grid md:grid-cols-4 gap-4 mb-6">
-        <div class="stat-card bg-blue-500">
-          <i data-lucide="clipboard-check" class="w-8 h-8 mb-2"></i>
-          <p class="stat-value" id="total-sessions">0</p>
-          <p class="stat-label">Sesiones Hoy</p>
+    <section id="tab-resumen" class="tab-content hidden space-y-6">
+      <h2 class="text-2xl font-bold mb-6 flex items-center">
+        <i data-lucide="bar-chart-2" class="w-6 h-6 mr-2"></i>
+        Resumen Global del Dia
+      </h2>
+
+      <!-- Cards de resumen -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="dashboard-card ingreso-total">
+          <h3 class="text-lg font-semibold mb-2">Ingreso Total del Dia</h3>
+          <p class="text-3xl font-bold" id="dashboard-ingreso-total">Gs 0</p>
         </div>
-        <div class="stat-card bg-green-500">
-          <i data-lucide="banknote" class="w-8 h-8 mb-2"></i>
-          <p class="stat-value" id="total-cash">Gs 0</p>
-          <p class="stat-label">Efectivo en Caja</p>
+        <div class="dashboard-card aporte-neurotea">
+          <h3 class="text-lg font-semibold mb-2">Aporte Total a NeuroTEA</h3>
+          <p class="text-3xl font-bold" id="dashboard-aporte-neurotea">Gs 0</p>
         </div>
-        <div class="stat-card bg-purple-500">
-          <i data-lucide="building-2" class="w-8 h-8 mb-2"></i>
-          <p class="stat-value" id="total-bank">Gs 0</p>
-          <p class="stat-label">Cuenta NeuroTEA</p>
+        <div class="dashboard-card saldo-caja">
+          <h3 class="text-lg font-semibold mb-2">Saldo en Caja</h3>
+          <p class="text-3xl font-bold" id="dashboard-saldo-caja">Gs 0</p>
         </div>
-        <div class="stat-card bg-orange-500">
-          <i data-lucide="trending-up" class="w-8 h-8 mb-2"></i>
-          <p class="stat-value" id="total-contribution">Gs 0</p>
-          <p class="stat-label">Aporte NeuroTEA</p>
+        <div class="dashboard-card total-efectivo">
+          <h3 class="text-lg font-semibold mb-2">Total Efectivo</h3>
+          <p class="text-3xl font-bold" id="dashboard-total-efectivo">Gs 0</p>
+        </div>
+        <div class="dashboard-card cuenta-neurotea bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+          <h3 class="text-lg font-semibold mb-2 text-blue-800 dark:text-blue-200">Cuenta NeuroTEA</h3>
+          <p class="text-3xl font-bold text-blue-900 dark:text-blue-100" id="dashboard-cuenta-neurotea">Gs 0</p>
+        </div>
+        <div class="dashboard-card total-egresos bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+          <h3 class="text-lg font-semibold mb-2 text-red-800 dark:text-red-200">Total Egresos</h3>
+          <p class="text-3xl font-bold text-red-900 dark:text-red-100" id="dashboard-total-egresos">Gs 0</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab: Transferencias -->
+    <section id="tab-transferencias" class="tab-content hidden space-y-6">
+      <h2 class="text-2xl font-bold mb-6 flex items-center">
+        <i data-lucide="credit-card" class="w-6 h-6 mr-2"></i>
+        Transferencias del Dia
+      </h2>
+
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+        <div id="transfers-container">
+          <p class="text-gray-500 text-center py-4">No hay transferencias registradas</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab: Rendicion de Cuentas -->
+    <section id="tab-rendicion" class="tab-content hidden space-y-6">
+      <h2 class="text-2xl font-bold mb-6 flex items-center">
+        <i data-lucide="calculator" class="w-6 h-6 mr-2"></i>
+        Rendicion de Cuentas
+      </h2>
+
+      <!-- Resumen financiero -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+          <h3 class="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1">Cuenta NeuroTEA</h3>
+          <p class="text-2xl font-bold text-blue-900 dark:text-blue-100" id="rendicion-banco">Gs 0</p>
+        </div>
+        <div class="total-egresos-card">
+          <h3 class="text-sm font-medium text-red-800 dark:text-red-200 mb-1">Total Egresos</h3>
+          <p class="text-2xl font-bold text-red-900 dark:text-red-100" id="total-egresos-display">Gs 0</p>
+        </div>
+        <div class="saldo-caja-card">
+          <h3 class="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-1">Saldo en Caja</h3>
+          <p class="text-2xl font-bold text-yellow-900 dark:text-yellow-100" id="rendicion-saldo-caja">Gs 0</p>
         </div>
       </div>
 
-      <div class="card">
-        <h2 class="card-title">
-          <i data-lucide="table-2" class="w-5 h-5 mr-2"></i>
-          Detalle por Terapeuta
-        </h2>
+      <!-- Tabla de rendicion por terapeuta -->
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-semibold flex items-center">
+            <i data-lucide="users" class="w-5 h-5 mr-2"></i>
+            Rendicion por Terapeuta
+          </h3>
+          <button id="download-report-btn" onclick="generateRendicionHTML()" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md flex items-center space-x-2 transition-colors">
+            <i data-lucide="download" class="w-4 h-4"></i>
+            <span>Descargar Reporte</span>
+          </button>
+        </div>
         <div class="overflow-x-auto">
-          <table class="w-full">
+          <table class="w-full border-collapse border border-gray-300 dark:border-gray-600 text-sm">
             <thead>
-              <tr class="bg-gray-100 dark:bg-gray-700">
-                <th class="table-header">Terapeuta</th>
-                <th class="table-header">Sesiones</th>
-                <th class="table-header">Valor Total</th>
-                <th class="table-header">Aporte</th>
-                <th class="table-header">Honorarios</th>
-                <th class="table-header">Estado</th>
+              <tr class="bg-gray-50 dark:bg-gray-700">
+                <th class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-left">TERAPEUTA</th>
+                <th class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">INGRESO TOTAL</th>
+                <th class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">APORTE NEUROTEA</th>
+                <th class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">HONORARIOS</th>
+                <th class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">TRANSF. TERAPEUTA</th>
+                <th class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">ADELANTOS</th>
+                <th class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">NEUROTEA DEBE DAR</th>
+                <th class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">TERAPEUTA DEBE TRANSF.</th>
+                <th class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">ESTADO</th>
+                <th class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">ACCION</th>
               </tr>
             </thead>
-            <tbody id="summary-table-body">
-              <tr><td colspan="6" class="text-center py-4 text-gray-500">Sin datos</td></tr>
+            <tbody id="rendicion-therapist-table-body">
+              <tr>
+                <td colspan="10" class="text-center py-4 text-gray-500">No hay datos para mostrar</td>
+              </tr>
             </tbody>
           </table>
         </div>
       </div>
     </section>
 
-    <!-- Tab: Transferencias -->
-    <section id="tab-transferencias" class="tab-content hidden">
-      <div class="grid md:grid-cols-2 gap-6">
-        <div class="card">
-          <h2 class="card-title text-yellow-600">
-            <i data-lucide="clock" class="w-5 h-5 mr-2"></i>
-            Transferencias Pendientes
-          </h2>
-          <div id="pending-transfers" class="space-y-2">
-            <p class="text-gray-500 text-center py-4">No hay transferencias pendientes</p>
-          </div>
-        </div>
-        <div class="card">
-          <h2 class="card-title text-green-600">
-            <i data-lucide="check-circle" class="w-5 h-5 mr-2"></i>
-            Transferencias Confirmadas
-          </h2>
-          <div id="confirmed-transfers" class="space-y-2">
-            <p class="text-gray-500 text-center py-4">No hay transferencias confirmadas</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Tab: Rendicion -->
-    <section id="tab-rendicion" class="tab-content hidden">
-      <div class="card">
-        <h2 class="card-title">
-          <i data-lucide="calculator" class="w-5 h-5 mr-2"></i>
-          Rendicion de Cuentas
-        </h2>
-        <div id="rendicion-list" class="space-y-4">
-          <p class="text-gray-500 text-center py-4">Seleccione una fecha para ver la rendicion</p>
-        </div>
-      </div>
-    </section>
-
     <!-- Tab: Egresos -->
-    <section id="tab-egresos" class="tab-content hidden">
-      <div class="grid lg:grid-cols-2 gap-6">
-        <div class="card">
-          <h2 class="card-title">
-            <i data-lucide="minus-circle" class="w-5 h-5 mr-2 text-red-500"></i>
+    <section id="tab-egresos" class="tab-content hidden space-y-6">
+      <h2 class="text-2xl font-bold mb-6 flex items-center">
+        <i data-lucide="minus-circle" class="w-6 h-6 mr-2"></i>
+        Gestion de Egresos
+      </h2>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Formulario de egresos -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+          <h3 class="text-lg font-semibold mb-4 flex items-center">
+            <i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i>
             Registrar Egreso
-          </h2>
-          <form id="egreso-form" class="space-y-4">
+          </h3>
+
+          <div class="space-y-4">
             <div>
-              <label class="form-label">Tipo de Egreso</label>
-              <select id="egreso-type" class="form-select" required>
-                <option value="">Seleccione tipo...</option>
+              <label class="block text-sm font-medium mb-1" for="egreso-type">Tipo de Egreso</label>
+              <select id="egreso-type" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                <option value="">Seleccionar tipo</option>
+                <option value="gasto-neurotea">Gasto de NeuroTEA</option>
                 <option value="adelanto">Adelanto a Terapeuta</option>
-                <option value="gasto-neurotea">Gasto NeuroTEA</option>
               </select>
             </div>
-            <div id="egreso-therapist-container" class="hidden">
-              <label class="form-label">Terapeuta</label>
-              <select id="egreso-therapist" class="form-select">
-                <option value="">Seleccione terapeuta...</option>
+
+            <div id="egreso-therapist-container" style="display: none;">
+              <label class="block text-sm font-medium mb-1" for="egreso-therapist-select">Terapeuta</label>
+              <select id="egreso-therapist-select" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                <option value="">Seleccionar terapeuta</option>
               </select>
             </div>
+
             <div>
-              <label class="form-label">Concepto</label>
-              <input type="text" id="egreso-concept" class="form-input" placeholder="Descripcion del egreso">
+              <label class="block text-sm font-medium mb-1" for="egreso-concept">Concepto</label>
+              <input type="text" id="egreso-concept" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600" placeholder="Descripcion del egreso">
             </div>
+
             <div>
-              <label class="form-label">Monto</label>
-              <input type="number" id="egreso-amount" class="form-input" placeholder="0" min="1" required>
+              <label class="block text-sm font-medium mb-1" for="egreso-value">Monto</label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500 dark:text-gray-400">Gs</span>
+                <input type="text" inputmode="numeric" pattern="[0-9]*" id="egreso-value" class="w-full p-2 pl-8 border rounded-md dark:bg-gray-700 dark:border-gray-600" placeholder="0">
+              </div>
             </div>
-            <button type="submit" class="btn btn-primary w-full">
-              <i data-lucide="save" class="w-4 h-4 mr-2"></i>
+
+            <button id="add-egreso-btn" onclick="registerEgreso()" class="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md">
               Registrar Egreso
             </button>
-          </form>
+          </div>
         </div>
-        <div class="card">
-          <h2 class="card-title">
-            <i data-lucide="list" class="w-5 h-5 mr-2"></i>
-            Egresos del Dia
-          </h2>
-          <div id="egresos-list" class="space-y-2 max-h-96 overflow-y-auto">
-            <p class="text-gray-500 text-center py-4">No hay egresos registrados</p>
+
+        <!-- Lista de egresos -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-semibold flex items-center">
+              <i data-lucide="list" class="w-5 h-5 mr-2"></i>
+              Egresos del Dia
+            </h3>
+            <button id="clear-egresos-btn" onclick="clearDayEgresos()" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm">
+              Limpiar Egresos del Dia
+            </button>
+          </div>
+          <div id="egresos-list-container" class="space-y-3 max-h-96 overflow-y-auto">
+            <p class="text-gray-500 text-center py-4">No hay egresos registrados para este dia</p>
           </div>
         </div>
       </div>
     </section>
 
     <!-- Tab: Terapeutas -->
-    <section id="tab-terapeutas" class="tab-content hidden">
-      <div class="grid lg:grid-cols-2 gap-6">
-        <div class="card">
-          <h2 class="card-title">
-            <i data-lucide="user-plus" class="w-5 h-5 mr-2 text-blue-500"></i>
-            Agregar Terapeuta
-          </h2>
-          <form id="therapist-form" class="space-y-4">
+    <section id="tab-terapeutas" class="tab-content hidden space-y-6">
+      <h2 class="text-2xl font-bold mb-6 flex items-center">
+        <i data-lucide="users" class="w-6 h-6 mr-2"></i>
+        Gestion de Terapeutas
+      </h2>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Formulario para agregar terapeuta -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+          <h3 class="text-lg font-semibold mb-4 flex items-center">
+            <i data-lucide="user-plus" class="w-5 h-5 mr-2"></i>
+            Agregar Nueva Terapeuta
+          </h3>
+
+          <div class="space-y-4">
             <div>
-              <label class="form-label">Nombre del Terapeuta</label>
-              <input type="text" id="new-therapist-name" class="form-input" placeholder="Nombre completo" required>
+              <label class="block text-sm font-medium mb-1" for="new-therapist-name">Nombre Completo</label>
+              <input type="text" id="new-therapist-name" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600" placeholder="Ej: Lic. Maria Gonzalez">
             </div>
-            <button type="submit" class="btn btn-primary w-full">
-              <i data-lucide="plus" class="w-4 h-4 mr-2"></i>
+
+            <button id="add-therapist-btn" onclick="addTherapist()" class="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md">
               Agregar Terapeuta
             </button>
-          </form>
+          </div>
         </div>
-        <div class="card">
-          <h2 class="card-title">
-            <i data-lucide="users" class="w-5 h-5 mr-2"></i>
-            Lista de Terapeutas
-          </h2>
-          <div id="therapists-list" class="space-y-2">
-            <p class="text-gray-500 text-center py-4">No hay terapeutas registrados</p>
+
+        <!-- Lista de terapeutas -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-semibold flex items-center">
+              <i data-lucide="list" class="w-5 h-5 mr-2"></i>
+              Terapeutas Registradas
+            </h3>
+            <div class="text-sm text-gray-500 dark:text-gray-400" id="therapist-list-counter">0 terapeutas</div>
+          </div>
+          <div id="therapist-list-container" class="space-y-3">
+            <p class="text-gray-500 text-center py-4">No hay terapeutas registradas</p>
           </div>
         </div>
       </div>
     </section>
 
     <!-- Tab: Paquetes -->
-    <section id="tab-paquetes" class="tab-content hidden">
-      <div class="grid lg:grid-cols-2 gap-6">
-        <div class="card">
-          <h2 class="card-title">
-            <i data-lucide="package-plus" class="w-5 h-5 mr-2 text-green-500"></i>
-            Crear Paquete de Sesiones
-          </h2>
+    <section id="tab-paquetes" class="tab-content hidden space-y-6">
+      <h2 class="text-2xl font-bold mb-6 flex items-center">
+        <i data-lucide="package" class="w-6 h-6 mr-2"></i>
+        Gestion de Paquetes / Creditos
+      </h2>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Formulario crear paquete -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+          <h3 class="text-lg font-semibold mb-4 flex items-center">
+            <i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i>
+            Crear Nuevo Paquete
+          </h3>
+
           <form id="package-form" class="space-y-4">
             <div>
-              <label class="form-label">Terapeuta</label>
-              <select id="package-therapist" class="form-select" required>
-                <option value="">Seleccione terapeuta...</option>
+              <label class="block text-sm font-medium mb-1" for="package-patient-name">Nombre del Paciente</label>
+              <input type="text" id="package-patient-name" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600" placeholder="Ej: Lucia Garcia" required>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium mb-1" for="package-therapist">Terapeuta</label>
+              <select id="package-therapist" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600" required>
+                <option value="">Seleccionar terapeuta</option>
               </select>
             </div>
+
             <div>
-              <label class="form-label">Nombre del Paciente</label>
-              <input type="text" id="package-patient" class="form-input" placeholder="Nombre del paciente" required>
+              <label class="block text-sm font-medium mb-1" for="package-sessions">Cantidad de Sesiones</label>
+              <input type="number" id="package-sessions" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600" placeholder="Ej: 5" min="1" max="50" required>
             </div>
+
+            <!-- Desglose del Pago -->
             <div>
-              <label class="form-label">Cantidad de Sesiones</label>
-              <input type="number" id="package-sessions" class="form-input" min="1" value="10" required>
+              <label class="block text-sm font-medium mb-2">Desglose del Pago</label>
+
+              <div class="mb-3">
+                <label class="label-efectivo block text-sm font-medium mb-1" for="package-cash">Efectivo a NeuroTEA (Caja)</label>
+                <div class="relative">
+                  <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">Gs</span>
+                  <input type="text" inputmode="numeric" pattern="[0-9]*" id="package-cash" class="campo-efectivo w-full p-2 pl-8 border rounded-md" placeholder="0">
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <label class="label-transferencia-terapeuta block text-sm font-medium mb-1" for="package-transfer-therapist">Transferencia a Terapeuta</label>
+                <div class="relative">
+                  <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">Gs</span>
+                  <input type="text" inputmode="numeric" pattern="[0-9]*" id="package-transfer-therapist" class="campo-transferencia-terapeuta w-full p-2 pl-8 border rounded-md" placeholder="0">
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <label class="label-transferencia-neurotea block text-sm font-medium mb-1" for="package-transfer-neurotea">Transferencia a NeuroTEA</label>
+                <div class="relative">
+                  <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">Gs</span>
+                  <input type="text" inputmode="numeric" pattern="[0-9]*" id="package-transfer-neurotea" class="campo-transferencia-neurotea w-full p-2 pl-8 border rounded-md" placeholder="0">
+                </div>
+              </div>
             </div>
-            <div class="grid grid-cols-3 gap-3">
-              <div>
-                <label class="form-label">Efectivo</label>
-                <input type="number" id="package-cash" class="form-input" value="0" min="0">
-              </div>
-              <div>
-                <label class="form-label">Transfer. NeuroTEA</label>
-                <input type="number" id="package-transfer-neurotea" class="form-input" value="0" min="0">
-              </div>
-              <div>
-                <label class="form-label">Transfer. Terapeuta</label>
-                <input type="number" id="package-transfer-therapist" class="form-input" value="0" min="0">
-              </div>
-            </div>
+
+            <!-- Aporte a NeuroTEA -->
             <div>
-              <label class="form-label">Aporte NeuroTEA</label>
-              <select id="package-contribution" class="form-select">
-                <option value="30">30%</option>
-                <option value="20">20%</option>
-                <option value="40">40%</option>
-              </select>
+              <label class="block text-sm font-medium mb-2">Aporte a NeuroTEA</label>
+              <div class="space-y-2">
+                <div class="flex items-center">
+                  <input type="radio" id="package-contribution-20" name="package-neurotea-contribution" value="20" class="mr-2">
+                  <label for="package-contribution-20">20%</label>
+                </div>
+                <div class="flex items-center">
+                  <input type="radio" id="package-contribution-30" name="package-neurotea-contribution" value="30" checked class="mr-2">
+                  <label for="package-contribution-30">30%</label>
+                </div>
+                <div class="flex items-center">
+                  <input type="radio" id="package-contribution-fixed" name="package-neurotea-contribution" value="fixed" class="mr-2">
+                  <label for="package-contribution-fixed">Monto Fijo</label>
+                </div>
+                <div class="relative">
+                  <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">Gs</span>
+                  <input type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Monto fijo" id="package-fixed-amount-input" disabled class="w-full p-2 pl-8 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                </div>
+              </div>
             </div>
-            <button type="submit" class="btn btn-primary w-full">
-              <i data-lucide="save" class="w-4 h-4 mr-2"></i>
+
+            <!-- Totales Calculados -->
+            <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-md">
+              <div class="flex justify-between items-center mb-2">
+                <span class="text-sm font-medium">Total del Paquete:</span>
+                <span id="package-total" class="text-lg font-bold text-blue-600 dark:text-blue-400">Gs 0</span>
+              </div>
+              <div class="flex justify-between items-center mb-2">
+                <span class="text-sm text-gray-600 dark:text-gray-400">Aporte NeuroTEA:</span>
+                <span id="package-aporte-neurotea" class="text-sm font-medium text-orange-600">Gs 0</span>
+              </div>
+              <div class="flex justify-between items-center mb-2">
+                <span class="text-sm text-gray-600 dark:text-gray-400">Honorarios Terapeuta:</span>
+                <span id="package-honorarios-terapeuta" class="text-sm font-medium text-green-600">Gs 0</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm text-gray-600 dark:text-gray-400">Valor por Sesion:</span>
+                <span id="package-per-session" class="text-sm font-medium">Gs 0</span>
+              </div>
+            </div>
+
+            <button type="submit" id="create-package-btn" class="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md">
+              <i data-lucide="package-plus" class="w-4 h-4 inline mr-2"></i>
               Crear Paquete
             </button>
           </form>
         </div>
-        <div class="card">
-          <h2 class="card-title">
-            <i data-lucide="package" class="w-5 h-5 mr-2"></i>
-            Paquetes Activos
-          </h2>
-          <div id="packages-list" class="space-y-2 max-h-96 overflow-y-auto">
-            <p class="text-gray-500 text-center py-4">No hay paquetes activos</p>
+
+        <!-- Lista paquetes activos -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-semibold flex items-center">
+              <i data-lucide="list-checks" class="w-5 h-5 mr-2"></i>
+              Paquetes / Creditos Activos
+            </h3>
+            <div class="text-sm text-gray-500 dark:text-gray-400" id="active-packages-counter">0 paquetes activos</div>
+          </div>
+
+          <div id="active-packages-container" class="space-y-4 max-h-96 overflow-y-auto">
+            <p class="text-gray-500 text-center py-8">No hay paquetes activos</p>
           </div>
         </div>
       </div>
     </section>
 
     <!-- Tab: Grupos -->
-    <section id="tab-grupos" class="tab-content hidden">
-      <div class="grid lg:grid-cols-2 gap-6">
-        <div class="card">
-          <h2 class="card-title">
-            <i data-lucide="folder-plus" class="w-5 h-5 mr-2 text-purple-500"></i>
-            Crear Grupo
-          </h2>
-          <form id="group-form" class="space-y-4">
+    <section id="tab-grupos" class="tab-content hidden space-y-6">
+      <h2 class="text-2xl font-bold mb-6 flex items-center">
+        <i data-lucide="users" class="w-6 h-6 mr-2"></i>
+        Gestion de Grupos de Terapia
+      </h2>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Crear Nuevo Grupo -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+          <h3 class="text-lg font-semibold mb-4 flex items-center text-green-700 dark:text-green-400">
+            <i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i>
+            Crear Nuevo Grupo
+          </h3>
+
+          <div class="space-y-4">
             <div>
-              <label class="form-label">Nombre del Grupo</label>
-              <input type="text" id="group-name" class="form-input" placeholder="Ej: Grupo Lunes AM" required>
+              <label class="block text-sm font-medium mb-1">Nombre del Grupo</label>
+              <input type="text" id="new-group-name" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600" placeholder="Ej: Grupo Lunes Tarde">
             </div>
             <div>
-              <label class="form-label">Porcentaje Aporte NeuroTEA</label>
-              <select id="group-contribution" class="form-select">
-                <option value="30">30%</option>
-                <option value="20">20%</option>
-                <option value="40">40%</option>
-              </select>
+              <label class="block text-sm font-medium mb-1">% Aporte NeuroTEA</label>
+              <input type="number" id="new-group-percentage" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600" value="30" min="0" max="100">
             </div>
-            <div>
-              <label class="form-label">Ninos del Grupo</label>
-              <div id="group-children-inputs" class="space-y-2">
-                <div class="child-input-row flex space-x-2">
-                  <input type="text" placeholder="Nombre del nino" class="form-input flex-1 child-name">
-                  <input type="number" placeholder="Valor" class="form-input w-28 child-value" min="0">
-                  <button type="button" onclick="addChildInput()" class="btn btn-secondary">
-                    <i data-lucide="plus" class="w-4 h-4"></i>
-                  </button>
-                </div>
-              </div>
-            </div>
-            <button type="submit" class="btn btn-primary w-full">
-              <i data-lucide="save" class="w-4 h-4 mr-2"></i>
+            <button onclick="createGroup()" class="w-full bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md flex items-center justify-center">
+              <i data-lucide="plus" class="w-4 h-4 mr-2"></i>
               Crear Grupo
             </button>
-          </form>
+          </div>
         </div>
-        <div class="card">
-          <h2 class="card-title">
-            <i data-lucide="users-2" class="w-5 h-5 mr-2"></i>
-            Grupos Activos
-          </h2>
-          <div id="groups-list" class="space-y-2 max-h-96 overflow-y-auto">
-            <p class="text-gray-500 text-center py-4">No hay grupos registrados</p>
+
+        <!-- Lista de Grupos -->
+        <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-semibold flex items-center">
+              <i data-lucide="list" class="w-5 h-5 mr-2"></i>
+              Grupos Configurados
+            </h3>
+            <span id="grupos-counter" class="text-sm text-gray-500">0 grupos</span>
+          </div>
+
+          <div id="grupos-list-container" class="space-y-4">
+            <p class="text-gray-500 text-center py-8">No hay grupos configurados. Cree uno nuevo para comenzar.</p>
           </div>
         </div>
       </div>
     </section>
 
     <!-- Tab: Administracion -->
-    <section id="tab-admin" class="tab-content hidden">
-      <div class="grid md:grid-cols-2 gap-6">
-        <!-- Saldo Inicial -->
-        <div class="card">
-          <h2 class="card-title">
-            <i data-lucide="wallet" class="w-5 h-5 mr-2 text-green-500"></i>
-            Saldo Inicial del Dia
-          </h2>
-          <form id="saldo-form" class="space-y-4">
-            <div>
-              <label class="form-label">Efectivo en Caja</label>
-              <input type="number" id="saldo-inicial" class="form-input" placeholder="0" min="0">
-            </div>
-            <button type="submit" class="btn btn-primary w-full">
-              <i data-lucide="save" class="w-4 h-4 mr-2"></i>
-              Guardar Saldo Inicial
-            </button>
-          </form>
-        </div>
+    <section id="tab-admin" class="tab-content hidden space-y-6">
+      <h2 class="text-2xl font-bold mb-6 flex items-center">
+        <i data-lucide="settings" class="w-6 h-6 mr-2"></i>
+        Administracion del Sistema
+      </h2>
 
-        <!-- Backup -->
-        <div class="card">
-          <h2 class="card-title">
-            <i data-lucide="database" class="w-5 h-5 mr-2 text-blue-500"></i>
-            Backup y Restauracion
-          </h2>
-          <div class="space-y-3">
-            <button onclick="exportFullBackup()" class="btn btn-secondary w-full">
-              <i data-lucide="download" class="w-4 h-4 mr-2"></i>
-              Descargar Backup Completo
-            </button>
-            <button onclick="exportDayData()" class="btn btn-secondary w-full">
-              <i data-lucide="calendar" class="w-4 h-4 mr-2"></i>
-              Exportar Datos del Dia
-            </button>
-            <div class="border-t pt-3">
-              <label class="form-label">Importar Datos</label>
-              <input type="file" id="import-file" accept=".json" class="form-input">
-              <button onclick="importData()" class="btn btn-warning w-full mt-2">
-                <i data-lucide="upload" class="w-4 h-4 mr-2"></i>
-                Importar Archivo
-              </button>
+      <!-- Navegacion de Modulos Internos -->
+      <div class="admin-module-navigation">
+        <div class="flex space-x-2 border-b">
+          <button class="admin-module-tab active" onclick="switchAdminModule('gestion-datos')">
+            <i data-lucide="database" class="w-4 h-4 mr-2"></i>
+            Gestion de Datos
+          </button>
+          <button class="admin-module-tab disabled">
+            <i data-lucide="trending-up" class="w-4 h-4 mr-2"></i>
+            Analisis Financiero
+            <span class="text-xs text-gray-500 ml-1">(Proximamente)</span>
+          </button>
+          <button class="admin-module-tab disabled">
+            <i data-lucide="file-text" class="w-4 h-4 mr-2"></i>
+            Reportes Avanzados
+            <span class="text-xs text-gray-500 ml-1">(Proximamente)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Contenido del Modulo Gestion de Datos -->
+      <div id="gestion-datos-module" class="admin-module-content">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+          <!-- Seccion Exportar/Importar Dia -->
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+            <h3 class="text-lg font-semibold mb-4 flex items-center">
+              <i data-lucide="calendar" class="w-5 h-5 mr-2"></i>
+              Gestion del Dia
+            </h3>
+
+            <div class="space-y-4">
+              <div class="border rounded-lg p-4">
+                <h4 class="font-medium mb-2 flex items-center">
+                  <i data-lucide="download" class="w-4 h-4 mr-2"></i>
+                  Exportar Datos del Dia
+                </h4>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                  Exporta todas las sesiones, egresos y configuraciones de un dia especifico.
+                </p>
+                <div class="flex items-center space-x-2">
+                  <input type="date" id="export-date" class="border rounded px-3 py-2 text-sm dark:bg-gray-700 dark:border-gray-600">
+                  <button onclick="exportDayData()" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md text-sm">
+                    Exportar
+                  </button>
+                </div>
+              </div>
+
+              <div class="border rounded-lg p-4">
+                <h4 class="font-medium mb-2 flex items-center">
+                  <i data-lucide="upload" class="w-4 h-4 mr-2"></i>
+                  Importar Datos del Dia
+                </h4>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                  Importa datos de un dia desde archivo JSON.
+                </p>
+                <div class="space-y-2">
+                  <input type="file" id="import-day-file" accept=".json" class="border rounded px-3 py-2 text-sm w-full dark:bg-gray-700 dark:border-gray-600">
+                  <button onclick="importDayData()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm">
+                    Importar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Seccion Backup Completo -->
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+            <h3 class="text-lg font-semibold mb-4 flex items-center">
+              <i data-lucide="hard-drive" class="w-5 h-5 mr-2"></i>
+              Backup Completo
+            </h3>
+
+            <div class="space-y-4">
+              <div class="border rounded-lg p-4">
+                <h4 class="font-medium mb-2 flex items-center">
+                  <i data-lucide="download" class="w-4 h-4 mr-2"></i>
+                  Crear Backup
+                </h4>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                  Crea una copia de seguridad completa de todos los datos historicos del sistema.
+                </p>
+                <button onclick="createFullBackup()" class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-md text-sm">
+                  Crear Backup
+                </button>
+              </div>
+
+              <div class="border rounded-lg p-4 bg-red-50 dark:bg-red-900/20">
+                <h4 class="font-medium mb-2 flex items-center text-red-700 dark:text-red-400">
+                  <i data-lucide="alert-triangle" class="w-4 h-4 mr-2"></i>
+                  Restaurar Backup
+                </h4>
+                <p class="text-sm text-red-600 dark:text-red-400 mb-3">
+                  <strong>OPERACION DESTRUCTIVA:</strong> Reemplaza TODOS los datos actuales.
+                </p>
+                <div class="space-y-2">
+                  <input type="file" id="restore-backup-file" accept=".json" class="border rounded px-3 py-2 text-sm w-full dark:bg-gray-700 dark:border-gray-600">
+                  <button onclick="importFullBackup()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md text-sm">
+                    Restaurar
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- Estadisticas -->
-        <div class="card md:col-span-2">
-          <h2 class="card-title">
-            <i data-lucide="bar-chart" class="w-5 h-5 mr-2 text-purple-500"></i>
-            Estadisticas del Sistema
-          </h2>
-          <div id="system-stats" class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <!-- Se llena dinamicamente -->
+        <!-- Informacion del Sistema -->
+        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mt-6">
+          <h4 class="font-medium mb-2">Informacion del Sistema</h4>
+          <div id="system-info" class="text-sm text-gray-600 dark:text-gray-400">
+            <p>Cargando informacion del sistema...</p>
           </div>
         </div>
       </div>
     </section>
 
   </main>
+
+  <!-- Modal de Saldo Inicial -->
+  <div id="saldo-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+    <div class="flex items-center justify-center min-h-screen p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+        <div class="flex justify-between items-center p-6 border-b dark:border-gray-700">
+          <h3 class="text-lg font-semibold flex items-center">
+            <i data-lucide="coins" class="w-5 h-5 mr-2"></i>
+            Saldo Inicial de Caja
+          </h3>
+          <button onclick="closeSaldoModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <div class="p-6">
+          <div class="mb-4">
+            <label class="block text-sm font-medium mb-2">Saldo actual:</label>
+            <div class="flex items-center space-x-3">
+              <div class="flex items-center">
+                <span class="text-sm text-gray-500 mr-2">Gs</span>
+                <span id="saldo-actual-display" class="text-lg font-semibold">0</span>
+              </div>
+              <span id="saldo-status-text" class="badge badge-secondary">Sin definir</span>
+            </div>
+          </div>
+
+          <!-- Modo edicion -->
+          <div id="saldo-edit-section" class="hidden">
+            <div class="mb-4">
+              <label class="block text-sm font-medium mb-1">Nuevo saldo inicial:</label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">Gs</span>
+                <input type="text" inputmode="numeric" pattern="[0-9]*" id="nuevo-saldo-input" class="w-full p-2 pl-8 border rounded-md dark:bg-gray-700 dark:border-gray-600" placeholder="0">
+              </div>
+            </div>
+
+            <div class="flex space-x-2 mb-4">
+              <button onclick="saveSaldoInicial()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md text-sm">
+                <i data-lucide="check" class="w-4 h-4 inline mr-1"></i>
+                Guardar
+              </button>
+              <button onclick="toggleEditMode()" class="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-md text-sm">
+                Cancelar
+              </button>
+            </div>
+          </div>
+
+          <!-- Botones de accion -->
+          <div id="saldo-action-buttons" class="flex space-x-2 mb-4">
+            <button onclick="toggleEditMode()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md text-sm">
+              <i data-lucide="edit" class="w-4 h-4 inline mr-1"></i>
+              Editar
+            </button>
+          </div>
+        </div>
+
+        <div class="flex justify-end p-6 border-t dark:border-gray-700">
+          <button onclick="closeSaldoModal()" class="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-md">
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Sesion Grupal -->
+  <div id="group-session-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+    <div class="fixed inset-0 flex items-center justify-center p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+        <div class="flex justify-between items-center p-6 border-b dark:border-gray-700 bg-green-50 dark:bg-green-900/20">
+          <h3 class="text-xl font-bold text-green-800 dark:text-green-200 flex items-center">
+            <i data-lucide="users" class="w-6 h-6 mr-2"></i>
+            Registrar Sesion Grupal
+          </h3>
+          <button onclick="closeGroupSessionModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            <i data-lucide="x" class="w-6 h-6"></i>
+          </button>
+        </div>
+
+        <div class="p-6 overflow-y-auto max-h-[70vh]">
+          <!-- Seleccion de Grupo -->
+          <div class="mb-4">
+            <label class="block text-sm font-medium mb-1">Seleccionar Grupo</label>
+            <select id="group-select" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600" onchange="onGroupSelectChange()">
+              <option value="">-- Seleccione un grupo --</option>
+            </select>
+          </div>
+
+          <!-- Terapeutas de la Sesion -->
+          <div id="group-therapists-section" class="mb-4 hidden">
+            <label class="block text-sm font-medium mb-2">Terapeutas de la Sesion</label>
+            <div id="group-therapists-list" class="border rounded-lg p-3 bg-gray-50 dark:bg-gray-700">
+            </div>
+          </div>
+
+          <!-- Asistencia y Pagos por Nino -->
+          <div id="group-attendance-section" class="mb-4 hidden">
+            <label class="block text-sm font-medium mb-2">Asistencia y Forma de Pago por Nino</label>
+            <p class="text-xs text-gray-500 mb-3">Marque los ninos presentes e ingrese como pago cada uno</p>
+            <div id="group-attendance-list" class="space-y-3 border rounded-lg p-3 bg-gray-50 dark:bg-gray-700 max-h-64 overflow-y-auto">
+            </div>
+          </div>
+
+          <!-- Resumen Consolidado -->
+          <div id="group-values-section" class="mb-4 hidden">
+            <div class="border rounded-lg p-4 bg-green-50 dark:bg-green-900/20">
+              <h4 class="font-semibold mb-3 text-green-700 dark:text-green-300">Resumen Consolidado</h4>
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-4">
+                <div>
+                  <span class="text-gray-600 dark:text-gray-400 block">Ninos presentes:</span>
+                  <span id="group-children-count" class="font-bold text-lg">0</span>
+                </div>
+                <div>
+                  <span class="text-gray-600 dark:text-gray-400 block">Total Sesion:</span>
+                  <span id="group-total-value" class="font-bold text-lg">Gs 0</span>
+                </div>
+                <div>
+                  <span class="text-gray-600 dark:text-gray-400 block">Aporte NeuroTEA:</span>
+                  <span id="group-neurotea-value" class="font-bold text-lg text-blue-600">Gs 0</span>
+                </div>
+                <div>
+                  <span class="text-gray-600 dark:text-gray-400 block">Honorarios/Terapeuta:</span>
+                  <span id="group-therapist-fee" class="font-bold text-lg text-purple-600">Gs 0</span>
+                </div>
+              </div>
+
+              <div class="border-t dark:border-gray-600 pt-3 mt-3">
+                <h5 class="text-sm font-medium mb-2">Desglose de Pagos:</h5>
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                  <div class="bg-green-100 dark:bg-green-800/30 p-2 rounded">
+                    <span class="text-green-700 dark:text-green-300 block text-xs">Efectivo (Caja)</span>
+                    <span id="group-total-cash" class="font-bold">Gs 0</span>
+                  </div>
+                  <div class="bg-blue-100 dark:bg-blue-800/30 p-2 rounded">
+                    <span class="text-blue-700 dark:text-blue-300 block text-xs">Transf. NeuroTEA</span>
+                    <span id="group-total-transfer-neurotea" class="font-bold">Gs 0</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-between p-6 border-t dark:border-gray-700">
+          <button onclick="closeGroupSessionModal()" class="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-md">
+            Cancelar
+          </button>
+          <button id="register-group-btn" onclick="registerGroupSession()" disabled class="bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white py-2 px-4 rounded-md flex items-center">
+            <i data-lucide="check" class="w-4 h-4 mr-2"></i>
+            Registrar Sesion Grupal
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Editar Grupo -->
+  <div id="edit-group-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+    <div class="fixed inset-0 flex items-center justify-center p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+        <div class="flex justify-between items-center p-6 border-b dark:border-gray-700 bg-blue-50 dark:bg-blue-900/20">
+          <h3 class="text-xl font-bold text-blue-800 dark:text-blue-200 flex items-center">
+            <i data-lucide="edit" class="w-6 h-6 mr-2"></i>
+            Editar Grupo: <span id="edit-group-title" class="ml-2"></span>
+          </h3>
+          <button onclick="closeEditGroupModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            <i data-lucide="x" class="w-6 h-6"></i>
+          </button>
+        </div>
+
+        <div class="p-6 overflow-y-auto max-h-[60vh]">
+          <input type="hidden" id="edit-group-id">
+
+          <!-- Datos del Grupo -->
+          <div class="mb-6">
+            <div class="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label class="block text-sm font-medium mb-1">Nombre del Grupo</label>
+                <input type="text" id="edit-group-name" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1">% Aporte NeuroTEA</label>
+                <input type="number" id="edit-group-percentage" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600" min="0" max="100">
+              </div>
+            </div>
+          </div>
+
+          <!-- Agregar Nino -->
+          <div class="mb-4 border rounded-lg p-4 bg-gray-50 dark:bg-gray-700">
+            <h4 class="font-medium mb-3">Agregar Nino al Grupo</h4>
+            <div class="flex gap-2">
+              <div class="flex-1">
+                <label class="block text-xs mb-1">Nombre del Nino</label>
+                <input type="text" id="new-child-name" class="w-full p-2 border rounded-md text-sm dark:bg-gray-600 dark:border-gray-500" placeholder="Nombre del nino">
+              </div>
+              <div class="flex items-end">
+                <button onclick="addChildToCurrentGroup()" class="bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-md text-sm">
+                  <i data-lucide="user-plus" class="w-4 h-4 inline mr-1"></i>
+                  Agregar
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Lista de Ninos -->
+          <div>
+            <h4 class="font-medium mb-2">Ninos en el Grupo</h4>
+            <div id="edit-group-children-list" class="space-y-2 max-h-48 overflow-y-auto">
+              <p class="text-gray-500 text-center py-4">No hay ninos en este grupo</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-between p-6 border-t dark:border-gray-700">
+          <button onclick="deleteGroup(document.getElementById('edit-group-id').value)" class="bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-md flex items-center">
+            <i data-lucide="trash-2" class="w-4 h-4 mr-2"></i>
+            Eliminar Grupo
+          </button>
+          <div class="flex space-x-2">
+            <button onclick="closeEditGroupModal()" class="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-md">
+              Cancelar
+            </button>
+            <button onclick="saveGroupChanges()" class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md">
+              Guardar Cambios
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Notification Toast -->
   <div id="notification-container" class="fixed bottom-4 right-4 z-50 space-y-2">
