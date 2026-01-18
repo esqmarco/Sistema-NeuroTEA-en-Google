@@ -522,11 +522,49 @@ function updateSummaryView() {
     totalCash -= e.monto || 0;
   });
 
-  // Actualizar stats
-  document.getElementById('total-sessions').textContent = totalSessions;
-  document.getElementById('total-cash').textContent = formatCurrency(Math.max(0, totalCash));
-  document.getElementById('total-bank').textContent = formatCurrency(Math.max(0, totalBank));
-  document.getElementById('total-contribution').textContent = formatCurrency(totalContribution);
+  // Calcular ingreso total
+  let ingresoTotal = 0;
+  sesiones.forEach(s => {
+    if (!s.usaCredito) ingresoTotal += s.valorSesion || 0;
+  });
+  sesionesGrupales.forEach(gs => {
+    ingresoTotal += gs.valorTotal || 0;
+  });
+
+  // Calcular total egresos
+  let totalEgresos = 0;
+  egresos.forEach(e => {
+    totalEgresos += e.monto || 0;
+  });
+
+  // Actualizar dashboard cards (usando IDs correctos del HTML)
+  const dashboardIngresoTotal = document.getElementById('dashboard-ingreso-total');
+  if (dashboardIngresoTotal) dashboardIngresoTotal.textContent = formatCurrency(ingresoTotal);
+
+  const dashboardAporteNeurotea = document.getElementById('dashboard-aporte-neurotea');
+  if (dashboardAporteNeurotea) dashboardAporteNeurotea.textContent = formatCurrency(totalContribution);
+
+  const dashboardSaldoCaja = document.getElementById('dashboard-saldo-caja');
+  if (dashboardSaldoCaja) dashboardSaldoCaja.textContent = formatCurrency(Math.max(0, totalCash));
+
+  const dashboardTotalEfectivo = document.getElementById('dashboard-total-efectivo');
+  if (dashboardTotalEfectivo) dashboardTotalEfectivo.textContent = formatCurrency(totalCash);
+
+  const dashboardCuentaNeurotea = document.getElementById('dashboard-cuenta-neurotea');
+  if (dashboardCuentaNeurotea) dashboardCuentaNeurotea.textContent = formatCurrency(Math.max(0, totalBank));
+
+  const dashboardTotalEgresos = document.getElementById('dashboard-total-egresos');
+  if (dashboardTotalEgresos) dashboardTotalEgresos.textContent = formatCurrency(totalEgresos);
+
+  // Actualizar cards en rendicion tambien
+  const rendicionBanco = document.getElementById('rendicion-banco');
+  if (rendicionBanco) rendicionBanco.textContent = formatCurrency(Math.max(0, totalBank));
+
+  const rendicionSaldoCaja = document.getElementById('rendicion-saldo-caja');
+  if (rendicionSaldoCaja) rendicionSaldoCaja.textContent = formatCurrency(Math.max(0, totalCash));
+
+  const totalEgresosDisplay = document.getElementById('total-egresos-display');
+  if (totalEgresosDisplay) totalEgresosDisplay.textContent = formatCurrency(totalEgresos);
 
   // Actualizar tabla de resumen por terapeuta
   updateSummaryTable();
@@ -536,7 +574,7 @@ function updateSummaryView() {
  * Actualiza tabla de resumen por terapeuta
  */
 function updateSummaryTable() {
-  const tbody = document.getElementById('summary-table-body');
+  const tbody = document.getElementById('rendicion-therapist-table-body');
 
   // Agrupar por terapeuta
   const byTherapist = {};
@@ -615,139 +653,138 @@ function updateSummaryTable() {
  * Actualiza vista de transferencias
  */
 function updateTransfersView() {
+  const container = document.getElementById('transfers-container');
+  if (!container) return;
+
   // Obtener transferencias del servidor
   google.script.run
     .withSuccessHandler(function(transfers) {
-      const pendingContainer = document.getElementById('pending-transfers');
-      const confirmedContainer = document.getElementById('confirmed-transfers');
+      if (!transfers || transfers.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay transferencias registradas</p>';
+        return;
+      }
 
       const pending = transfers.filter(t => !t.confirmado);
       const confirmed = transfers.filter(t => t.confirmado);
 
-      // Pendientes
+      let html = '';
+
+      // Seccion de pendientes
+      html += '<div class="mb-6"><h3 class="text-lg font-semibold mb-3 text-yellow-600">Pendientes (' + pending.length + ')</h3>';
       if (pending.length === 0) {
-        pendingContainer.innerHTML = '<p class="text-gray-500 text-center py-4">No hay transferencias pendientes</p>';
+        html += '<p class="text-gray-500 text-center py-2">No hay transferencias pendientes</p>';
       } else {
-        pendingContainer.innerHTML = pending.map(t => `
-          <div class="transfer-item">
+        html += '<div class="space-y-2">' + pending.map(t => `
+          <div class="transfer-item bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-md border border-yellow-200 dark:border-yellow-800">
             <div class="flex justify-between items-center">
               <div>
-                <p class="font-medium text-gray-800 dark:text-white">${t.paciente}</p>
-                <p class="text-sm text-gray-500">${t.terapeuta || t.grupoNombre || ''} - ${t.tipo}</p>
+                <p class="font-medium text-gray-800 dark:text-white">${t.paciente || 'Sin paciente'}</p>
+                <p class="text-sm text-gray-500">${t.terapeuta || t.grupoNombre || ''} - ${t.tipo || 'Transferencia'}</p>
               </div>
               <div class="flex items-center space-x-3">
                 <span class="font-semibold text-yellow-600">${formatCurrency(t.monto)}</span>
-                <button onclick="toggleTransfer('${t.id}')" class="transfer-status-btn pending">
-                  <span class="status-icon">Pendiente</span>
+                <button onclick="toggleTransfer('${t.id}')" class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-sm">
+                  Confirmar
                 </button>
               </div>
             </div>
           </div>
-        `).join('');
+        `).join('') + '</div>';
       }
+      html += '</div>';
 
-      // Confirmadas
+      // Seccion de confirmadas
+      html += '<div><h3 class="text-lg font-semibold mb-3 text-green-600">Confirmadas (' + confirmed.length + ')</h3>';
       if (confirmed.length === 0) {
-        confirmedContainer.innerHTML = '<p class="text-gray-500 text-center py-4">No hay transferencias confirmadas</p>';
+        html += '<p class="text-gray-500 text-center py-2">No hay transferencias confirmadas</p>';
       } else {
-        confirmedContainer.innerHTML = confirmed.map(t => `
-          <div class="transfer-item">
+        html += '<div class="space-y-2">' + confirmed.map(t => `
+          <div class="transfer-item bg-green-50 dark:bg-green-900/20 p-3 rounded-md border border-green-200 dark:border-green-800">
             <div class="flex justify-between items-center">
               <div>
-                <p class="font-medium text-gray-800 dark:text-white">${t.paciente}</p>
+                <p class="font-medium text-gray-800 dark:text-white">${t.paciente || 'Sin paciente'}</p>
                 <p class="text-sm text-gray-500">${t.terapeuta || t.grupoNombre || ''}</p>
               </div>
               <div class="flex items-center space-x-3">
                 <span class="font-semibold text-green-600">${formatCurrency(t.monto)}</span>
-                <button onclick="toggleTransfer('${t.id}')" class="transfer-status-btn confirmed">
-                  <span class="status-icon">Confirmado</span>
+                <button onclick="toggleTransfer('${t.id}')" class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm">
+                  Revertir
                 </button>
               </div>
             </div>
           </div>
-        `).join('');
+        `).join('') + '</div>';
       }
+      html += '</div>';
 
+      container.innerHTML = html;
       lucide.createIcons();
     })
     .withFailureHandler(function(error) {
       console.error('Error cargando transferencias:', error);
+      container.innerHTML = '<p class="text-red-500 text-center py-4">Error cargando transferencias</p>';
     })
     .getTransferenciasPendientes(fechaActual);
 }
 
 /**
  * Actualiza vista de rendicion
+ * Genera filas de tabla con datos de rendicion por terapeuta
  */
 function updateRendicionView() {
-  const container = document.getElementById('rendicion-list');
+  const tbody = document.getElementById('rendicion-therapist-table-body');
+  if (!tbody) {
+    console.warn('Elemento rendicion-therapist-table-body no encontrado');
+    return;
+  }
 
   google.script.run
     .withSuccessHandler(function(resumen) {
-      if (!resumen.terapeutas || resumen.terapeutas.length === 0) {
-        container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay datos de rendicion para esta fecha</p>';
+      if (!resumen || !resumen.terapeutas || resumen.terapeutas.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-gray-500">No hay datos de rendicion para esta fecha</td></tr>';
         return;
       }
 
       let html = '';
 
       resumen.terapeutas.forEach(status => {
-        const cardClass = getRendicionCardClass(status.estado);
         const badgeClass = getBadgeClass(status.estado);
+        const ingresoTotal = (status.valorSesiones || 0) + (status.valorGrupales || 0);
 
         html += `
-          <div class="rendicion-card ${cardClass}">
-            <div class="flex justify-between items-start mb-3">
-              <div>
-                <h3 class="font-semibold text-gray-800 dark:text-white">${status.terapeuta}</h3>
-                <span class="badge ${badgeClass}">${status.estado}</span>
-              </div>
-              <div class="text-right">
-                <p class="text-sm text-gray-500">Sesiones: ${status.totalSesionesIndividuales + status.totalSesionesGrupales}</p>
-                <p class="text-sm text-gray-500">Honorarios: ${formatCurrency(status.honorarios)}</p>
-              </div>
-            </div>
-            <div class="grid grid-cols-2 gap-2 text-sm">
-              <div>Transferencias recibidas: <span class="font-medium">${formatCurrency(status.transferenciaATerapeuta)}</span></div>
-              <div>Adelantos: <span class="font-medium">${formatCurrency(status.adelantosRecibidos)}</span></div>
-            </div>
-            ${status.neuroteaLeDebe > 0 ? `
-              <div class="mt-3 p-2 bg-green-100 dark:bg-green-900 rounded">
-                <p class="text-green-700 dark:text-green-300 font-medium">NeuroTEA debe pagar: ${formatCurrency(status.neuroteaLeDebe)}</p>
-              </div>
-            ` : ''}
-            ${status.terapeutaDebe > 0 ? `
-              <div class="mt-3 p-2 bg-red-100 dark:bg-red-900 rounded">
-                <p class="text-red-700 dark:text-red-300 font-medium">Terapeuta debe dar: ${formatCurrency(status.terapeutaDebe)}</p>
-              </div>
-            ` : ''}
-            ${!status.confirmacionInfo ? `
-              <div class="mt-3 flex space-x-2">
-                ${getPaymentActionHTML(status)}
-                <button onclick="generateReceipt('${status.terapeuta}')" class="btn btn-secondary btn-sm">
-                  <i data-lucide="file-text" class="w-4 h-4"></i>
+          <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+            <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 font-medium">${status.terapeuta}</td>
+            <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">${formatCurrency(ingresoTotal)}</td>
+            <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">${formatCurrency(status.aporteNeurotea || 0)}</td>
+            <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">${formatCurrency(status.honorarios || 0)}</td>
+            <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">${formatCurrency(status.transferenciaATerapeuta || 0)}</td>
+            <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">${formatCurrency(status.adelantosRecibidos || 0)}</td>
+            <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center text-green-600 font-medium">${formatCurrency(status.neuroteaLeDebe || 0)}</td>
+            <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center text-red-600 font-medium">${formatCurrency(status.terapeutaDebe || 0)}</td>
+            <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">
+              <span class="badge ${badgeClass} text-xs">${status.estado}</span>
+            </td>
+            <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">
+              ${!status.confirmacionInfo ? `
+                <button onclick="confirmarRendicion('${status.terapeuta}')" class="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs">
+                  Confirmar
                 </button>
-              </div>
-            ` : `
-              <div class="mt-3 flex items-center justify-between">
-                <span class="text-green-600 font-medium">
-                  <i data-lucide="check-circle" class="w-4 h-4 inline mr-1"></i>
-                  Pago confirmado (${status.confirmacionInfo.tipoOpcion || 'exacto'})
-                </span>
-                <button onclick="revertConfirmation('${status.terapeuta}')" class="btn btn-danger btn-sm">
+              ` : `
+                <button onclick="revertConfirmation('${status.terapeuta}')" class="bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded text-xs">
                   Revertir
                 </button>
-              </div>
-            `}
-          </div>
+              `}
+            </td>
+          </tr>
         `;
       });
 
-      container.innerHTML = html;
+      tbody.innerHTML = html;
       lucide.createIcons();
     })
     .withFailureHandler(function(error) {
-      container.innerHTML = '<p class="text-red-500 text-center py-4">Error cargando rendicion</p>';
+      console.error('Error cargando rendicion:', error);
+      tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-red-500">Error cargando rendicion</td></tr>';
     })
     .getResumenRendicion(fechaActual);
 }
@@ -756,7 +793,7 @@ function updateRendicionView() {
  * Actualiza lista de egresos
  */
 function updateEgresosList() {
-  const container = document.getElementById('egresos-list');
+  const container = document.getElementById('egresos-list-container');
 
   if (egresos.length === 0) {
     container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay egresos registrados</p>';
@@ -818,7 +855,7 @@ function updateTherapistsList() {
  * Actualiza lista de paquetes
  */
 function updatePackagesList() {
-  const container = document.getElementById('packages-list');
+  const container = document.getElementById('active-packages-container');
 
   if (paquetesActivos.length === 0) {
     container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay paquetes activos</p>';
@@ -856,7 +893,7 @@ function updatePackagesList() {
  * Actualiza lista de grupos
  */
 function updateGroupsList() {
-  const container = document.getElementById('groups-list');
+  const container = document.getElementById('grupos-list-container');
 
   if (gruposActivos.length === 0) {
     container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay grupos registrados</p>';
@@ -913,7 +950,7 @@ function updateAdminView() {
   // Cargar estadisticas
   google.script.run
     .withSuccessHandler(function(stats) {
-      const container = document.getElementById('system-stats');
+      const container = document.getElementById('system-info');
       container.innerHTML = `
         <div class="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded">
           <p class="text-2xl font-bold text-blue-600">${stats.totalTerapeutas || 0}</p>
@@ -946,16 +983,24 @@ function updateAdminView() {
 function handleSessionSubmit(e) {
   e.preventDefault();
 
+  // Verificar modo de registro
+  const modoRegistro = document.querySelector('input[name="modo-registro"]:checked');
+  const usaCredito = modoRegistro && modoRegistro.value === 'usar-credito';
+
+  // Obtener tipo de aporte desde radio buttons
+  const aporteRadio = document.querySelector('input[name="neurotea-contribution"]:checked');
+  const tipoAporte = aporteRadio ? aporteRadio.value : '30';
+
   const sessionData = {
     fecha: fechaActual,
     terapeuta: document.getElementById('therapist-select').value,
     paciente: document.getElementById('patient-name').value.trim(),
-    efectivo: parseInt(document.getElementById('cash-amount').value) || 0,
-    transferenciaNeurotea: parseInt(document.getElementById('transfer-neurotea').value) || 0,
-    transferenciaTerminapeuta: parseInt(document.getElementById('transfer-therapist').value) || 0,
-    tipoAporte: document.getElementById('contribution-type').value,
-    aporteNeurotea: parseInt(document.getElementById('fixed-contribution').value) || 0,
-    usaCredito: document.getElementById('use-credit').checked
+    efectivo: parseNumber(document.getElementById('cash-to-neurotea').value),
+    transferenciaNeurotea: parseNumber(document.getElementById('transfer-to-neurotea').value),
+    transferenciaTerminapeuta: parseNumber(document.getElementById('transfer-to-therapist').value),
+    tipoAporte: tipoAporte,
+    aporteNeurotea: parseNumber(document.getElementById('fixed-amount-input').value),
+    usaCredito: usaCredito
   };
 
   // Validaciones
@@ -1036,8 +1081,16 @@ function handleGroupSessionSubmit(e) {
       showLoading(false);
       if (result.success) {
         showNotification('Sesion grupal registrada', 'success');
-        document.getElementById('group-session-form').reset();
-        document.getElementById('group-children-list').classList.add('hidden');
+        // Resetear campos del modal de sesion grupal
+        const groupSelect = document.getElementById('group-select');
+        if (groupSelect) groupSelect.value = '';
+        const attendanceSection = document.getElementById('group-attendance-section');
+        if (attendanceSection) attendanceSection.classList.add('hidden');
+        const therapistsSection = document.getElementById('group-therapists-section');
+        if (therapistsSection) therapistsSection.classList.add('hidden');
+        const valuesSection = document.getElementById('group-values-section');
+        if (valuesSection) valuesSection.classList.add('hidden');
+        closeGroupSessionModal();
         loadDateData(fechaActual);
       } else {
         showNotification(result.message, 'error');
@@ -1059,9 +1112,9 @@ function handleEgresoSubmit(e) {
   const egresoData = {
     fecha: fechaActual,
     tipo: document.getElementById('egreso-type').value,
-    terapeuta: document.getElementById('egreso-therapist').value,
+    terapeuta: document.getElementById('egreso-therapist-select').value,
     concepto: document.getElementById('egreso-concept').value,
-    monto: parseInt(document.getElementById('egreso-amount').value) || 0
+    monto: parseInt(document.getElementById('egreso-value').value) || 0
   };
 
   if (!egresoData.tipo) {
@@ -1186,8 +1239,8 @@ function handlePackageSubmit(e) {
 function handleGroupSubmit(e) {
   e.preventDefault();
 
-  const nombre = document.getElementById('group-name').value.trim();
-  const porcentajeAporte = document.getElementById('group-contribution').value;
+  const nombre = document.getElementById('new-group-name').value.trim();
+  const porcentajeAporte = document.getElementById('new-group-percentage').value;
 
   // Obtener ninos
   const childRows = document.querySelectorAll('#group-children-inputs .child-input-row');
@@ -1218,14 +1271,14 @@ function handleGroupSubmit(e) {
       showLoading(false);
       if (result.success) {
         showNotification('Grupo creado', 'success');
-        document.getElementById('group-form').reset();
-        // Reset inputs de ninos
-        document.getElementById('group-children-inputs').innerHTML = `
-          <div class="child-input-row flex space-x-2">
-            <input type="text" placeholder="Nombre del nino" class="form-input flex-1 child-name">
-            <input type="number" placeholder="Valor" class="form-input w-28 child-value" min="0">
-            <button type="button" onclick="addChildInput()" class="btn btn-secondary">
-              <i data-lucide="plus" class="w-4 h-4"></i>
+        // Resetear campos del formulario de grupo
+        const newGroupName = document.getElementById('new-group-name');
+        if (newGroupName) newGroupName.value = '';
+        const newGroupPercentage = document.getElementById('new-group-percentage');
+        if (newGroupPercentage) newGroupPercentage.value = '30';
+        // Nota: grupo-children-inputs no existe en el HTML actual
+        // Los grupos se crean sin ninos inicialmente, se agregan despues
+        // Recargar lista de grupos
             </button>
           </div>
         `;
@@ -1356,9 +1409,44 @@ function showNotification(message, type = 'info') {
  * Resetea formulario de sesion
  */
 function resetSessionForm() {
-  document.getElementById('session-form').reset();
-  document.getElementById('credit-indicator').classList.add('hidden');
-  document.getElementById('fixed-contribution').classList.add('hidden');
+  // Resetear campos individuales (no hay form element)
+  const patientName = document.getElementById('patient-name');
+  if (patientName) patientName.value = '';
+
+  const cashInput = document.getElementById('cash-to-neurotea');
+  if (cashInput) cashInput.value = '';
+
+  const transferNeurotea = document.getElementById('transfer-to-neurotea');
+  if (transferNeurotea) transferNeurotea.value = '';
+
+  const transferTherapist = document.getElementById('transfer-to-therapist');
+  if (transferTherapist) transferTherapist.value = '';
+
+  // Resetear radio buttons de modo de registro a "pago-dia"
+  const modoPagoDia = document.getElementById('modo-pago-dia');
+  if (modoPagoDia) modoPagoDia.checked = true;
+
+  // Resetear radio buttons de aporte a 30%
+  const contribution30 = document.getElementById('contribution-30');
+  if (contribution30) contribution30.checked = true;
+
+  // Resetear monto fijo
+  const fixedInput = document.getElementById('fixed-amount-input');
+  if (fixedInput) {
+    fixedInput.value = '';
+    fixedInput.disabled = true;
+  }
+
+  // Ocultar indicador de credito
+  const creditIndicator = document.getElementById('credit-indicator');
+  if (creditIndicator) creditIndicator.classList.add('hidden');
+
+  // Ocultar seccion de paciente con creditos
+  const creditSection = document.getElementById('paciente-credito-section');
+  if (creditSection) creditSection.style.display = 'none';
+
+  // Actualizar displays de valores
+  updatePaymentDisplay();
 }
 
 /**
@@ -1372,18 +1460,28 @@ function checkPatientCredits() {
 
   google.script.run
     .withSuccessHandler(function(result) {
-      const indicator = document.getElementById('credit-indicator');
-      const checkbox = document.getElementById('use-credit');
+      // Mostrar informacion de creditos disponibles
+      const creditInfo = document.getElementById('creditos-info-display');
+      const modoUsarCredito = document.getElementById('modo-usar-credito');
 
-      if (result.hasCredits) {
-        document.getElementById('credit-count').textContent = result.totalRemaining;
-        indicator.classList.remove('hidden');
-        checkbox.disabled = false;
+      if (result && result.hasCredits) {
+        if (creditInfo) {
+          creditInfo.textContent = `${result.totalRemaining} creditos disponibles`;
+          creditInfo.classList.remove('hidden');
+        }
+        // Habilitar opcion de usar credito
+        if (modoUsarCredito) modoUsarCredito.disabled = false;
       } else {
-        indicator.classList.add('hidden');
-        checkbox.checked = false;
-        checkbox.disabled = true;
+        if (creditInfo) {
+          creditInfo.textContent = '';
+          creditInfo.classList.add('hidden');
+        }
+        // Deshabilitar opcion de usar credito si no hay creditos
+        if (modoUsarCredito) modoUsarCredito.disabled = true;
       }
+    })
+    .withFailureHandler(function(error) {
+      console.warn('Error verificando creditos:', error);
     })
     .verificarCreditos(paciente, terapeuta);
 }
@@ -1393,8 +1491,8 @@ function checkPatientCredits() {
  */
 function handleGroupSelection() {
   const grupoId = document.getElementById('group-select').value;
-  const childrenContainer = document.getElementById('group-children-list');
-  const attendanceDiv = document.getElementById('children-attendance');
+  const childrenContainer = document.getElementById('group-attendance-section');
+  const attendanceDiv = document.getElementById('group-attendance-list');
 
   if (!grupoId) {
     childrenContainer.classList.add('hidden');
@@ -1436,19 +1534,27 @@ function handleGroupSelection() {
 
 /**
  * Agrega input para nino en formulario de grupo
+ * Nota: Esta funcion requiere un contenedor con id 'group-children-inputs' o 'edit-group-children-list'
  */
 function addChildInput() {
-  const container = document.getElementById('group-children-inputs');
+  // Buscar el contenedor correcto
+  const container = document.getElementById('edit-group-children-list');
+  if (!container) {
+    console.warn('Contenedor de ninos no encontrado');
+    return;
+  }
+
   const newRow = document.createElement('div');
-  newRow.className = 'child-input-row flex space-x-2';
+  newRow.className = 'flex items-center space-x-2 p-2 bg-gray-50 dark:bg-gray-700 rounded';
   newRow.innerHTML = `
-    <input type="text" placeholder="Nombre del nino" class="form-input flex-1 child-name">
-    <input type="number" placeholder="Valor" class="form-input w-28 child-value" min="0">
-    <button type="button" onclick="this.parentElement.remove()" class="btn btn-danger btn-sm">
-      <i data-lucide="minus" class="w-4 h-4"></i>
+    <input type="text" placeholder="Nombre del nino" class="flex-1 p-2 border rounded-md text-sm dark:bg-gray-600 dark:border-gray-500 child-name">
+    <input type="number" placeholder="Valor" class="w-28 p-2 border rounded-md text-sm dark:bg-gray-600 dark:border-gray-500 child-value" min="0">
+    <button type="button" onclick="this.parentElement.remove()" class="text-red-500 hover:text-red-700 p-1">
+      <i data-lucide="trash-2" class="w-4 h-4"></i>
     </button>
   `;
   container.appendChild(newRow);
+  lucide.createIcons();
   lucide.createIcons();
 }
 
@@ -2732,8 +2838,13 @@ function exportDayData() {
  * Importa datos
  */
 function importData() {
-  const fileInput = document.getElementById('import-file');
-  const file = fileInput.files[0];
+  // Esta funcion esta deprecada. Usar importDayData() o importFullBackup()
+  const fileInput = document.getElementById('import-day-file') || document.getElementById('restore-backup-file');
+  if (!fileInput) {
+    showNotification('Elemento de archivo no encontrado', 'error');
+    return;
+  }
+  const file = fileInput.files ? fileInput.files[0] : null;
 
   if (!file) {
     showNotification('Seleccione un archivo', 'warning');

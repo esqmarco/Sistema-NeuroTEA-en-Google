@@ -338,7 +338,176 @@ const CONFIG = {
 - Validar datos antes de escribir en Sheets
 - Manejar errores con try-catch
 
+## Verificacion Sistematica (Para Agentes de IA)
+
+Esta seccion define el proceso automatizado que los agentes deben seguir para verificar y corregir el codigo.
+
+### Proceso de Verificacion Automatica
+
+Ejecutar estos pasos en orden hasta que el reporte de ciclo indique CERO problemas:
+
+#### Ciclo 1: Verificacion de IDs HTML
+
+```bash
+# Extraer todos los IDs referenciados en Scripts.html
+grep -oE "getElementById\(['\"]([^'\"]+)['\"]\)" gas/Scripts.html | sort -u > /tmp/js_ids.txt
+
+# Extraer todos los IDs definidos en Index.html
+grep -oE "id=\"([^\"]+)\"" gas/Index.html | sort -u > /tmp/html_ids.txt
+
+# Comparar: IDs usados en JS pero no definidos en HTML = ERRORES
+```
+
+**Regla**: Cada ID usado en `getElementById()` DEBE existir en Index.html. Si no existe:
+1. Verificar si el ID es incorrecto en Scripts.html
+2. O si falta el elemento en Index.html
+3. Corregir segun el codigo original en `5 - Backup del Sistema NeuroTEA con sesion Grupal/`
+
+#### Ciclo 2: Verificacion de Funciones Backend
+
+```bash
+# Extraer funciones llamadas desde frontend (google.script.run.FUNCION)
+grep -oE "google\.script\.run[^.]*\.([a-zA-Z]+)" gas/Scripts.html | sort -u > /tmp/frontend_calls.txt
+
+# Extraer funciones publicas definidas en backend (.gs)
+grep -E "^function [a-zA-Z]+" gas/*.gs | sort -u > /tmp/backend_functions.txt
+
+# Comparar: Llamadas sin funcion backend = ERRORES
+```
+
+**Regla**: Cada `google.script.run.nombreFuncion()` DEBE tener una funcion correspondiente en los archivos .gs
+
+#### Ciclo 3: Verificacion de Variables Globales
+
+```bash
+# Verificar que todas las variables globales se inicializan y se usan consistentemente
+grep -E "^let [a-zA-Z]+ =" gas/Scripts.html  # Declaraciones
+grep -E "^  [a-zA-Z]+ = data\." gas/Scripts.html  # Asignaciones desde backend
+```
+
+**Regla**: Las variables globales (`sesiones`, `terapeutas`, etc.) deben:
+1. Declararse al inicio
+2. Inicializarse en `loadInitialData()` y `loadDateData()`
+3. Usarse con los mismos nombres de propiedades que devuelve el backend
+
+#### Ciclo 4: Verificacion de Propiedades de Objetos
+
+Backend devuelve objetos con estas propiedades (verificar en TODOS los .gs):
+
+**Sesion Individual** (SessionService.create):
+- `id`, `fecha`, `terapeuta`, `paciente`, `efectivo`
+- `transferenciaNeurotea`, `transferenciaTerminapeuta`, `valorSesion`
+- `aporteNeurotea`, `honorarios`, `tipoAporte`, `usaCredito`
+- `paqueteId`, `creditosRestantes`, `creadoEn`
+
+**Sesion Grupal** (GroupSessionService.create):
+- `id`, `fecha`, `grupoId`, `grupoNombre`, `asistenciaJSON` (array)
+- `terapeutasJSON` (array), `cantidadTerapeutas`, `cantidadPresentes`
+- `valorTotal`, `porcentajeAporte`, `aporteNeurotea`, `honorariosTotales`
+- `honorariosPorTerapeuta`, `residuoHonorarios`, `efectivo`
+- `transferenciaNeurotea`, `creadoEn`
+
+**Regla**: El frontend DEBE usar exactamente estos nombres de propiedades al renderizar datos.
+
+#### Ciclo 5: Verificacion de Flujos Completos
+
+Probar cada flujo de principio a fin:
+
+| Flujo | Pasos | Verificar |
+|-------|-------|-----------|
+| Registrar Sesion | 1. Llenar form → 2. Click registrar → 3. Ver en lista | Lista actualizada |
+| Registrar Grupal | 1. Seleccionar grupo → 2. Marcar asistencia → 3. Registrar | Lista actualizada |
+| Crear Paquete | 1. Llenar form → 2. Crear → 3. Ver en lista | Lista y creditos |
+| Registrar Egreso | 1. Llenar form → 2. Registrar → 3. Ver en lista | Lista y saldo |
+| Editar Sesion | 1. Click editar → 2. Modificar → 3. Guardar | Datos actualizados |
+| Eliminar Sesion | 1. Click eliminar → 2. Confirmar | Removido de lista |
+
+### Codigo Original de Referencia
+
+El codigo original funcional esta en:
+```
+5 - Backup del Sistema NeuroTEA con sesion Grupal/neurotea-app_FIXED.js
+```
+
+**IMPORTANTE**: El codigo original usa IndexedDB, pero la LOGICA y ESTRUCTURA de las funciones debe replicarse en GAS:
+
+| Original (IndexedDB) | GAS (Google Sheets) |
+|----------------------|---------------------|
+| `sessions[fecha]` | `sesiones` (array plano por fecha) |
+| `updateDailySessionsList(fecha)` | `updateSessionsList()` |
+| `formatCurrency(value)` | `formatCurrency(value)` |
+| Variables en localStorage | Variables globales JS |
+
+### Errores Comunes a Evitar
+
+1. **IDs fantasma**: Usar `getElementById()` con IDs que no existen
+2. **Propiedades incorrectas**: Usar `session.patientName` cuando el backend devuelve `paciente`
+3. **Reset de forms inexistentes**: `form.reset()` en elementos null
+4. **Event listeners en null**: `element.addEventListener()` cuando element es null
+5. **Funciones no definidas**: Llamar funciones helper que nunca se crearon
+
+### Patron de Codigo Seguro
+
+```javascript
+// INCORRECTO - puede fallar silenciosamente
+document.getElementById('mi-form').reset();
+
+// CORRECTO - con verificacion
+const form = document.getElementById('mi-form');
+if (form) {
+  form.reset();
+} else {
+  console.warn('Form mi-form no encontrado');
+}
+
+// O usar helper safeAddListener para event listeners
+function safeAddListener(id, event, handler) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener(event, handler);
+  else console.warn('Elemento no encontrado:', id);
+}
+```
+
+### Reporte de Ciclo
+
+Despues de cada ciclo de verificacion, generar reporte:
+
+```
+=== REPORTE VERIFICACION ===
+Fecha: YYYY-MM-DD
+Ciclo: N
+
+[ERRORES]
+- ID 'session-form' usado en JS pero no existe en HTML
+- Funcion 'registrarPaquete' no encontrada en backend
+- Propiedad 'patientName' deberia ser 'paciente'
+
+[ADVERTENCIAS]
+- Funcion 'formatCurrency' tiene logica diferente al original
+
+[OK]
+- Todas las funciones backend estan definidas
+- Variables globales correctamente inicializadas
+
+RESULTADO: X errores, Y advertencias
+ACCION: Corregir errores y repetir ciclo
+=============================
+```
+
+### Automatizacion con Agentes
+
+Crear agentes especializados para:
+
+1. **Agente Verificador**: Ejecuta los ciclos de verificacion
+2. **Agente Comparador**: Compara codigo GAS vs original
+3. **Agente Corrector**: Aplica correcciones basadas en patrones
+
 ## Historial de Cambios
+
+### v1.2.0 (2025-01-18)
+- Agregada seccion de verificacion sistematica para agentes
+- Documentados patrones de codigo seguro
+- Definidos ciclos de verificacion automatizados
 
 ### v1.1.0 (2025-01-17)
 - Sistema de autorizacion por correo electronico
