@@ -116,11 +116,11 @@
           <div class="space-y-4">
             <!-- Campo de Fecha -->
             <div>
-              <label class="block text-sm font-medium mb-1" for="date-input">
+              <label class="block text-sm font-medium mb-1" for="session-date">
                 Fecha
                 <i data-lucide="info" class="w-4 h-4 inline-block ml-1 text-gray-400"></i>
               </label>
-              <input type="date" id="date-input" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+              <input type="date" id="session-date" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
             </div>
 
             <div>
@@ -246,7 +246,7 @@
               </div>
             </div>
 
-            <button id="register-btn" onclick="registerSession()" class="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md">
+            <button id="register-btn" onclick="registerSession()" class="w-full bg-gray-400 text-white py-2 px-4 rounded-md cursor-not-allowed" disabled>
               Registrar Sesion
             </button>
           </div>

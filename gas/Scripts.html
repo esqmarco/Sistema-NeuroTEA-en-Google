@@ -31,7 +31,7 @@ let config = {};
 function initializeSystem() {
   // Establecer fecha actual
   fechaActual = new Date().toISOString().split('T')[0];
-  document.getElementById('date-input').value = fechaActual;
+  document.getElementById('session-date').value = fechaActual;
 
   // Cargar datos iniciales
   loadInitialData();
@@ -80,7 +80,7 @@ function loadInitialData() {
         });
 
         // Actualizar fecha en input
-        document.getElementById('date-input').value = fechaActual;
+        document.getElementById('session-date').value = fechaActual;
 
         // Actualizar todas las vistas
         updateAllViews();
@@ -133,7 +133,7 @@ function loadDateData(fecha) {
  */
 function setupEventListeners() {
   // Cambio de fecha
-  document.getElementById('date-input').addEventListener('change', function(e) {
+  document.getElementById('session-date').addEventListener('change', function(e) {
     loadDateData(e.target.value);
   });
 
@@ -172,9 +172,60 @@ function setupEventListeners() {
 
   // Verificar creditos al escribir nombre de paciente
   document.getElementById('patient-name').addEventListener('blur', checkPatientCredits);
+  document.getElementById('patient-name').addEventListener('input', validateRegisterButton);
 
   // Seleccion de grupo
   document.getElementById('group-select').addEventListener('change', handleGroupSelection);
+
+  // Validacion del boton registrar - escuchar cambios en campos relevantes
+  document.getElementById('therapist-select').addEventListener('change', validateRegisterButton);
+  document.getElementById('cash-to-neurotea').addEventListener('input', validateRegisterButton);
+  document.getElementById('transfer-to-neurotea').addEventListener('input', validateRegisterButton);
+  document.getElementById('transfer-to-therapist').addEventListener('input', validateRegisterButton);
+
+  // Modo de registro - validar al cambiar
+  document.querySelectorAll('input[name="modo-registro"]').forEach(radio => {
+    radio.addEventListener('change', validateRegisterButton);
+  });
+}
+
+/**
+ * Valida si el boton de registrar debe estar habilitado
+ */
+function validateRegisterButton() {
+  const btn = document.getElementById('register-btn');
+  const therapist = document.getElementById('therapist-select').value;
+  const patient = document.getElementById('patient-name').value.trim();
+  const modoRegistro = document.querySelector('input[name="modo-registro"]:checked')?.value;
+
+  let isValid = false;
+
+  // Si es sesion grupal, la validacion es diferente (se maneja en el modal)
+  if (modoRegistro === 'sesion-grupal') {
+    isValid = false; // El boton principal no aplica para grupales
+  } else if (modoRegistro === 'usar-credito') {
+    // Para creditos, necesita terapeuta y paciente
+    isValid = therapist && patient;
+  } else {
+    // Para pago del dia, necesita terapeuta, paciente y al menos un valor de pago
+    const cash = parseInt(document.getElementById('cash-to-neurotea').value) || 0;
+    const transferNeurotea = parseInt(document.getElementById('transfer-to-neurotea').value) || 0;
+    const transferTerapeuta = parseInt(document.getElementById('transfer-to-therapist').value) || 0;
+    const totalPago = cash + transferNeurotea + transferTerapeuta;
+
+    isValid = therapist && patient && totalPago > 0;
+  }
+
+  // Actualizar estado del boton
+  if (isValid) {
+    btn.disabled = false;
+    btn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+    btn.classList.add('bg-purple-600', 'hover:bg-purple-700');
+  } else {
+    btn.disabled = true;
+    btn.classList.remove('bg-purple-600', 'hover:bg-purple-700');
+    btn.classList.add('bg-gray-400', 'cursor-not-allowed');
+  }
 }
 
 // ===========================
