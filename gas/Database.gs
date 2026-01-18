@@ -32,6 +32,11 @@ const Database = {
       for (let j = 0; j < headers.length; j++) {
         let value = row[j];
 
+        // Convertir fechas de Date object a string YYYY-MM-DD
+        if (value instanceof Date) {
+          value = Utilities.formatDate(value, CONFIG.TIMEZONE, 'yyyy-MM-dd');
+        }
+
         // Parsear JSON si corresponde
         if (headers[j].endsWith('JSON') && typeof value === 'string' && value) {
           try {
