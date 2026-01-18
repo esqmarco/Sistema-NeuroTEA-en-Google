@@ -254,7 +254,26 @@ const Database = {
    * @returns {Array<Object>} - Registros de esa fecha
    */
   getByDate: function(sheetName, fecha, dateColumn = 'fecha') {
-    return this.getByColumn(sheetName, dateColumn, fecha);
+    const allRecords = this.getAll(sheetName);
+
+    // Normalizar la fecha buscada (solo YYYY-MM-DD)
+    const fechaNormalizada = String(fecha).substring(0, 10);
+
+    return allRecords.filter(function(record) {
+      const valorFecha = record[dateColumn];
+      if (!valorFecha) return false;
+
+      // Normalizar el valor de la columna fecha
+      let fechaRecord;
+      if (valorFecha instanceof Date) {
+        fechaRecord = Utilities.formatDate(valorFecha, 'America/Asuncion', 'yyyy-MM-dd');
+      } else {
+        // Si es string, tomar solo los primeros 10 caracteres (YYYY-MM-DD)
+        fechaRecord = String(valorFecha).substring(0, 10);
+      }
+
+      return fechaRecord === fechaNormalizada;
+    });
   },
 
   /**

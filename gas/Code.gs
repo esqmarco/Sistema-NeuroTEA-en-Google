@@ -202,6 +202,47 @@ function insertInitialConfig() {
 }
 
 /**
+ * REINICIALIZA el sistema - BORRA TODOS LOS DATOS y recrea las hojas
+ * CUIDADO: Esta funcion elimina todos los datos!
+ * @returns {Object} - Resultado de la operacion
+ */
+function reinicializarSistema() {
+  const ss = getSpreadsheet();
+
+  // Lista de hojas a reinicializar (todas excepto Autorizaciones)
+  const sheetsToClear = [
+    'Terapeutas', 'Sesiones', 'SesionesGrupales', 'Egresos',
+    'Confirmaciones', 'Paquetes', 'HistorialPaquetes', 'Grupos',
+    'Creditos', 'SaldosIniciales', 'HistorialSaldos',
+    'EstadosTransferencia', 'Configuracion'
+  ];
+
+  let cleared = 0;
+
+  sheetsToClear.forEach(sheetName => {
+    const sheet = ss.getSheetByName(sheetName);
+    if (sheet) {
+      // Mantener encabezados (fila 1), borrar todo lo demas
+      const lastRow = sheet.getLastRow();
+      if (lastRow > 1) {
+        sheet.deleteRows(2, lastRow - 1);
+      }
+      cleared++;
+      Logger.log('Limpiada hoja: ' + sheetName);
+    }
+  });
+
+  // Reinsertar configuracion inicial
+  insertInitialConfig();
+
+  Logger.log('Sistema reinicializado. Hojas limpiadas: ' + cleared);
+  return {
+    success: true,
+    message: 'Sistema reinicializado. Se limpiaron ' + cleared + ' hojas. Los datos de Autorizaciones se mantienen.'
+  };
+}
+
+/**
  * Obtiene la fecha actual en formato YYYY-MM-DD (Paraguay)
  * @returns {string} - Fecha formateada
  */
@@ -223,32 +264,62 @@ function getFechaActual() {
  * @returns {Object} - Datos iniciales del sistema
  */
 function cargarDatosIniciales() {
-  try {
-    const fecha = getFechaActual();
+  const fecha = getFechaActual();
+  const data = {
+    fechaActual: fecha,
+    terapeutas: [],
+    sesiones: [],
+    sesionesGrupales: [],
+    egresos: [],
+    paquetes: [],
+    grupos: [],
+    confirmaciones: {},
+    saldoInicial: 0,
+    estadosTransferencia: {},
+    config: {}
+  };
+  const errors = [];
 
-    return {
-      success: true,
-      data: {
-        fechaActual: fecha,
-        terapeutas: TherapistService.getAll(),
-        sesiones: SessionService.getByDate(fecha),
-        sesionesGrupales: GroupSessionService.getByDate(fecha),
-        egresos: EgresoService.getByDate(fecha),
-        paquetes: PackageService.getActive(),
-        grupos: GroupService.getActive(),
-        confirmaciones: RendicionService.getConfirmaciones(fecha),
-        saldoInicial: RendicionService.getSaldoInicial(fecha),
-        estadosTransferencia: TransferService.getEstados(fecha),
-        config: getConfiguracion()
-      }
-    };
-  } catch (error) {
-    Logger.log('Error cargando datos iniciales: ' + error.message);
-    return {
-      success: false,
-      message: 'Error cargando datos: ' + error.message
-    };
+  // Cargar cada servicio individualmente para identificar errores
+  try { data.terapeutas = TherapistService.getAll(); }
+  catch (e) { errors.push('Terapeutas: ' + e.message); }
+
+  try { data.sesiones = SessionService.getByDate(fecha); }
+  catch (e) { errors.push('Sesiones: ' + e.message); }
+
+  try { data.sesionesGrupales = GroupSessionService.getByDate(fecha); }
+  catch (e) { errors.push('SesionesGrupales: ' + e.message); }
+
+  try { data.egresos = EgresoService.getByDate(fecha); }
+  catch (e) { errors.push('Egresos: ' + e.message); }
+
+  try { data.paquetes = PackageService.getActive(); }
+  catch (e) { errors.push('Paquetes: ' + e.message); }
+
+  try { data.grupos = GroupService.getActive(); }
+  catch (e) { errors.push('Grupos: ' + e.message); }
+
+  try { data.confirmaciones = RendicionService.getConfirmaciones(fecha); }
+  catch (e) { errors.push('Confirmaciones: ' + e.message); }
+
+  try { data.saldoInicial = RendicionService.getSaldoInicial(fecha); }
+  catch (e) { errors.push('SaldoInicial: ' + e.message); }
+
+  try { data.estadosTransferencia = TransferService.getEstados(fecha); }
+  catch (e) { errors.push('EstadosTransferencia: ' + e.message); }
+
+  try { data.config = getConfiguracion(); }
+  catch (e) { errors.push('Config: ' + e.message); }
+
+  if (errors.length > 0) {
+    Logger.log('Errores cargando datos: ' + errors.join('; '));
   }
+
+  return {
+    success: true,
+    data: data,
+    errors: errors.length > 0 ? errors : null
+  };
 }
 
 /**
@@ -305,4 +376,82 @@ function testConnection() {
     timestamp: new Date().toISOString(),
     spreadsheetId: CONFIG.SPREADSHEET_ID
   };
+}
+
+/**
+ * FUNCION DE DIAGNOSTICO - Ejecutar desde el editor de Apps Script
+ * Muestra exactamente que datos se estan cargando
+ */
+function diagnosticoSistema() {
+  const fecha = getFechaActual();
+  Logger.log('========== DIAGNOSTICO DEL SISTEMA ==========');
+  Logger.log('Fecha actual: ' + fecha);
+
+  // 1. Verificar hoja Sesiones
+  try {
+    const sheet = getSheet('Sesiones');
+    const data = sheet.getDataRange().getValues();
+    Logger.log('\n--- HOJA SESIONES ---');
+    Logger.log('Total filas (incluyendo encabezado): ' + data.length);
+    Logger.log('Encabezados: ' + JSON.stringify(data[0]));
+
+    if (data.length > 1) {
+      Logger.log('\nPrimera fila de datos:');
+      const headers = data[0];
+      const firstRow = data[1];
+      for (let i = 0; i < headers.length; i++) {
+        const value = firstRow[i];
+        const tipo = value instanceof Date ? 'Date' : typeof value;
+        Logger.log('  ' + headers[i] + ': ' + value + ' (tipo: ' + tipo + ')');
+      }
+
+      // Verificar columna fecha
+      const fechaIndex = headers.indexOf('fecha');
+      if (fechaIndex >= 0) {
+        const fechaValue = firstRow[fechaIndex];
+        Logger.log('\nAnalisis de fecha:');
+        Logger.log('  Valor raw: ' + fechaValue);
+        Logger.log('  Es Date?: ' + (fechaValue instanceof Date));
+        if (fechaValue instanceof Date) {
+          Logger.log('  Formateada: ' + Utilities.formatDate(fechaValue, 'America/Asuncion', 'yyyy-MM-dd'));
+        } else {
+          Logger.log('  Substring(0,10): ' + String(fechaValue).substring(0, 10));
+        }
+        Logger.log('  Comparando con fecha actual (' + fecha + '): ' + (String(fechaValue).substring(0, 10) === fecha));
+      }
+    }
+  } catch (e) {
+    Logger.log('ERROR en hoja Sesiones: ' + e.message);
+  }
+
+  // 2. Probar SessionService.getByDate
+  try {
+    Logger.log('\n--- PRUEBA SessionService.getByDate ---');
+    const sesiones = SessionService.getByDate(fecha);
+    Logger.log('Sesiones encontradas: ' + sesiones.length);
+    if (sesiones.length > 0) {
+      Logger.log('Primera sesion: ' + JSON.stringify(sesiones[0]));
+    }
+  } catch (e) {
+    Logger.log('ERROR en SessionService: ' + e.message);
+  }
+
+  // 3. Probar cargarDatosIniciales
+  try {
+    Logger.log('\n--- PRUEBA cargarDatosIniciales ---');
+    const result = cargarDatosIniciales();
+    Logger.log('Success: ' + result.success);
+    if (result.success) {
+      Logger.log('Terapeutas: ' + result.data.terapeutas.length);
+      Logger.log('Sesiones: ' + result.data.sesiones.length);
+      Logger.log('Sesiones Grupales: ' + result.data.sesionesGrupales.length);
+    } else {
+      Logger.log('Error: ' + result.message);
+    }
+  } catch (e) {
+    Logger.log('ERROR en cargarDatosIniciales: ' + e.message);
+  }
+
+  Logger.log('\n========== FIN DIAGNOSTICO ==========');
+  return 'Revisa Ver > Registros para ver el resultado';
 }
