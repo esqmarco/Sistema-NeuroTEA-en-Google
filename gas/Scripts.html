@@ -266,11 +266,10 @@ function updateGroupTherapistCheckboxes() {
  * Actualiza la lista de sesiones del dia
  */
 function updateSessionsList() {
-  const container = document.getElementById('sessions-list');
-  const countEl = document.getElementById('session-count');
+  const container = document.getElementById('daily-sessions-container');
+  if (!container) return;
 
   const total = sesiones.length + sesionesGrupales.length;
-  countEl.textContent = `(${total})`;
 
   if (total === 0) {
     container.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-center py-8">No hay sesiones registradas</p>';
@@ -615,7 +614,7 @@ function updateEgresosList() {
  * Actualiza lista de terapeutas
  */
 function updateTherapistsList() {
-  const container = document.getElementById('therapists-list');
+  const container = document.getElementById('therapist-list-container');
 
   if (terapeutas.length === 0) {
     container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay terapeutas registrados</p>';
