@@ -32,15 +32,25 @@ let sesionesFuturasTemp = [];
  * Inicializa el sistema
  */
 function initializeSystem() {
-  // Establecer fecha actual
-  fechaActual = new Date().toISOString().split('T')[0];
-  document.getElementById('session-date').value = fechaActual;
+  try {
+    // Establecer fecha actual
+    fechaActual = new Date().toISOString().split('T')[0];
+    const sessionDateInput = document.getElementById('session-date');
+    if (sessionDateInput) {
+      sessionDateInput.value = fechaActual;
+    }
 
-  // Cargar datos iniciales
-  loadInitialData();
+    // Event listeners primero (no bloquean)
+    setupEventListeners();
 
-  // Event listeners
-  setupEventListeners();
+    // Cargar datos iniciales
+    loadInitialData();
+  } catch (error) {
+    console.error('Error en initializeSystem:', error);
+    // Intentar ocultar loading si hay error
+    try { showLoading(false); } catch (e) {}
+    alert('Error inicializando sistema: ' + error.message);
+  }
 }
 
 /**
@@ -51,50 +61,59 @@ function loadInitialData() {
 
   google.script.run
     .withSuccessHandler(function(result) {
-      showLoading(false);
+      try {
+        showLoading(false);
 
-      if (result.success) {
-        // Asignar datos a variables globales
-        const data = result.data;
-        fechaActual = data.fechaActual;
-        terapeutas = data.terapeutas || [];
-        sesiones = data.sesiones || [];
-        sesionesGrupales = data.sesionesGrupales || [];
-        egresos = data.egresos || [];
-        paquetesActivos = data.paquetes || [];
-        gruposActivos = data.grupos || [];
-        confirmaciones = data.confirmaciones || {};
-        estadosTransferencia = data.estadosTransferencia || {};
-        saldoInicial = data.saldoInicial || 0;
-        config = data.config || {};
+        if (result && result.success) {
+          // Asignar datos a variables globales
+          const data = result.data || {};
+          fechaActual = data.fechaActual || fechaActual;
+          terapeutas = data.terapeutas || [];
+          sesiones = data.sesiones || [];
+          sesionesGrupales = data.sesionesGrupales || [];
+          egresos = data.egresos || [];
+          paquetesActivos = data.paquetes || [];
+          gruposActivos = data.grupos || [];
+          confirmaciones = data.confirmaciones || {};
+          estadosTransferencia = data.estadosTransferencia || {};
+          saldoInicial = data.saldoInicial || 0;
+          config = data.config || {};
 
-        // Mostrar errores parciales si existen
-        if (result.errors && result.errors.length > 0) {
-          console.warn('Errores cargando datos:', result.errors);
-          showNotification('Algunos datos no se cargaron: ' + result.errors.join(', '), 'warning');
+          // Mostrar errores parciales si existen
+          if (result.errors && result.errors.length > 0) {
+            console.warn('Errores cargando datos:', result.errors);
+            showNotification('Algunos datos no se cargaron: ' + result.errors.join(', '), 'warning');
+          }
+
+          // Log para depuracion
+          console.log('Datos cargados:', {
+            fecha: fechaActual,
+            terapeutas: terapeutas.length,
+            sesiones: sesiones.length,
+            sesionesGrupales: sesionesGrupales.length
+          });
+
+          // Actualizar fecha en input
+          const sessionDateInput = document.getElementById('session-date');
+          if (sessionDateInput) {
+            sessionDateInput.value = fechaActual;
+          }
+
+          // Actualizar todas las vistas
+          updateAllViews();
+        } else {
+          const msg = result ? result.message : 'Respuesta invalida del servidor';
+          showNotification('Error cargando datos: ' + msg, 'error');
         }
-
-        // Log para depuracion
-        console.log('Datos cargados:', {
-          fecha: fechaActual,
-          terapeutas: terapeutas.length,
-          sesiones: sesiones.length,
-          sesionesGrupales: sesionesGrupales.length
-        });
-
-        // Actualizar fecha en input
-        document.getElementById('session-date').value = fechaActual;
-
-        // Actualizar todas las vistas
-        updateAllViews();
-      } else {
-        showNotification('Error cargando datos: ' + result.message, 'error');
+      } catch (error) {
+        console.error('Error procesando datos:', error);
+        showNotification('Error procesando datos: ' + error.message, 'error');
       }
     })
     .withFailureHandler(function(error) {
       showLoading(false);
       console.error('Error de conexion:', error);
-      showNotification('Error de conexion: ' + error.message, 'error');
+      showNotification('Error de conexion: ' + (error.message || error), 'error');
     })
     .cargarDatosIniciales();
 }
@@ -350,20 +369,36 @@ function updatePackageCalculations() {
  * Actualiza todas las vistas
  */
 function updateAllViews() {
-  updateTherapistSelects();
-  updateSessionsList();
-  updateSummaryView();
-  updateTransfersView();
-  updateRendicionView();
-  updateEgresosList();
-  updateTherapistsList();
-  updatePackagesList();
-  updateGroupsList();
-  updateGroupSelects();
-  updateAdminView();
+  const viewUpdaters = [
+    { name: 'TherapistSelects', fn: updateTherapistSelects },
+    { name: 'SessionsList', fn: updateSessionsList },
+    { name: 'SummaryView', fn: updateSummaryView },
+    { name: 'TransfersView', fn: updateTransfersView },
+    { name: 'RendicionView', fn: updateRendicionView },
+    { name: 'EgresosList', fn: updateEgresosList },
+    { name: 'TherapistsList', fn: updateTherapistsList },
+    { name: 'PackagesList', fn: updatePackagesList },
+    { name: 'GroupsList', fn: updateGroupsList },
+    { name: 'GroupSelects', fn: updateGroupSelects },
+    { name: 'AdminView', fn: updateAdminView }
+  ];
+
+  viewUpdaters.forEach(updater => {
+    try {
+      updater.fn();
+    } catch (error) {
+      console.error('Error en update' + updater.name + ':', error);
+    }
+  });
 
   // Actualizar iconos de Lucide
-  lucide.createIcons();
+  try {
+    if (typeof lucide !== 'undefined' && lucide.createIcons) {
+      lucide.createIcons();
+    }
+  } catch (error) {
+    console.error('Error creando iconos Lucide:', error);
+  }
 }
 
 /**
@@ -372,7 +407,7 @@ function updateAllViews() {
 function updateTherapistSelects() {
   const selects = [
     'therapist-select',
-    'egreso-therapist',
+    'egreso-therapist-select',
     'package-therapist'
   ];
 
