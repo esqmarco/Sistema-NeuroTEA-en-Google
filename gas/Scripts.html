@@ -346,6 +346,7 @@ function updateSessionsList() {
   // Sesiones individuales
   sesiones.forEach(s => {
     const creditBadge = s.usaCredito ? '<span class="badge badge-info ml-2">Credito</span>' : '';
+    const editDisabled = s.usaCredito ? 'disabled title="No se puede editar sesiones con credito"' : '';
     html += `
       <div class="session-item">
         <div class="session-item-info">
@@ -354,6 +355,9 @@ function updateSessionsList() {
         </div>
         <div class="flex items-center space-x-3">
           <span class="session-item-amount">${formatCurrency(s.valorSesion)}</span>
+          <button onclick="editSession(${s.id})" class="text-blue-500 hover:text-blue-700 ${s.usaCredito ? 'opacity-50 cursor-not-allowed' : ''}" ${editDisabled}>
+            <i data-lucide="edit" class="w-4 h-4"></i>
+          </button>
           <button onclick="deleteSession(${s.id})" class="text-red-500 hover:text-red-700">
             <i data-lucide="trash-2" class="w-4 h-4"></i>
           </button>
@@ -667,6 +671,9 @@ function updateEgresosList() {
       </div>
       <div class="flex items-center space-x-3">
         <span class="text-red-600 font-semibold">-${formatCurrency(e.monto)}</span>
+        <button onclick="editEgreso(${e.id})" class="text-blue-500 hover:text-blue-700">
+          <i data-lucide="edit" class="w-4 h-4"></i>
+        </button>
         <button onclick="deleteEgreso(${e.id})" class="text-red-500 hover:text-red-700">
           <i data-lucide="trash-2" class="w-4 h-4"></i>
         </button>
@@ -694,9 +701,14 @@ function updateTherapistsList() {
           <i data-lucide="user" class="w-5 h-5 text-blue-500"></i>
           <span class="font-medium text-gray-800 dark:text-white">${name}</span>
         </div>
-        <button onclick="deleteTherapist('${name}')" class="text-red-500 hover:text-red-700">
-          <i data-lucide="trash-2" class="w-4 h-4"></i>
-        </button>
+        <div class="flex items-center space-x-2">
+          <button onclick="renameTherapist('${name}')" class="text-blue-500 hover:text-blue-700" title="Renombrar">
+            <i data-lucide="edit" class="w-4 h-4"></i>
+          </button>
+          <button onclick="deleteTherapist('${name}')" class="text-red-500 hover:text-red-700" title="Eliminar">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </div>
       </div>
     `;
   }).join('');
@@ -1459,6 +1471,255 @@ function deleteTherapist(nombre) {
       }
     })
     .desactivarTerapeuta(nombre);
+}
+
+// ===========================
+// FUNCIONES DE EDICION
+// ===========================
+
+/**
+ * Abre el modal para editar una sesion
+ */
+function editSession(id) {
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        const session = result.data;
+
+        // Poblar el select de terapeutas
+        const selectTerapeuta = document.getElementById('edit-session-terapeuta');
+        selectTerapeuta.innerHTML = terapeutas.map(t => {
+          const name = typeof t === 'string' ? t : t.nombre;
+          return `<option value="${name}" ${name === session.terapeuta ? 'selected' : ''}>${name}</option>`;
+        }).join('');
+
+        // Llenar los campos del modal
+        document.getElementById('edit-session-id').value = session.id;
+        document.getElementById('edit-session-paciente').value = session.paciente || '';
+        document.getElementById('edit-session-efectivo').value = session.efectivo || 0;
+        document.getElementById('edit-session-transf-neurotea').value = session.transferenciaNeurotea || 0;
+        document.getElementById('edit-session-transf-terapeuta').value = session.transferenciaTerminapeuta || 0;
+
+        // Calcular y mostrar el valor total
+        updateEditSessionValue();
+
+        // Event listeners para actualizar valor
+        ['edit-session-efectivo', 'edit-session-transf-neurotea', 'edit-session-transf-terapeuta'].forEach(inputId => {
+          document.getElementById(inputId).addEventListener('input', updateEditSessionValue);
+        });
+
+        // Mostrar modal
+        document.getElementById('edit-session-modal').classList.remove('hidden');
+        lucide.createIcons();
+      } else {
+        showNotification(result.message || 'Error al cargar sesion', 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .getSesionPorId(id);
+}
+
+/**
+ * Actualiza el valor mostrado en el modal de edicion
+ */
+function updateEditSessionValue() {
+  const efectivo = parseInt(document.getElementById('edit-session-efectivo').value) || 0;
+  const transfNeurotea = parseInt(document.getElementById('edit-session-transf-neurotea').value) || 0;
+  const transfTerapeuta = parseInt(document.getElementById('edit-session-transf-terapeuta').value) || 0;
+  const total = efectivo + transfNeurotea + transfTerapeuta;
+
+  document.getElementById('edit-session-valor').textContent = formatCurrency(total);
+}
+
+/**
+ * Cierra el modal de edicion de sesion
+ */
+function closeEditSessionModal() {
+  document.getElementById('edit-session-modal').classList.add('hidden');
+}
+
+/**
+ * Guarda los cambios de la sesion editada
+ */
+function saveSessionEdit() {
+  const id = parseInt(document.getElementById('edit-session-id').value);
+  const updates = {
+    paciente: document.getElementById('edit-session-paciente').value.trim(),
+    terapeuta: document.getElementById('edit-session-terapeuta').value,
+    efectivo: parseInt(document.getElementById('edit-session-efectivo').value) || 0,
+    transferenciaNeurotea: parseInt(document.getElementById('edit-session-transf-neurotea').value) || 0,
+    transferenciaTerminapeuta: parseInt(document.getElementById('edit-session-transf-terapeuta').value) || 0
+  };
+
+  if (!updates.paciente) {
+    showNotification('El nombre del paciente es requerido', 'error');
+    return;
+  }
+
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        closeEditSessionModal();
+        showNotification('Sesion actualizada', 'success');
+        loadDateData(fechaActual);
+      } else {
+        showNotification(result.message || 'Error al actualizar', 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .actualizarSesion(id, updates);
+}
+
+/**
+ * Abre el modal para editar un egreso
+ */
+function editEgreso(id) {
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        const egreso = result.data;
+
+        // Poblar el select de terapeutas
+        const selectTerapeuta = document.getElementById('edit-egreso-terapeuta');
+        selectTerapeuta.innerHTML = '<option value="">Seleccionar terapeuta</option>' + terapeutas.map(t => {
+          const name = typeof t === 'string' ? t : t.nombre;
+          return `<option value="${name}" ${name === egreso.terapeuta ? 'selected' : ''}>${name}</option>`;
+        }).join('');
+
+        // Llenar los campos del modal
+        document.getElementById('edit-egreso-id').value = egreso.id;
+        document.getElementById('edit-egreso-tipo').value = egreso.tipo || 'gasto-neurotea';
+        document.getElementById('edit-egreso-concepto').value = egreso.concepto || '';
+        document.getElementById('edit-egreso-monto').value = egreso.monto || 0;
+
+        // Mostrar/ocultar selector de terapeuta
+        toggleEditEgresoTerapeuta();
+
+        // Mostrar modal
+        document.getElementById('edit-egreso-modal').classList.remove('hidden');
+        lucide.createIcons();
+      } else {
+        showNotification(result.message || 'Error al cargar egreso', 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .getEgresoPorId(id);
+}
+
+/**
+ * Muestra/oculta el selector de terapeuta en el modal de egreso
+ */
+function toggleEditEgresoTerapeuta() {
+  const tipo = document.getElementById('edit-egreso-tipo').value;
+  const container = document.getElementById('edit-egreso-terapeuta-container');
+  container.style.display = tipo === 'adelanto' ? 'block' : 'none';
+}
+
+/**
+ * Cierra el modal de edicion de egreso
+ */
+function closeEditEgresoModal() {
+  document.getElementById('edit-egreso-modal').classList.add('hidden');
+}
+
+/**
+ * Guarda los cambios del egreso editado
+ */
+function saveEgresoEdit() {
+  const id = parseInt(document.getElementById('edit-egreso-id').value);
+  const tipo = document.getElementById('edit-egreso-tipo').value;
+  const updates = {
+    tipo: tipo,
+    concepto: document.getElementById('edit-egreso-concepto').value.trim(),
+    monto: parseInt(document.getElementById('edit-egreso-monto').value) || 0,
+    terapeuta: tipo === 'adelanto' ? document.getElementById('edit-egreso-terapeuta').value : ''
+  };
+
+  if (updates.monto <= 0) {
+    showNotification('El monto debe ser mayor a 0', 'error');
+    return;
+  }
+
+  if (tipo === 'adelanto' && !updates.terapeuta) {
+    showNotification('Seleccione un terapeuta para el adelanto', 'error');
+    return;
+  }
+
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        closeEditEgresoModal();
+        showNotification('Egreso actualizado', 'success');
+        loadDateData(fechaActual);
+      } else {
+        showNotification(result.message || 'Error al actualizar', 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .actualizarEgreso(id, updates);
+}
+
+/**
+ * Renombra un terapeuta
+ */
+function renameTherapist(nombreActual) {
+  const nuevoNombre = prompt(`Ingrese el nuevo nombre para "${nombreActual}":`, nombreActual);
+
+  if (!nuevoNombre || nuevoNombre.trim() === '') {
+    return;
+  }
+
+  if (nuevoNombre.trim() === nombreActual) {
+    showNotification('El nombre no ha cambiado', 'warning');
+    return;
+  }
+
+  if (!confirm(`¿Renombrar "${nombreActual}" a "${nuevoNombre.trim()}"?\n\nEsto actualizara el nombre en todas las sesiones, egresos y paquetes asociados.`)) {
+    return;
+  }
+
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        showNotification(`Terapeuta renombrado de "${nombreActual}" a "${nuevoNombre.trim()}"`, 'success');
+        // Recargar todos los datos
+        loadInitialData();
+      } else {
+        showNotification(result.message || 'Error al renombrar', 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .renombrarTerapeuta(nombreActual, nuevoNombre.trim());
 }
 
 /**

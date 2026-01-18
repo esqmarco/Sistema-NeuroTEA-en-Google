@@ -246,3 +246,21 @@ function eliminarSesion(id) {
 function getTotalesSesiones(fecha) {
   return SessionService.getTotals(fecha);
 }
+
+/**
+ * Actualiza una sesion (para frontend)
+ */
+function actualizarSesion(id, updates) {
+  return SessionService.update(id, updates);
+}
+
+/**
+ * Obtiene una sesion por ID (para frontend)
+ */
+function getSesionPorId(id) {
+  const session = SessionService.getById(id);
+  if (session) {
+    return resultado(true, session, 'Sesion encontrada');
+  }
+  return resultado(false, null, 'Sesion no encontrada');
+}
