@@ -273,28 +273,34 @@ const RendicionService = {
    */
   setSaldoInicial: function(fecha, efectivo) {
     const existing = Database.getByColumn(SHEETS.SALDOS_INICIALES, 'fecha', fecha);
+    const valorAnterior = existing.length > 0 ? (existing[0].efectivo || 0) : 0;
+    const valorNuevo = parseInt(efectivo) || 0;
 
     if (existing.length > 0) {
       // Actualizar existente
       Database.update(SHEETS.SALDOS_INICIALES, existing[0].id || existing[0].fecha, {
-        efectivo: parseInt(efectivo) || 0,
+        efectivo: valorNuevo,
         actualizadoEn: getTimestamp()
       });
     } else {
       // Crear nuevo
       Database.insert(SHEETS.SALDOS_INICIALES, {
         fecha: fecha,
-        efectivo: parseInt(efectivo) || 0,
+        efectivo: valorNuevo,
         actualizadoEn: getTimestamp()
       });
     }
 
-    // Registrar en historial
-    Database.insert(SHEETS.HISTORIAL_SALDOS, {
-      fecha: fecha,
-      mensaje: `Saldo inicial establecido en Gs ${efectivo}`,
-      timestamp: getTimestamp()
-    });
+    // Registrar en historial si el valor cambio
+    if (valorAnterior !== valorNuevo) {
+      Database.insert(SHEETS.HISTORIAL_SALDOS, {
+        fecha: fecha,
+        valorAnterior: valorAnterior,
+        valorNuevo: valorNuevo,
+        mensaje: `Saldo cambiado de Gs ${valorAnterior} a Gs ${valorNuevo}`,
+        timestamp: getTimestamp()
+      });
+    }
 
     return resultado(true, null, 'Saldo inicial actualizado');
   },
@@ -461,4 +467,61 @@ function getSaldosDia(fecha) {
     saldoCuenta: RendicionService.calcularSaldoCuenta(fecha),
     saldoInicial: RendicionService.getSaldoInicial(fecha)
   };
+}
+
+/**
+ * Obtiene historial de saldos (para frontend)
+ */
+function getHistorialSaldos(fecha) {
+  try {
+    const historial = Database.getByDate(SHEETS.HISTORIAL_SALDOS, fecha);
+    // Ordenar por timestamp descendente (mas reciente primero)
+    historial.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    // Limitar a 10 entradas
+    return resultado(true, historial.slice(0, 10));
+  } catch (error) {
+    return resultado(false, [], error.message);
+  }
+}
+
+/**
+ * Agrega entrada al historial de saldos
+ */
+function agregarHistorialSaldo(fecha, valorNuevo, valorAnterior, mensaje) {
+  try {
+    const entrada = {
+      fecha: fecha,
+      valorNuevo: valorNuevo,
+      valorAnterior: valorAnterior,
+      mensaje: mensaje || '',
+      timestamp: getTimestamp()
+    };
+    Database.insert(SHEETS.HISTORIAL_SALDOS, entrada);
+    return resultado(true, entrada);
+  } catch (error) {
+    return resultado(false, null, error.message);
+  }
+}
+
+/**
+ * Limpia historial y resetea saldo inicial (para frontend)
+ */
+function limpiarHistorialYSaldo(fecha) {
+  try {
+    // Eliminar historial de la fecha
+    const historial = Database.getByDate(SHEETS.HISTORIAL_SALDOS, fecha);
+    historial.forEach(h => {
+      Database.delete(SHEETS.HISTORIAL_SALDOS, h.id);
+    });
+
+    // Resetear saldo inicial a 0
+    const saldoExistente = Database.getByDate(SHEETS.SALDOS_INICIALES, fecha);
+    if (saldoExistente && saldoExistente.length > 0) {
+      Database.update(SHEETS.SALDOS_INICIALES, saldoExistente[0].id, { efectivo: 0 });
+    }
+
+    return resultado(true, null, 'Historial y saldo limpiados');
+  } catch (error) {
+    return resultado(false, null, error.message);
+  }
 }

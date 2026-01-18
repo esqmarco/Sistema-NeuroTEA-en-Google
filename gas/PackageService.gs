@@ -379,5 +379,34 @@ function verificarCreditos(paciente, terapeuta) {
  * Obtiene historial de paquetes (para frontend)
  */
 function getHistorialPaquetes() {
-  return PackageService.getHistory();
+  try {
+    const historial = PackageService.getHistory();
+    return resultado(true, historial);
+  } catch (error) {
+    return resultado(false, [], error.message);
+  }
+}
+
+/**
+ * Obtiene cantidad de paquetes en historial (para frontend)
+ */
+function getHistorialPaquetesCount() {
+  try {
+    const historial = PackageService.getHistory();
+    return resultado(true, historial.length);
+  } catch (error) {
+    return resultado(false, 0, error.message);
+  }
+}
+
+/**
+ * Elimina un paquete del historial (para frontend)
+ */
+function eliminarPaqueteHistorial(id) {
+  try {
+    Database.delete(SHEETS.HISTORIAL_PAQUETES, id);
+    return resultado(true, null, 'Paquete eliminado del historial');
+  } catch (error) {
+    return resultado(false, null, error.message);
+  }
 }

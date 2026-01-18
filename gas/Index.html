@@ -175,6 +175,75 @@
               <div id="creditos-info-display" class="mt-2 text-sm text-gray-600 dark:text-gray-400"></div>
             </div>
 
+            <!-- MINI CARRITO: Seccion de creditos adicionales (modo pago del dia) -->
+            <div id="creditos-adicionales-section" class="border-t pt-4">
+              <div class="flex items-center mb-2">
+                <input type="checkbox" id="crear-creditos-adicionales" class="mr-2">
+                <label for="crear-creditos-adicionales" class="text-sm font-medium">
+                  Pagar sesiones futuras adicionales
+                </label>
+                <i data-lucide="info" class="w-4 h-4 inline-block ml-1 text-gray-400" title="Permite pagar hoy por sesiones que se usaran en el futuro"></i>
+              </div>
+
+              <!-- Mini Carrito de Sesiones Futuras -->
+              <div id="sesiones-futuras-container" style="display: none;" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg border">
+                <h4 class="font-medium mb-3 text-gray-800 dark:text-gray-200">
+                  <i data-lucide="shopping-cart" class="w-4 h-4 inline mr-1"></i>
+                  Sesiones Futuras a Pagar Hoy:
+                </h4>
+
+                <!-- Formulario para agregar sesiones -->
+                <div class="flex gap-2 mb-3 p-3 bg-white dark:bg-gray-800 rounded border">
+                  <div class="flex-1">
+                    <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Terapeuta:</label>
+                    <select id="terapeuta-futura-select" class="w-full p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600">
+                      <option value="">Seleccionar terapeuta...</option>
+                    </select>
+                  </div>
+                  <div class="w-24">
+                    <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Cantidad:</label>
+                    <input type="number" id="cantidad-futura-input" class="w-full p-2 border rounded text-sm text-center dark:bg-gray-700 dark:border-gray-600" value="1" min="1" max="20">
+                  </div>
+                  <div class="flex items-end">
+                    <button type="button" id="agregar-sesion-futura-btn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded font-medium text-sm">
+                      + Agregar
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Lista de sesiones futuras agregadas -->
+                <div id="lista-sesiones-futuras" class="space-y-3 mb-3">
+                  <div class="text-gray-500 dark:text-gray-400 text-sm text-center py-2 italic">
+                    No hay sesiones futuras agregadas
+                  </div>
+                </div>
+
+                <!-- Resumen total -->
+                <div id="resumen-sesiones-futuras" class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded" style="display: none;">
+                  <div class="flex justify-between items-center text-sm mb-1">
+                    <span>Sesion de hoy:</span>
+                    <span class="font-medium" id="total-sesion-actual">Gs 0</span>
+                  </div>
+                  <div class="flex justify-between items-center text-sm mb-2">
+                    <span>Sesiones futuras:</span>
+                    <span class="font-medium" id="total-sesiones-futuras">Gs 0</span>
+                  </div>
+                  <div class="border-t pt-2">
+                    <div class="flex justify-between items-center">
+                      <span class="font-bold">GRAN TOTAL A PAGAR:</span>
+                      <span class="font-bold text-lg text-green-600 dark:text-green-400" id="gran-total-pagar">Gs 0</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                  <i data-lucide="lightbulb" class="w-3 h-3 inline"></i>
+                  <strong>Tip:</strong> Cada sesion futura tendra su propio desglose de pago.
+                  Manana solo necesitaras usar "Credito disponible".
+                </div>
+              </div>
+            </div>
+
             <div id="desglose-pago-section">
               <label class="block text-sm font-medium mb-2">
                 Desglose del Pago
@@ -619,6 +688,21 @@
             <p class="text-gray-500 text-center py-8">No hay paquetes activos</p>
           </div>
         </div>
+
+        <!-- Acceso al Historico de Paquetes -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 mt-6">
+          <div class="flex justify-between items-center">
+            <div class="flex items-center">
+              <i data-lucide="archive" class="w-5 h-5 mr-2 text-gray-500"></i>
+              <span class="font-medium">Historial de Paquetes</span>
+            </div>
+            <button onclick="openPackageHistoryModal()" class="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors">
+              <span class="mr-2">Ver Historial</span>
+              <span id="history-packages-counter" class="bg-gray-300 dark:bg-gray-600 px-2 py-0.5 rounded-full text-sm">0</span>
+              <i data-lucide="chevron-right" class="w-4 h-4 ml-2"></i>
+            </button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -795,6 +879,33 @@
 
   </main>
 
+  <!-- Modal de Historial de Paquetes -->
+  <div id="package-history-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+    <div class="flex items-center justify-center min-h-screen p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full max-h-[80vh] flex flex-col">
+        <div class="flex justify-between items-center p-4 border-b dark:border-gray-700">
+          <h3 class="text-lg font-semibold flex items-center">
+            <i data-lucide="archive" class="w-5 h-5 mr-2"></i>
+            Historial de Paquetes Completados
+          </h3>
+          <button onclick="closePackageHistoryModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <div class="p-4 overflow-auto flex-1">
+          <div id="package-history-table-container">
+            <p class="text-gray-500 text-center py-8">No hay paquetes completados en el historial</p>
+          </div>
+        </div>
+
+        <div class="p-4 border-t dark:border-gray-700 text-sm text-gray-500">
+          <span id="package-history-total">Total: 0 paquetes</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal de Saldo Inicial -->
   <div id="saldo-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
     <div class="flex items-center justify-center min-h-screen p-4">
@@ -848,6 +959,30 @@
               <i data-lucide="edit" class="w-4 h-4 inline mr-1"></i>
               Editar
             </button>
+            <button onclick="clearHistorialSaldo()" class="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-md text-sm">
+              <i data-lucide="trash-2" class="w-4 h-4 inline mr-1"></i>
+              Limpiar
+            </button>
+          </div>
+
+          <!-- Historial de cambios -->
+          <div class="border-t dark:border-gray-700 pt-4">
+            <button onclick="toggleHistorial()" class="flex items-center justify-between w-full text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100">
+              <span class="flex items-center">
+                <i data-lucide="history" class="w-4 h-4 mr-2"></i>
+                Ver historial de cambios
+              </span>
+              <div class="flex items-center">
+                <span id="historial-counter" class="badge badge-info mr-2">0</span>
+                <i data-lucide="chevron-down" class="w-4 h-4" id="historial-chevron"></i>
+              </div>
+            </button>
+
+            <div id="historial-content" class="hidden mt-3 max-h-40 overflow-y-auto">
+              <div id="historial-list" class="space-y-2">
+                <p class="text-sm text-gray-500 text-center py-2">No hay cambios registrados</p>
+              </div>
+            </div>
           </div>
         </div>
 
