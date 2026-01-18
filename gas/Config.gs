@@ -12,7 +12,7 @@
  */
 const CONFIG = {
   // ID del Spreadsheet (ACTUALIZAR CON TU ID)
-  SPREADSHEET_ID: 'TU_SPREADSHEET_ID_AQUI',
+  SPREADSHEET_ID: '1YcpVqvFWXRL1SDIONaWZMwCfMIghb-P-c7qJcFijook',
 
   // Zona horaria
   TIMEZONE: 'America/Asuncion',
