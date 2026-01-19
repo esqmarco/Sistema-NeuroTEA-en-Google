@@ -208,8 +208,11 @@ const RendicionService = {
       saldo -= flujo.efectivoUsado || 0;
       // Sumar vueltos en efectivo (regresa a caja)
       saldo += flujo.vueltoEfectivo || 0;
-      // Sumar efectivo recibido de terapeutas (devolucion)
-      saldo += flujo.efectivoRecibido || 0;
+      // Sumar efectivo recibido de terapeutas SOLO cuando terapeuta debe dar
+      // (la terapeuta devuelve efectivo a NeuroTEA)
+      if (c.tipo === ESTADOS_RENDICION.TERAPEUTA_DEBE_DAR && flujo.efectivoRecibido) {
+        saldo += flujo.efectivoRecibido;
+      }
     });
 
     return Math.max(0, saldo);
