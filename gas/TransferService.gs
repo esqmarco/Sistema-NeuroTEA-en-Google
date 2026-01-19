@@ -148,16 +148,17 @@ const TransferService = {
 
   /**
    * Obtiene transferencias pendientes para una fecha
+   * Muestra transferencias ENTRANTES a NeuroTEA (para conciliacion bancaria)
    * @param {string} fecha - Fecha
    * @returns {Array<Object>} - Lista de transferencias pendientes
    */
   getPendientes: function(fecha) {
     const transferencias = [];
 
-    // Obtener sesiones con transferencia a terapeuta
+    // Obtener sesiones con transferencia a NeuroTEA (entrante)
     const sesiones = SessionService.getByDate(fecha);
     sesiones.forEach(s => {
-      if (s.transferenciaTerminapeuta > 0) {
+      if (s.transferenciaNeurotea > 0 && !s.usaCredito) {
         const transferId = `session_${s.id}_transfer`;
         const estado = this.getEstado(transferId);
 
@@ -167,17 +168,17 @@ const TransferService = {
           sessionId: s.id,
           terapeuta: s.terapeuta,
           paciente: s.paciente,
-          monto: s.transferenciaTerminapeuta,
+          monto: s.transferenciaNeurotea,
           confirmado: estado ? estado.confirmed : false,
           fecha: fecha
         });
       }
     });
 
-    // Obtener paquetes con transferencia a terapeuta
+    // Obtener paquetes con transferencia a NeuroTEA (entrante)
     const paquetes = PackageService.getByDate(fecha);
     paquetes.forEach(p => {
-      if (p.transferenciaTerminapeuta > 0) {
+      if (p.transferenciaNeurotea > 0) {
         const transferId = `package_${p.id}_transfer`;
         const estado = this.getEstado(transferId);
 
@@ -187,17 +188,17 @@ const TransferService = {
           packageId: p.id,
           terapeuta: p.terapeuta,
           paciente: p.paciente,
-          monto: p.transferenciaTerminapeuta,
+          monto: p.transferenciaNeurotea,
           confirmado: estado ? estado.confirmed : false,
           fecha: fecha
         });
       }
     });
 
-    // Obtener sesiones grupales con transferencias
+    // Obtener sesiones grupales con transferencias a NeuroTEA (entrante por nino)
     const sesionesGrupales = GroupSessionService.getByDate(fecha);
     sesionesGrupales.forEach(gs => {
-      const asistencia = gs.asistencia || [];
+      const asistencia = gs.asistenciaJSON || gs.asistencia || [];
       asistencia.forEach(a => {
         if (a.presente && a.transferencia > 0) {
           const transferId = `group_${gs.id}_${a.nombre}_transfer`;

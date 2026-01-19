@@ -705,6 +705,9 @@ function updateSessionsList() {
         </div>
         <div class="flex items-center space-x-3">
           <span class="session-item-amount">${formatCurrency(gs.valorTotal)}</span>
+          <button onclick="editGroupSession(${gs.id})" class="text-blue-500 hover:text-blue-700">
+            <i data-lucide="edit" class="w-4 h-4"></i>
+          </button>
           <button onclick="deleteGroupSession(${gs.id})" class="text-red-500 hover:text-red-700">
             <i data-lucide="trash-2" class="w-4 h-4"></i>
           </button>
@@ -2036,6 +2039,150 @@ function saveSessionEdit() {
       showNotification('Error: ' + error.message, 'error');
     })
     .actualizarSesion(id, updates);
+}
+
+// ===========================
+// EDICION DE SESIONES GRUPALES
+// ===========================
+
+/**
+ * Abre el modal para editar una sesion grupal
+ */
+function editGroupSession(id) {
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        const session = result.data;
+
+        // Guardar ID
+        document.getElementById('edit-group-session-id').value = session.id;
+
+        // Mostrar info del grupo
+        document.getElementById('edit-group-session-nombre').textContent = session.grupoNombre || 'Grupo';
+        const terapeutas = session.terapeutasJSON || [];
+        document.getElementById('edit-group-session-terapeutas').textContent = terapeutas.join(', ');
+
+        // Generar lista de ninos
+        const asistencia = session.asistenciaJSON || [];
+        const childrenContainer = document.getElementById('edit-group-session-children');
+        childrenContainer.innerHTML = asistencia.map(nino => `
+          <div class="border rounded p-3 bg-white dark:bg-gray-600 edit-group-child-row" data-child="${nino.nombre}">
+            <div class="flex items-center justify-between mb-2">
+              <label class="flex items-center space-x-2">
+                <input type="checkbox" class="edit-group-attendance" ${nino.presente ? 'checked' : ''}>
+                <span class="font-medium">${nino.nombre}</span>
+              </label>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="text-xs text-gray-500">Valor</label>
+                <input type="number" class="edit-group-child-value w-full p-1 border rounded text-sm" value="${nino.valor || 0}" min="0">
+              </div>
+              <div>
+                <label class="text-xs text-gray-500">Efectivo</label>
+                <input type="number" class="edit-group-child-cash w-full p-1 border rounded text-sm" value="${nino.efectivo || 0}" min="0">
+              </div>
+              <div>
+                <label class="text-xs text-gray-500">Transferencia</label>
+                <input type="number" class="edit-group-child-transfer w-full p-1 border rounded text-sm" value="${nino.transferencia || 0}" min="0">
+              </div>
+            </div>
+          </div>
+        `).join('');
+
+        // Agregar event listeners
+        childrenContainer.querySelectorAll('input').forEach(input => {
+          input.addEventListener('input', updateEditGroupSessionTotals);
+          input.addEventListener('change', updateEditGroupSessionTotals);
+        });
+
+        // Calcular totales iniciales
+        updateEditGroupSessionTotals();
+
+        // Mostrar modal
+        document.getElementById('edit-group-session-modal').classList.remove('hidden');
+        lucide.createIcons();
+      } else {
+        showNotification(result.message || 'Error al cargar sesion grupal', 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .getSesionGrupalPorId(id);
+}
+
+/**
+ * Actualiza los totales del modal de edicion de sesion grupal
+ */
+function updateEditGroupSessionTotals() {
+  let totalValue = 0;
+  let totalCash = 0;
+  let totalTransfer = 0;
+
+  document.querySelectorAll('.edit-group-child-row').forEach(row => {
+    const presente = row.querySelector('.edit-group-attendance').checked;
+    if (presente) {
+      totalValue += parseNumber(row.querySelector('.edit-group-child-value').value);
+      totalCash += parseNumber(row.querySelector('.edit-group-child-cash').value);
+      totalTransfer += parseNumber(row.querySelector('.edit-group-child-transfer').value);
+    }
+  });
+
+  document.getElementById('edit-group-session-total').textContent = formatCurrency(totalValue);
+  document.getElementById('edit-group-session-efectivo').textContent = formatCurrency(totalCash);
+  document.getElementById('edit-group-session-transfer').textContent = formatCurrency(totalTransfer);
+}
+
+/**
+ * Cierra el modal de edicion de sesion grupal
+ */
+function closeEditGroupSessionModal() {
+  document.getElementById('edit-group-session-modal').classList.add('hidden');
+}
+
+/**
+ * Guarda los cambios de la sesion grupal editada
+ */
+function saveGroupSessionEdit() {
+  const id = parseInt(document.getElementById('edit-group-session-id').value);
+
+  // Recopilar asistencia actualizada
+  const asistencia = [];
+  document.querySelectorAll('.edit-group-child-row').forEach(row => {
+    asistencia.push({
+      nombre: row.dataset.child,
+      presente: row.querySelector('.edit-group-attendance').checked,
+      valor: parseNumber(row.querySelector('.edit-group-child-value').value),
+      efectivo: parseNumber(row.querySelector('.edit-group-child-cash').value),
+      transferencia: parseNumber(row.querySelector('.edit-group-child-transfer').value)
+    });
+  });
+
+  const updates = { asistencia: asistencia };
+
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        closeEditGroupSessionModal();
+        showNotification('Sesion grupal actualizada', 'success');
+        loadDateData(fechaActual);
+      } else {
+        showNotification(result.message || 'Error al actualizar', 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .actualizarSesionGrupal(id, updates);
 }
 
 /**
