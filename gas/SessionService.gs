@@ -158,6 +158,9 @@ const SessionService = {
       PackageService.revertCredit(session.paqueteId, session.terapeuta, session.paciente);
     }
 
+    // Limpiar confirmaciones si el terapeuta no tiene otras sesiones
+    RendicionService.cleanupSessionConfirmations(session.fecha, session);
+
     Database.delete(SHEETS.SESIONES, id);
     return resultado(true, null, 'Sesion eliminada exitosamente');
   },

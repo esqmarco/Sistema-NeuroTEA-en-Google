@@ -135,6 +135,10 @@ const GroupSessionService = {
       return resultado(false, null, 'Sesion grupal no encontrada');
     }
 
+    // Limpiar confirmaciones de terapeutas que participaron
+    const terapeutas = session.terapeutasJSON || [];
+    RendicionService.cleanupGroupSessionConfirmations(session.fecha, id, terapeutas);
+
     Database.delete(SHEETS.SESIONES_GRUPALES, id);
     return resultado(true, null, 'Sesion grupal eliminada');
   },
@@ -147,6 +151,56 @@ const GroupSessionService = {
   deleteByDate: function(fecha) {
     const deleted = Database.deleteByColumn(SHEETS.SESIONES_GRUPALES, 'fecha', fecha);
     return resultado(true, { count: deleted }, `${deleted} sesiones grupales eliminadas`);
+  },
+
+  /**
+   * Actualiza una sesion grupal
+   * @param {number} id - ID de la sesion
+   * @param {Object} updates - Datos a actualizar
+   * @returns {Object} - Resultado
+   */
+  update: function(id, updates) {
+    const session = this.getById(id);
+    if (!session) {
+      return resultado(false, null, 'Sesion grupal no encontrada');
+    }
+
+    // Obtener datos del grupo
+    const grupo = GroupService.getById(session.grupoId);
+    const porcentajeAporte = grupo ? grupo.porcentajeAporte : 30;
+
+    // Recalcular totales basados en asistencia actualizada
+    const asistencia = updates.asistencia || session.asistenciaJSON || [];
+    const presentes = asistencia.filter(a => a.presente);
+    const valorTotal = presentes.reduce((sum, a) => sum + (a.valor || 0), 0);
+    const efectivoTotal = presentes.reduce((sum, a) => sum + (a.efectivo || 0), 0);
+    const transferenciaTotal = presentes.reduce((sum, a) => sum + (a.transferencia || 0), 0);
+
+    // Recalcular aporte y honorarios
+    const aporteNeurotea = Math.round(valorTotal * porcentajeAporte / 100);
+    const honorariosTotales = valorTotal - aporteNeurotea;
+    const terapeutas = updates.terapeutas || session.terapeutasJSON || [];
+    const cantidadTerapeutas = terapeutas.length;
+    const honorariosPorTerapeuta = cantidadTerapeutas > 0 ? Math.floor(honorariosTotales / cantidadTerapeutas) : 0;
+    const residuoHonorarios = honorariosTotales - (honorariosPorTerapeuta * cantidadTerapeutas);
+
+    const updateData = {
+      asistenciaJSON: asistencia,
+      terapeutasJSON: terapeutas,
+      cantidadTerapeutas: cantidadTerapeutas,
+      cantidadPresentes: presentes.length,
+      valorTotal: valorTotal,
+      aporteNeurotea: aporteNeurotea,
+      honorariosTotales: honorariosTotales,
+      honorariosPorTerapeuta: honorariosPorTerapeuta,
+      residuoHonorarios: residuoHonorarios,
+      efectivo: efectivoTotal,
+      transferenciaNeurotea: transferenciaTotal
+    };
+
+    Database.update(SHEETS.SESIONES_GRUPALES, id, updateData);
+
+    return resultado(true, { ...session, ...updateData }, 'Sesion grupal actualizada');
   },
 
   /**
@@ -212,7 +266,7 @@ const GroupSessionService = {
     const result = [];
 
     sessions.forEach(session => {
-      const terapeutas = session.terapeutas || [];
+      const terapeutas = session.terapeutas || session.terapeutasJSON || [];
       if (terapeutas.includes(terapeuta)) {
         const share = this.getTherapistShare(session, terapeuta);
         result.push({
@@ -249,4 +303,22 @@ function getSesionesGrupalesPorFecha(fecha) {
  */
 function eliminarSesionGrupal(id) {
   return GroupSessionService.delete(id);
+}
+
+/**
+ * Obtiene sesion grupal por ID (para frontend)
+ */
+function getSesionGrupalPorId(id) {
+  const session = GroupSessionService.getById(id);
+  if (session) {
+    return resultado(true, session);
+  }
+  return resultado(false, null, 'Sesion grupal no encontrada');
+}
+
+/**
+ * Actualiza sesion grupal (para frontend)
+ */
+function actualizarSesionGrupal(id, updates) {
+  return GroupSessionService.update(id, updates);
 }

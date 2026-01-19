@@ -1233,6 +1233,71 @@
     </div>
   </div>
 
+  <!-- Modal de Editar Sesion Grupal -->
+  <div id="edit-group-session-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+    <div class="flex items-center justify-center min-h-screen p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center p-6 border-b dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800">
+          <h3 class="text-lg font-semibold flex items-center">
+            <i data-lucide="edit" class="w-5 h-5 mr-2"></i>
+            Editar Sesion Grupal
+          </h3>
+          <button onclick="closeEditGroupSessionModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <div class="p-6 space-y-4">
+          <input type="hidden" id="edit-group-session-id">
+
+          <div class="bg-gray-50 dark:bg-gray-700 p-3 rounded-md">
+            <div class="flex justify-between">
+              <span class="text-sm text-gray-600 dark:text-gray-400">Grupo:</span>
+              <span id="edit-group-session-nombre" class="font-medium"></span>
+            </div>
+            <div class="flex justify-between mt-1">
+              <span class="text-sm text-gray-600 dark:text-gray-400">Terapeutas:</span>
+              <span id="edit-group-session-terapeutas" class="text-sm"></span>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium mb-2">Ninos y Valores</label>
+            <div id="edit-group-session-children" class="space-y-3 max-h-60 overflow-y-auto">
+              <!-- Se llena dinamicamente -->
+            </div>
+          </div>
+
+          <div class="bg-blue-50 dark:bg-blue-900 p-3 rounded-md">
+            <div class="grid grid-cols-3 gap-2 text-sm">
+              <div class="text-center">
+                <span class="text-gray-600 dark:text-gray-400">Valor Total</span>
+                <div id="edit-group-session-total" class="font-bold text-blue-600">Gs 0</div>
+              </div>
+              <div class="text-center">
+                <span class="text-gray-600 dark:text-gray-400">Efectivo</span>
+                <div id="edit-group-session-efectivo" class="font-bold text-green-600">Gs 0</div>
+              </div>
+              <div class="text-center">
+                <span class="text-gray-600 dark:text-gray-400">Transferencia</span>
+                <div id="edit-group-session-transfer" class="font-bold text-purple-600">Gs 0</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end space-x-2 p-6 border-t dark:border-gray-700">
+          <button onclick="closeEditGroupSessionModal()" class="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-md">
+            Cancelar
+          </button>
+          <button onclick="saveGroupSessionEdit()" class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md">
+            Guardar Cambios
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal de Editar Egreso -->
   <div id="edit-egreso-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
     <div class="flex items-center justify-center min-h-screen p-4">

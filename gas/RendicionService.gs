@@ -392,6 +392,77 @@ const RendicionService = {
   },
 
   /**
+   * Limpia confirmaciones de un terapeuta cuando se elimina una sesion
+   * Solo elimina si el terapeuta no tiene otras sesiones en la fecha
+   * @param {string} fecha - Fecha de la sesion
+   * @param {Object} session - Sesion que se va a eliminar (individual)
+   */
+  cleanupSessionConfirmations: function(fecha, session) {
+    if (!session || !session.terapeuta) return;
+
+    const terapeuta = session.terapeuta;
+
+    // Verificar si hay confirmacion para este terapeuta
+    const confirmacion = this.getConfirmacion(terapeuta, fecha);
+    if (!confirmacion) return;
+
+    // Verificar si el terapeuta tiene otras sesiones individuales (excluyendo la actual)
+    const todasSesiones = SessionService.getByDate(fecha);
+    const otrasSesionesIndividuales = todasSesiones.filter(s =>
+      s.terapeuta === terapeuta && s.id !== session.id
+    );
+
+    // Verificar si participa en sesiones grupales
+    const sesionesGrupales = GroupSessionService.getByDate(fecha);
+    const otrasSesionesGrupales = sesionesGrupales.filter(gs => {
+      const terapeutasGrupo = gs.terapeutasJSON || [];
+      return terapeutasGrupo.includes(terapeuta);
+    });
+
+    // Solo eliminar confirmacion si no tiene otras sesiones
+    if (otrasSesionesIndividuales.length === 0 && otrasSesionesGrupales.length === 0) {
+      Database.delete(SHEETS.CONFIRMACIONES, confirmacion.id);
+      Logger.log('Confirmacion eliminada para ' + terapeuta + ' (sin otras sesiones)');
+    } else {
+      Logger.log(terapeuta + ' tiene otras sesiones, manteniendo confirmacion');
+    }
+  },
+
+  /**
+   * Limpia confirmaciones de terapeutas cuando se elimina una sesion grupal
+   * @param {string} fecha - Fecha de la sesion
+   * @param {number} groupSessionId - ID de la sesion grupal que se elimina
+   * @param {Array} terapeutas - Lista de terapeutas de la sesion grupal
+   */
+  cleanupGroupSessionConfirmations: function(fecha, groupSessionId, terapeutas) {
+    if (!terapeutas || terapeutas.length === 0) return;
+
+    terapeutas.forEach(terapeuta => {
+      // Verificar si hay confirmacion
+      const confirmacion = this.getConfirmacion(terapeuta, fecha);
+      if (!confirmacion) return;
+
+      // Verificar sesiones individuales
+      const sesionesIndividuales = SessionService.getByDate(fecha).filter(s =>
+        s.terapeuta === terapeuta
+      );
+
+      // Verificar otras sesiones grupales (excluyendo la actual)
+      const otrasSesionesGrupales = GroupSessionService.getByDate(fecha).filter(gs => {
+        if (gs.id === groupSessionId) return false;
+        const terapeutasGrupo = gs.terapeutasJSON || [];
+        return terapeutasGrupo.includes(terapeuta);
+      });
+
+      // Solo eliminar si no tiene otras sesiones
+      if (sesionesIndividuales.length === 0 && otrasSesionesGrupales.length === 0) {
+        Database.delete(SHEETS.CONFIRMACIONES, confirmacion.id);
+        Logger.log('Confirmacion eliminada para ' + terapeuta + ' (sesion grupal eliminada)');
+      }
+    });
+  },
+
+  /**
    * Obtiene resumen de rendicion para una fecha
    * @param {string} fecha - Fecha
    * @returns {Object} - Resumen
