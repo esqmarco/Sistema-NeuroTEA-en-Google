@@ -66,7 +66,8 @@ const PackageService = {
       aporteNeurotea = parseInt(packageData.aporteNeurotea) || 0;
     } else {
       const porcentaje = parseInt(tipoAporte) || 30;
-      aporteNeurotea = Math.floor(valorTotal * porcentaje / 100);
+      // Usar Math.round() para coincidir con el sistema original
+      aporteNeurotea = Math.round(valorTotal * porcentaje / 100);
     }
 
     // Preparar datos del paquete
@@ -408,5 +409,18 @@ function eliminarPaqueteHistorial(id) {
     return resultado(true, null, 'Paquete eliminado del historial');
   } catch (error) {
     return resultado(false, null, error.message);
+  }
+}
+
+/**
+ * Obtiene todos los creditos activos (para frontend)
+ */
+function getCreditosActivos() {
+  try {
+    const creditos = Database.getAll(SHEETS.CREDITOS);
+    return creditos.filter(c => c.restante > 0);
+  } catch (error) {
+    console.error('Error obteniendo creditos:', error);
+    return [];
   }
 }

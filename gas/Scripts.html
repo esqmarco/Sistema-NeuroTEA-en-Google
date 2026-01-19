@@ -15,6 +15,7 @@ let sesiones = [];
 let sesionesGrupales = [];
 let egresos = [];
 let paquetesActivos = [];
+let paquetesFecha = [];  // Paquetes comprados en la fecha actual
 let gruposActivos = [];
 let confirmaciones = {};
 let estadosTransferencia = {};
@@ -134,6 +135,7 @@ function loadDateData(fecha) {
         sesiones = data.sesiones || [];
         sesionesGrupales = data.sesionesGrupales || [];
         egresos = data.egresos || [];
+        paquetesFecha = data.paquetesFecha || [];
         confirmaciones = data.confirmaciones || {};
         estadosTransferencia = data.estadosTransferencia || {};
         saldoInicial = data.saldoInicial || 0;
@@ -239,9 +241,12 @@ function setupEventListeners() {
   });
   safeAddListener('fixed-amount-input', 'input', updatePaymentDisplay);
 
-  // Modo de registro - validar al cambiar
+  // Modo de registro - validar y alternar vistas al cambiar
   document.querySelectorAll('input[name="modo-registro"]').forEach(radio => {
-    radio.addEventListener('change', validateRegisterButton);
+    radio.addEventListener('change', function() {
+      togglePaymentMode();
+      validateRegisterButton();
+    });
   });
 
   // Mini carrito de sesiones futuras
@@ -321,6 +326,191 @@ function updatePaymentDisplay() {
   document.getElementById('session-value-display').textContent = formatCurrency(valorSesion);
   document.getElementById('neurotea-contribution-display').textContent = formatCurrency(aporteNeurotea);
   document.getElementById('therapist-fee-display').textContent = formatCurrency(honorarios);
+}
+
+/**
+ * Alterna las secciones visibles segun el modo de registro seleccionado
+ * (pago-dia, usar-credito, sesion-grupal)
+ */
+function togglePaymentMode() {
+  const modoRegistro = document.querySelector('input[name="modo-registro"]:checked')?.value;
+
+  // Secciones a controlar
+  const desgloseSection = document.getElementById('desglose-pago-section');
+  const aporteSection = document.getElementById('aporte-neurotea-section');
+  const creditoSection = document.getElementById('paciente-credito-section');
+  const creditosAdicionalesSection = document.getElementById('creditos-adicionales-section');
+  const patientInput = document.getElementById('patient-name');
+
+  // Resetear campos de pago al cambiar modo
+  if (desgloseSection) {
+    document.getElementById('cash-to-neurotea').value = '';
+    document.getElementById('transfer-to-neurotea').value = '';
+    document.getElementById('transfer-to-therapist').value = '';
+  }
+
+  if (modoRegistro === 'pago-dia') {
+    // Mostrar desglose de pago y aporte
+    if (desgloseSection) desgloseSection.style.display = 'block';
+    if (aporteSection) aporteSection.style.display = 'block';
+    if (creditoSection) creditoSection.style.display = 'none';
+    if (creditosAdicionalesSection) creditosAdicionalesSection.style.display = 'block';
+    if (patientInput) patientInput.disabled = false;
+
+  } else if (modoRegistro === 'usar-credito') {
+    // Mostrar selector de pacientes con creditos
+    if (desgloseSection) desgloseSection.style.display = 'none';
+    if (aporteSection) aporteSection.style.display = 'none';
+    if (creditoSection) creditoSection.style.display = 'block';
+    if (creditosAdicionalesSection) creditosAdicionalesSection.style.display = 'none';
+    if (patientInput) patientInput.disabled = true;
+
+    // Cargar pacientes con creditos
+    updateAvailablePatients();
+
+  } else if (modoRegistro === 'sesion-grupal') {
+    // Ocultar todo y abrir modal de sesion grupal
+    if (desgloseSection) desgloseSection.style.display = 'none';
+    if (aporteSection) aporteSection.style.display = 'none';
+    if (creditoSection) creditoSection.style.display = 'none';
+    if (creditosAdicionalesSection) creditosAdicionalesSection.style.display = 'none';
+
+    // Abrir modal de sesion grupal
+    openGroupSessionModal();
+  }
+
+  // Actualizar display de pagos
+  updatePaymentDisplay();
+}
+
+/**
+ * Actualiza el selector de pacientes que tienen creditos disponibles
+ */
+function updateAvailablePatients() {
+  const terapeuta = document.getElementById('therapist-select').value;
+  const select = document.getElementById('paciente-credito-select');
+  const infoDisplay = document.getElementById('creditos-info-display');
+
+  if (!select) return;
+
+  // Limpiar selector
+  select.innerHTML = '<option value="">Seleccionar paciente...</option>';
+  if (infoDisplay) infoDisplay.innerHTML = '';
+
+  if (!terapeuta) {
+    if (infoDisplay) infoDisplay.innerHTML = '<p class="text-yellow-600">Primero seleccione un terapeuta</p>';
+    return;
+  }
+
+  // Obtener todos los creditos activos
+  google.script.run
+    .withSuccessHandler(function(creditos) {
+      // Filtrar creditos con sesiones restantes
+      const creditosDisponibles = creditos.filter(c =>
+        c.terapeuta === terapeuta && c.restante > 0
+      );
+
+      // Agrupar por paciente
+      const pacientesConCreditos = {};
+      creditosDisponibles.forEach(c => {
+        if (!pacientesConCreditos[c.paciente]) {
+          pacientesConCreditos[c.paciente] = { total: 0, paquetes: [] };
+        }
+        pacientesConCreditos[c.paciente].total += c.restante;
+        pacientesConCreditos[c.paciente].paquetes.push(c);
+      });
+
+      // Llenar selector
+      Object.keys(pacientesConCreditos).forEach(paciente => {
+        const option = document.createElement('option');
+        option.value = paciente;
+        option.textContent = `${paciente} (${pacientesConCreditos[paciente].total} creditos)`;
+        option.dataset.paquetes = JSON.stringify(pacientesConCreditos[paciente].paquetes);
+        select.appendChild(option);
+      });
+
+      if (Object.keys(pacientesConCreditos).length === 0) {
+        if (infoDisplay) infoDisplay.innerHTML = '<p class="text-gray-500">No hay pacientes con creditos para este terapeuta</p>';
+      }
+    })
+    .withFailureHandler(function(error) {
+      console.error('Error cargando creditos:', error);
+      if (infoDisplay) infoDisplay.innerHTML = '<p class="text-red-500">Error cargando creditos</p>';
+    })
+    .getCreditosActivos();
+
+  // Listener para mostrar info al seleccionar paciente
+  select.onchange = function() {
+    updateCreditInfo(this.value, this.options[this.selectedIndex].dataset.paquetes);
+  };
+}
+
+/**
+ * Muestra informacion del credito seleccionado
+ */
+function updateCreditInfo(paciente, paquetesJSON) {
+  const infoDisplay = document.getElementById('creditos-info-display');
+  const patientInput = document.getElementById('patient-name');
+
+  if (!infoDisplay) return;
+
+  if (!paciente || !paquetesJSON) {
+    infoDisplay.innerHTML = '';
+    if (patientInput) patientInput.value = '';
+    return;
+  }
+
+  const paquetes = JSON.parse(paquetesJSON);
+  const totalCreditos = paquetes.reduce((sum, p) => sum + p.restante, 0);
+
+  // Actualizar campo de paciente
+  if (patientInput) patientInput.value = paciente;
+
+  // Mostrar info
+  infoDisplay.innerHTML = `
+    <div class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg mt-2">
+      <p class="font-medium text-blue-800 dark:text-blue-200">Creditos disponibles: ${totalCreditos}</p>
+      <ul class="text-sm text-blue-700 dark:text-blue-300 mt-1">
+        ${paquetes.map(p => `
+          <li>Paquete ${p.paqueteId}: ${p.restante}/${p.total} sesiones</li>
+        `).join('')}
+      </ul>
+    </div>
+  `;
+}
+
+/**
+ * Inicializa el selector de terapeutas para sesiones futuras
+ */
+function initTerapeutasFuturasSelect() {
+  const select = document.getElementById('terapeuta-futura-select');
+  if (!select) return;
+
+  select.innerHTML = '<option value="">Seleccionar terapeuta...</option>';
+
+  terapeutas.forEach(t => {
+    const nombre = typeof t === 'string' ? t : t.nombre;
+    const option = document.createElement('option');
+    option.value = nombre;
+    option.textContent = nombre;
+    select.appendChild(option);
+  });
+}
+
+/**
+ * Maneja el cambio de tipo de egreso (mostrar/ocultar selector de terapeuta)
+ */
+function handleEgresoTypeChange() {
+  const tipoSelect = document.getElementById('egreso-type');
+  const terapeutaContainer = document.getElementById('egreso-therapist-container');
+
+  if (!tipoSelect || !terapeutaContainer) return;
+
+  if (tipoSelect.value === 'adelanto') {
+    terapeutaContainer.style.display = 'block';
+  } else {
+    terapeutaContainer.style.display = 'none';
+  }
 }
 
 /**
@@ -552,6 +742,13 @@ function updateSummaryView() {
     totalContribution += gs.aporteNeurotea || 0;
   });
 
+  // Sumar de paquetes comprados en la fecha (incluye activos e historico)
+  paquetesFecha.forEach(p => {
+    totalCash += p.efectivo || 0;
+    totalBank += p.transferenciaNeurotea || 0;
+    totalContribution += p.aporteNeurotea || 0;
+  });
+
   // Restar egresos
   egresos.forEach(e => {
     totalCash -= e.monto || 0;
@@ -564,6 +761,10 @@ function updateSummaryView() {
   });
   sesionesGrupales.forEach(gs => {
     ingresoTotal += gs.valorTotal || 0;
+  });
+  // Incluir paquetes en ingreso total
+  paquetesFecha.forEach(p => {
+    ingresoTotal += p.valorTotal || 0;
   });
 
   // Calcular total egresos
@@ -2891,6 +3092,13 @@ function importData() {
     return;
   }
 
+  // Password protection
+  const password = prompt('Ingrese la contrasena para importar datos:');
+  if (password !== '280208') {
+    showNotification('Contrasena incorrecta', 'error');
+    return;
+  }
+
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
@@ -3339,7 +3547,7 @@ function formatTimestamp(timestamp) {
 function clearHistorialSaldo() {
   const password = prompt('Ingrese contrasena para limpiar historial:');
 
-  if (password !== '1234') {
+  if (password !== '280208') {
     showNotification('Contrasena incorrecta', 'error');
     return;
   }
@@ -3763,6 +3971,13 @@ function importFullBackup() {
     return;
   }
 
+  // Password protection
+  const password = prompt('Ingrese la contrasena para restaurar el backup:');
+  if (password !== '280208') {
+    showNotification('Contrasena incorrecta', 'error');
+    return;
+  }
+
   if (!confirm('Esta seguro? Esta operacion reemplazara TODOS los datos actuales.')) {
     return;
   }
@@ -3808,6 +4023,13 @@ function importDayData() {
 
   if (!file) {
     showNotification('Seleccione un archivo', 'error');
+    return;
+  }
+
+  // Password protection
+  const password = prompt('Ingrese la contrasena para importar datos:');
+  if (password !== '280208') {
+    showNotification('Contrasena incorrecta', 'error');
     return;
   }
 
