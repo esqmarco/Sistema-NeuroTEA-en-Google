@@ -68,7 +68,8 @@ const SessionService = {
       aporteNeurotea = parseInt(sessionData.aporteNeurotea) || 0;
     } else {
       const porcentaje = parseInt(tipoAporte) || 30;
-      aporteNeurotea = Math.floor(valorSesion * porcentaje / 100);
+      // Usar Math.round() para coincidir con el sistema original
+      aporteNeurotea = Math.round(valorSesion * porcentaje / 100);
     }
 
     // Honorarios = Valor sesion - Aporte NeuroTEA
@@ -130,7 +131,8 @@ const SessionService = {
       const tipoAporte = updates.tipoAporte || session.tipoAporte || '30';
       if (tipoAporte !== 'fixed') {
         const porcentaje = parseInt(tipoAporte) || 30;
-        updates.aporteNeurotea = Math.floor(updates.valorSesion * porcentaje / 100);
+        // Usar Math.round() para coincidir con el sistema original
+        updates.aporteNeurotea = Math.round(updates.valorSesion * porcentaje / 100);
       }
 
       updates.honorarios = Math.max(0, updates.valorSesion - (updates.aporteNeurotea || session.aporteNeurotea));

@@ -336,6 +336,7 @@ function cargarDatosFecha(fecha) {
         sesiones: SessionService.getByDate(fecha),
         sesionesGrupales: GroupSessionService.getByDate(fecha),
         egresos: EgresoService.getByDate(fecha),
+        paquetesFecha: PackageService.getByDate(fecha),
         confirmaciones: RendicionService.getConfirmaciones(fecha),
         saldoInicial: RendicionService.getSaldoInicial(fecha),
         estadosTransferencia: TransferService.getEstados(fecha)
