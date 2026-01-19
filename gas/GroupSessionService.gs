@@ -266,7 +266,7 @@ const GroupSessionService = {
     const result = [];
 
     sessions.forEach(session => {
-      const terapeutas = session.terapeutas || [];
+      const terapeutas = session.terapeutas || session.terapeutasJSON || [];
       if (terapeutas.includes(terapeuta)) {
         const share = this.getTherapistShare(session, terapeuta);
         result.push({
