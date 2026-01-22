@@ -502,7 +502,95 @@ Crear agentes especializados para:
 2. **Agente Comparador**: Compara codigo GAS vs original
 3. **Agente Corrector**: Aplica correcciones basadas en patrones
 
+## Verificacion OBLIGATORIA (Quality Assurance)
+
+### IMPORTANTE: Ejecutar Antes de Cada Commit
+
+Despues de CUALQUIER cambio de codigo, ejecutar el skill de verificacion:
+
+```
+/verify-system
+```
+
+Este skill verifica automaticamente:
+1. IDs HTML vs referencias JavaScript (detecta `null` en runtime)
+2. Funciones llamadas vs funciones definidas (detecta errores de llamada)
+3. Propiedades de objetos consistentes (detecta `undefined`)
+4. Manejo de errores con withFailureHandler
+
+**NO HACER COMMIT hasta que el reporte muestre CERO ERRORES CRITICOS**
+
+### Checklist Pre-Commit
+
+Antes de confirmar que una tarea esta completa:
+
+- [ ] Ejecute `/verify-system`
+- [ ] Corregi todos los errores criticos reportados
+- [ ] Verifique que los flujos afectados funcionan en TODAS las pestanas
+- [ ] No hay errores en consola del navegador (F12)
+
+### Flujos Criticos que Requieren Verificacion Completa
+
+| Flujo | Pestanas Afectadas | Verificar |
+|-------|-------------------|-----------|
+| Registrar Sesion | Registro + Resumen + Rendicion + Transferencias | Valores correctos en todas |
+| Registrar Grupal | Registro + Resumen + Rendicion (proporcional) | Division de honorarios correcta |
+| Crear Paquete | Paquetes + Creditos | Ambas hojas creadas |
+| Usar Credito | Sesion + Creditos + Rendicion | Creditos decrementados |
+| Eliminar Sesion | Sesiones + Creditos + Transferencias | Todo revertido y limpiado |
+| Confirmar Rendicion | Rendicion + Confirmaciones | Estado congelado guardado |
+
+### Hooks Automaticos Configurados
+
+El proyecto tiene hooks en `.claude/settings.json` que:
+
+1. **PostToolUse (Edit/Write)**: Verifica balance de llaves `{}` despues de cada edicion
+2. **Stop**: Ejecuta verificacion de IDs al terminar la sesion
+
+Si un hook reporta advertencias, DEBE corregirse antes de continuar.
+
+### Patron de Codigo Seguro
+
+Al crear nuevas funciones, seguir este patron:
+
+**Backend (.gs)**:
+```javascript
+function miFuncion(parametros) {
+  try {
+    // logica
+    return resultado(true, datos, '');
+  } catch (error) {
+    Logger.log('Error en miFuncion: ' + error.message);
+    return resultado(false, null, error.message);
+  }
+}
+```
+
+**Frontend (Scripts.html)**:
+```javascript
+google.script.run
+  .withSuccessHandler(function(result) {
+    if (result.success) {
+      // usar result.data
+    } else {
+      showNotification('Error: ' + result.message, 'error');
+    }
+  })
+  .withFailureHandler(function(error) {
+    showNotification('Error: ' + error.message, 'error');
+  })
+  .miFuncion(parametros);
+```
+
 ## Historial de Cambios
+
+### v1.3.0 (2026-01-22)
+- Agregado sistema de verificacion automatica con hooks
+- Nuevo skill `/verify-system` para verificacion completa
+- Hooks PostToolUse para validar ediciones
+- Hooks Stop para verificacion final
+- Seccion de verificacion obligatoria en CLAUDE.md
+- Configuracion en `.claude/settings.json`
 
 ### v1.2.0 (2025-01-18)
 - Agregada seccion de verificacion sistematica para agentes
