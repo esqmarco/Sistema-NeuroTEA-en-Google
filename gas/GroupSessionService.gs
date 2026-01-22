@@ -153,6 +153,19 @@ const GroupSessionService = {
    * @returns {Object} - Resultado
    */
   deleteByDate: function(fecha) {
+    const sessions = this.getByDate(fecha);
+
+    // Limpiar cada sesion completamente
+    sessions.forEach(session => {
+      // Limpiar confirmaciones de terapeutas que participaron
+      const terapeutas = session.terapeutasJSON || session.terapeutas || [];
+      RendicionService.cleanupGroupSessionConfirmations(fecha, session.id, terapeutas);
+
+      // Limpiar estados de transferencia de cada nino presente
+      const asistencia = session.asistenciaJSON || session.asistencia || [];
+      TransferService.cleanupGroupSessionTransferStates(session.id, asistencia);
+    });
+
     const deleted = Database.deleteByColumn(SHEETS.SESIONES_GRUPALES, 'fecha', fecha);
     return resultado(true, { count: deleted }, `${deleted} sesiones grupales eliminadas`);
   },

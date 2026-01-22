@@ -176,11 +176,16 @@ const SessionService = {
   deleteByDate: function(fecha) {
     const sessions = this.getByDate(fecha);
 
-    // Revertir creditos de sesiones que los usaron
+    // Limpiar cada sesion completamente
     sessions.forEach(session => {
+      // Revertir creditos si aplica
       if (session.usaCredito && session.paqueteId) {
         PackageService.revertCredit(session.paqueteId, session.terapeuta, session.paciente);
       }
+      // Limpiar confirmaciones
+      RendicionService.cleanupSessionConfirmations(fecha, session);
+      // Limpiar estado de transferencia
+      TransferService.cleanupSessionTransferState(session.id);
     });
 
     const deleted = Database.deleteByColumn(SHEETS.SESIONES, 'fecha', fecha);

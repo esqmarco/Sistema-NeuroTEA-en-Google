@@ -2293,6 +2293,10 @@ function deleteSession(id) {
         showNotification(result.message, 'error');
       }
     })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error al eliminar: ' + error.message, 'error');
+    })
     .eliminarSesion(id);
 }
 
@@ -2314,6 +2318,10 @@ function deleteGroupSession(id) {
         showNotification(result.message, 'error');
       }
     })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error al eliminar: ' + error.message, 'error');
+    })
     .eliminarSesionGrupal(id);
 }
 
@@ -2334,6 +2342,10 @@ function deleteEgreso(id) {
       } else {
         showNotification(result.message, 'error');
       }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error al eliminar: ' + error.message, 'error');
     })
     .eliminarEgreso(id);
 }
@@ -2359,6 +2371,10 @@ function deleteTherapist(nombre) {
       } else {
         showNotification(result.message, 'error');
       }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error al desactivar: ' + error.message, 'error');
     })
     .desactivarTerapeuta(nombre);
 }
@@ -2783,6 +2799,10 @@ function deletePackage(id) {
         showNotification(result.message, 'error');
       }
     })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error al eliminar paquete: ' + error.message, 'error');
+    })
     .eliminarPaquete(id);
 }
 
@@ -2806,6 +2826,10 @@ function deleteGroup(id) {
         showNotification(result.message, 'error');
       }
     })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error al eliminar grupo: ' + error.message, 'error');
+    })
     .eliminarGrupo(id);
 }
 
@@ -2813,13 +2837,19 @@ function deleteGroup(id) {
  * Toggle confirmacion de transferencia
  */
 function toggleTransfer(transferId) {
+  showLoading(true);
   google.script.run
     .withSuccessHandler(function(result) {
+      showLoading(false);
       if (result.success) {
         updateTransfersView();
       } else {
         showNotification(result.message, 'error');
       }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error al cambiar estado: ' + error.message, 'error');
     })
     .toggleTransferencia(transferId);
 }
@@ -3205,6 +3235,10 @@ function revertConfirmation(terapeuta) {
       } else {
         showNotification(result.message, 'error');
       }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error al revertir: ' + error.message, 'error');
     })
     .revertirConfirmacionPago(terapeuta, fechaActual);
 }
@@ -3768,6 +3802,9 @@ function updatePackageHistoryCounter() {
         counter.textContent = result.data || 0;
       }
     })
+    .withFailureHandler(function(error) {
+      console.warn('Error actualizando contador de historial:', error.message);
+    })
     .getHistorialPaquetesCount();
 }
 
@@ -3791,6 +3828,10 @@ function exportFullBackup() {
         showNotification(result.message, 'error');
       }
     })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error al crear backup: ' + error.message, 'error');
+    })
     .crearBackupCompleto();
 }
 
@@ -3809,6 +3850,10 @@ function exportDayData() {
       } else {
         showNotification(result.message, 'error');
       }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error al exportar: ' + error.message, 'error');
     })
     .exportarDatosDia(fechaActual);
 }
@@ -3856,6 +3901,10 @@ function importData() {
               showNotification(result.message, 'error');
             }
           })
+          .withFailureHandler(function(error) {
+            showLoading(false);
+            showNotification('Error al restaurar: ' + error.message, 'error');
+          })
           .restaurarBackupCompleto(data);
 
       } else if (data.exportInfo && data.exportInfo.type === 'day_data') {
@@ -3871,6 +3920,10 @@ function importData() {
             } else {
               showNotification(result.message, 'error');
             }
+          })
+          .withFailureHandler(function(error) {
+            showLoading(false);
+            showNotification('Error al importar: ' + error.message, 'error');
           })
           .importarDatosDia(data, mode);
 
