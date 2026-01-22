@@ -316,6 +316,16 @@ const PackageService = {
       return resultado(false, null, 'Paquete no encontrado');
     }
 
+    // Verificar si hay sesiones usando creditos de este paquete
+    const sesionesConCredito = Database.getAll(SHEETS.SESIONES).filter(s =>
+      s.paqueteId == id && s.usaCredito === true
+    );
+    if (sesionesConCredito.length > 0) {
+      return resultado(false, null,
+        'No se puede eliminar: hay ' + sesionesConCredito.length + ' sesion(es) usando creditos de este paquete. Elimine primero las sesiones.'
+      );
+    }
+
     // Eliminar creditos asociados
     Database.deleteByColumn(SHEETS.CREDITOS, 'paqueteId', id);
 

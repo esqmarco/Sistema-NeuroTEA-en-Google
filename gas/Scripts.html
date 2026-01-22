@@ -1771,6 +1771,11 @@ function handleGroupSessionSubmit(e) {
         if (therapistsSection) therapistsSection.classList.add('hidden');
         const valuesSection = document.getElementById('group-values-section');
         if (valuesSection) valuesSection.classList.add('hidden');
+        // Resetear checkboxes de terapeutas
+        document.querySelectorAll('.group-therapist-checkbox').forEach(cb => cb.checked = false);
+        // Resetear checkboxes e inputs de asistencia
+        document.querySelectorAll('.child-attendance').forEach(cb => cb.checked = false);
+        document.querySelectorAll('.child-session-value, .child-cash, .child-transfer').forEach(input => input.value = '0');
         closeGroupSessionModal();
         loadDateData(fechaActual);
       } else {
@@ -1906,8 +1911,11 @@ function handlePackageSubmit(e) {
         // Recargar paquetes activos
         google.script.run
           .withSuccessHandler(function(packages) {
-            paquetesActivos = packages;
+            paquetesActivos = packages || [];
             updatePackagesList();
+          })
+          .withFailureHandler(function(error) {
+            console.warn('Error recargando paquetes:', error.message);
           })
           .getPaquetesActivos();
       } else {
@@ -1992,6 +2000,8 @@ function handleSaldoSubmit(e) {
       if (result.success) {
         showNotification('Saldo inicial guardado', 'success');
         saldoInicial = efectivo;
+        // Resetear el formulario
+        document.getElementById('nuevo-saldo-input').value = '';
         updateSummaryView();
       } else {
         showNotification(result.message, 'error');
@@ -3169,6 +3179,9 @@ function confirmPaymentWithChange(terapeuta, tipoVuelto) {
       };
 
       executePaymentConfirmation(terapeuta, opcion);
+    })
+    .withFailureHandler(function(error) {
+      showNotification('Error al obtener estado: ' + error.message, 'error');
     })
     .calcularEstadoTerapeuta(terapeuta, fechaActual);
 }
