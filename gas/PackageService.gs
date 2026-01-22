@@ -329,6 +329,13 @@ const PackageService = {
     // Eliminar creditos asociados
     Database.deleteByColumn(SHEETS.CREDITOS, 'paqueteId', id);
 
+    // Limpiar entrada de historial si existe (paquete completado)
+    const historial = Database.getAll(SHEETS.HISTORIAL_PAQUETES);
+    const pkgHistorial = historial.find(p => p.id == id);
+    if (pkgHistorial) {
+      Database.delete(SHEETS.HISTORIAL_PAQUETES, pkgHistorial.id);
+    }
+
     // Limpiar estado de transferencia asociado
     TransferService.cleanupPackageTransferState(id);
 
