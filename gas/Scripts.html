@@ -121,6 +121,7 @@ function loadInitialData() {
 
 /**
  * Carga datos de una fecha especifica
+ * También refresca terapeutas y grupos para mantener sincronización
  */
 function loadDateData(fecha) {
   showLoading(true);
@@ -139,6 +140,14 @@ function loadDateData(fecha) {
         confirmaciones = data.confirmaciones || {};
         estadosTransferencia = data.estadosTransferencia || {};
         saldoInicial = data.saldoInicial || 0;
+
+        // Refrescar terapeutas y grupos si fueron incluidos en la respuesta
+        if (data.terapeutas) {
+          terapeutas = data.terapeutas;
+        }
+        if (data.grupos) {
+          gruposActivos = data.grupos;
+        }
 
         updateAllViews();
       } else {
@@ -1913,68 +1922,59 @@ function handlePackageSubmit(e) {
 }
 
 /**
- * Maneja envio de formulario de grupo
+ * NOTA: Esta funcion es CODIGO LEGACY - NO SE USA ACTUALMENTE
+ * La creacion de grupos se hace mediante createGroup() que crea grupos
+ * sin ninos inicialmente. Los ninos se agregan despues via el modal de edicion.
+ *
+ * Esta funcion referencia elementos HTML que no existen (#group-children-inputs)
+ * Se mantiene comentada por referencia historica.
  */
-function handleGroupSubmit(e) {
-  e.preventDefault();
-
-  const nombre = document.getElementById('new-group-name').value.trim();
-  const porcentajeAporte = document.getElementById('new-group-percentage').value;
-
-  // Obtener ninos
-  const childRows = document.querySelectorAll('#group-children-inputs .child-input-row');
-  const ninos = [];
-
-  childRows.forEach(row => {
-    const nombreNino = row.querySelector('.child-name').value.trim();
-    const valor = parseInt(row.querySelector('.child-value').value) || 0;
-
-    if (nombreNino) {
-      ninos.push({ nombre: nombreNino, valor: valor });
-    }
-  });
-
-  if (!nombre) {
-    showNotification('Ingrese el nombre del grupo', 'warning');
-    return;
-  }
-  if (ninos.length === 0) {
-    showNotification('Agregue al menos un nino', 'warning');
-    return;
-  }
-
-  showLoading(true);
-
-  google.script.run
-    .withSuccessHandler(function(result) {
-      showLoading(false);
-      if (result.success) {
-        showNotification('Grupo creado', 'success');
-        // Resetear campos del formulario de grupo
-        const newGroupName = document.getElementById('new-group-name');
-        if (newGroupName) newGroupName.value = '';
-        const newGroupPercentage = document.getElementById('new-group-percentage');
-        if (newGroupPercentage) newGroupPercentage.value = '30';
-        // Nota: grupo-children-inputs no existe en el HTML actual
-        // Los grupos se crean sin ninos inicialmente, se agregan despues
-        // Recargar lista de grupos
-        google.script.run
-          .withSuccessHandler(function(groups) {
-            gruposActivos = groups;
-            updateGroupsList();
-            updateGroupSelects();
-          })
-          .getGruposActivos();
-      } else {
-        showNotification(result.message, 'error');
-      }
-    })
-    .withFailureHandler(function(error) {
-      showLoading(false);
-      showNotification('Error: ' + error.message, 'error');
-    })
-    .crearGrupo({ nombre: nombre, porcentajeAporte: porcentajeAporte, ninos: ninos });
-}
+// function handleGroupSubmit(e) {
+//   e.preventDefault();
+//   const nombre = document.getElementById('new-group-name').value.trim();
+//   const porcentajeAporte = document.getElementById('new-group-percentage').value;
+//   const childRows = document.querySelectorAll('#group-children-inputs .child-input-row');
+//   const ninos = [];
+//   childRows.forEach(row => {
+//     const nombreNino = row.querySelector('.child-name').value.trim();
+//     const valor = parseInt(row.querySelector('.child-value').value) || 0;
+//     if (nombreNino) {
+//       ninos.push({ nombre: nombreNino, valor: valor });
+//     }
+//   });
+//   if (!nombre) {
+//     showNotification('Ingrese el nombre del grupo', 'warning');
+//     return;
+//   }
+//   if (ninos.length === 0) {
+//     showNotification('Agregue al menos un nino', 'warning');
+//     return;
+//   }
+//   showLoading(true);
+//   google.script.run
+//     .withSuccessHandler(function(result) {
+//       showLoading(false);
+//       if (result.success) {
+//         showNotification('Grupo creado', 'success');
+//         document.getElementById('new-group-name').value = '';
+//         document.getElementById('new-group-percentage').value = '30';
+//         google.script.run
+//           .withSuccessHandler(function(groups) {
+//             gruposActivos = groups;
+//             updateGroupsList();
+//             updateGroupSelects();
+//           })
+//           .getGruposActivos();
+//       } else {
+//         showNotification(result.message, 'error');
+//       }
+//     })
+//     .withFailureHandler(function(error) {
+//       showLoading(false);
+//       showNotification('Error: ' + error.message, 'error');
+//     })
+//     .crearGrupo({ nombre: nombre, porcentajeAporte: porcentajeAporte, ninos: ninos });
+// }
 
 /**
  * Maneja envio de formulario de saldo inicial (legacy - usar saveSaldoInicial)

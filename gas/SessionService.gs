@@ -161,6 +161,9 @@ const SessionService = {
     // Limpiar confirmaciones si el terapeuta no tiene otras sesiones
     RendicionService.cleanupSessionConfirmations(session.fecha, session);
 
+    // Limpiar estado de transferencia asociado
+    TransferService.cleanupSessionTransferState(id);
+
     Database.delete(SHEETS.SESIONES, id);
     return resultado(true, null, 'Sesion eliminada exitosamente');
   },

@@ -124,11 +124,11 @@ const RendicionService = {
         tipo: confirmacion.tipo,
         tipoOpcion: confirmacion.tipoOpcion,
         timestamp: confirmacion.timestamp,
-        efectivoUsado: confirmacion.flujoJSON?.efectivoUsado || 0,
-        bancoUsado: confirmacion.flujoJSON?.bancoUsado || 0,
-        vueltoEfectivo: confirmacion.flujoJSON?.vueltoEfectivo || 0,
-        vueltoTransferencia: confirmacion.flujoJSON?.vueltoTransferencia || 0,
-        efectivoRecibido: confirmacion.flujoJSON?.efectivoRecibido || 0
+        efectivoUsado: confirmacion.flujoJSON?.efectivoUsado ?? 0,
+        bancoUsado: confirmacion.flujoJSON?.bancoUsado ?? 0,
+        vueltoEfectivo: confirmacion.flujoJSON?.vueltoEfectivo ?? 0,
+        vueltoTransferencia: confirmacion.flujoJSON?.vueltoTransferencia ?? 0,
+        efectivoRecibido: confirmacion.flujoJSON?.efectivoRecibido ?? 0
       };
       estado = 'CONFIRMADO';
       colorClass = 'badge-success';
@@ -205,9 +205,9 @@ const RendicionService = {
     const confirmaciones = this.getConfirmaciones(fecha);
     confirmaciones.forEach(c => {
       const flujo = c.flujoJSON || {};
-      saldo -= flujo.efectivoUsado || 0;
+      saldo -= flujo.efectivoUsado ?? 0;
       // Sumar vueltos en efectivo (regresa a caja)
-      saldo += flujo.vueltoEfectivo || 0;
+      saldo += flujo.vueltoEfectivo ?? 0;
       // Sumar efectivo recibido de terapeutas SOLO cuando terapeuta debe dar
       // (la terapeuta devuelve efectivo a NeuroTEA)
       if (c.tipo === ESTADOS_RENDICION.TERAPEUTA_DEBE_DAR && flujo.efectivoRecibido) {
@@ -250,9 +250,9 @@ const RendicionService = {
     const confirmaciones = this.getConfirmaciones(fecha);
     confirmaciones.forEach(c => {
       const flujo = c.flujoJSON || {};
-      saldo -= flujo.bancoUsado || 0;
+      saldo -= flujo.bancoUsado ?? 0;
       // Sumar vueltos por transferencia (regresa a cuenta)
-      saldo += flujo.vueltoTransferencia || 0;
+      saldo += flujo.vueltoTransferencia ?? 0;
     });
 
     return Math.max(0, saldo);
@@ -352,11 +352,11 @@ const RendicionService = {
 
     // Preparar flujo segun tipo de opcion
     const flujo = {
-      efectivoUsado: opcionPago.efectivoUsado || 0,
-      bancoUsado: opcionPago.bancoUsado || 0,
-      vueltoEfectivo: opcionPago.vueltoEfectivo || 0,
-      vueltoTransferencia: opcionPago.vueltoTransferencia || 0,
-      efectivoRecibido: opcionPago.efectivoRecibido || 0,
+      efectivoUsado: opcionPago.efectivoUsado ?? 0,
+      bancoUsado: opcionPago.bancoUsado ?? 0,
+      vueltoEfectivo: opcionPago.vueltoEfectivo ?? 0,
+      vueltoTransferencia: opcionPago.vueltoTransferencia ?? 0,
+      efectivoRecibido: opcionPago.efectivoRecibido ?? 0,
       tipoOpcion: opcionPago.tipoOpcion
     };
 
