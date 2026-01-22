@@ -75,6 +75,15 @@ const SessionService = {
     // Honorarios = Valor sesion - Aporte NeuroTEA
     const honorarios = Math.max(0, valorSesion - aporteNeurotea);
 
+    // Si usa credito, descontar ANTES para obtener creditosRestantes
+    let creditosRestantes = 0;
+    if (sessionData.usaCredito && sessionData.paqueteId) {
+      const creditResult = PackageService.useCredit(sessionData.paqueteId, sessionData.terapeuta, sessionData.paciente);
+      if (creditResult && creditResult.success) {
+        creditosRestantes = creditResult.data ? creditResult.data.restante : 0;
+      }
+    }
+
     // Preparar datos para insertar
     const session = {
       fecha: sessionData.fecha,
@@ -89,17 +98,12 @@ const SessionService = {
       tipoAporte: tipoAporte,
       usaCredito: sessionData.usaCredito || false,
       paqueteId: sessionData.paqueteId || '',
-      creditosRestantes: sessionData.creditosRestantes || 0,
+      creditosRestantes: creditosRestantes,
       creadoEn: getTimestamp()
     };
 
     // Insertar sesion
     const inserted = Database.insert(SHEETS.SESIONES, session);
-
-    // Si usa credito, descontar del paquete
-    if (sessionData.usaCredito && sessionData.paqueteId) {
-      PackageService.useCredit(sessionData.paqueteId, sessionData.terapeuta, sessionData.paciente);
-    }
 
     return resultado(true, inserted, 'Sesion registrada exitosamente');
   },
