@@ -173,6 +173,13 @@
                 <option value="">Seleccionar paciente...</option>
               </select>
               <div id="creditos-info-display" class="mt-2 text-sm text-gray-600 dark:text-gray-400"></div>
+              <!-- Selector de paquete específico (cuando hay múltiples) -->
+              <div id="paquete-selector-section" style="display: none;" class="mt-3">
+                <label class="block text-sm font-medium mb-1">Seleccionar paquete a usar:</label>
+                <div id="paquete-selector-list" class="space-y-2"></div>
+              </div>
+              <!-- Input oculto para almacenar el paqueteId seleccionado -->
+              <input type="hidden" id="selected-paquete-id" value="">
             </div>
 
             <!-- MINI CARRITO: Seccion de creditos adicionales (modo pago del dia) -->
@@ -328,8 +335,11 @@
               <i data-lucide="list" class="w-5 h-5 mr-2"></i>
               Registros del Dia
             </h3>
-            <button id="new-day-btn" onclick="clearDaySessions()" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm">
-              Limpiar Registros del Dia
+            <button id="new-day-btn" onclick="clearDaySessions()" class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded-md text-sm">
+              Limpiar Sesiones
+            </button>
+            <button onclick="clearDayRecords()" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm ml-2">
+              Limpiar TODO el Dia
             </button>
           </div>
           <div id="daily-sessions-container" class="space-y-3 max-h-96 overflow-y-auto">

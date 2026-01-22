@@ -446,17 +446,22 @@ function updateAvailablePatients() {
 }
 
 /**
- * Muestra informacion del credito seleccionado
+ * Muestra informacion del credito seleccionado y selector de paquete
  */
 function updateCreditInfo(paciente, paquetesJSON) {
   const infoDisplay = document.getElementById('creditos-info-display');
   const patientInput = document.getElementById('patient-name');
+  const paqueteSelectorSection = document.getElementById('paquete-selector-section');
+  const paqueteSelectorList = document.getElementById('paquete-selector-list');
+  const selectedPaqueteInput = document.getElementById('selected-paquete-id');
 
   if (!infoDisplay) return;
 
   if (!paciente || !paquetesJSON) {
     infoDisplay.innerHTML = '';
     if (patientInput) patientInput.value = '';
+    if (paqueteSelectorSection) paqueteSelectorSection.style.display = 'none';
+    if (selectedPaqueteInput) selectedPaqueteInput.value = '';
     return;
   }
 
@@ -466,17 +471,74 @@ function updateCreditInfo(paciente, paquetesJSON) {
   // Actualizar campo de paciente
   if (patientInput) patientInput.value = paciente;
 
-  // Mostrar info
+  // Mostrar info basica
   infoDisplay.innerHTML = `
     <div class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg mt-2">
       <p class="font-medium text-blue-800 dark:text-blue-200">Creditos disponibles: ${totalCreditos}</p>
-      <ul class="text-sm text-blue-700 dark:text-blue-300 mt-1">
-        ${paquetes.map(p => `
-          <li>Paquete ${p.paqueteId}: ${p.restante}/${p.total} sesiones</li>
-        `).join('')}
-      </ul>
     </div>
   `;
+
+  // Si hay múltiples paquetes, mostrar selector
+  if (paquetes.length > 1 && paqueteSelectorSection && paqueteSelectorList) {
+    paqueteSelectorSection.style.display = 'block';
+    paqueteSelectorList.innerHTML = paquetes.map((p, index) => `
+      <div class="flex items-center p-2 bg-white dark:bg-gray-700 border rounded ${index === 0 ? 'border-blue-500' : ''}">
+        <input type="radio" name="paquete-credito" id="paquete-${p.paqueteId}"
+               value="${p.paqueteId}" ${index === 0 ? 'checked' : ''}
+               onchange="selectPaquete('${p.paqueteId}')"
+               class="mr-2">
+        <label for="paquete-${p.paqueteId}" class="flex-1 text-sm cursor-pointer">
+          <span class="font-medium">Paquete #${p.paqueteId.toString().slice(-6)}</span>
+          <span class="text-gray-600 dark:text-gray-400 ml-2">${p.restante}/${p.total} sesiones restantes</span>
+        </label>
+      </div>
+    `).join('');
+
+    // Seleccionar el primer paquete por defecto
+    if (selectedPaqueteInput) selectedPaqueteInput.value = paquetes[0].paqueteId;
+  } else if (paquetes.length === 1) {
+    // Solo un paquete, seleccionarlo automaticamente
+    if (paqueteSelectorSection) paqueteSelectorSection.style.display = 'none';
+    if (selectedPaqueteInput) selectedPaqueteInput.value = paquetes[0].paqueteId;
+
+    // Mostrar info del paquete único
+    infoDisplay.innerHTML = `
+      <div class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg mt-2">
+        <p class="font-medium text-blue-800 dark:text-blue-200">Creditos disponibles: ${totalCreditos}</p>
+        <p class="text-sm text-blue-700 dark:text-blue-300 mt-1">
+          Paquete: ${paquetes[0].restante}/${paquetes[0].total} sesiones restantes
+        </p>
+      </div>
+    `;
+  } else {
+    if (paqueteSelectorSection) paqueteSelectorSection.style.display = 'none';
+    if (selectedPaqueteInput) selectedPaqueteInput.value = '';
+  }
+}
+
+/**
+ * Selecciona un paquete específico para usar el crédito
+ */
+function selectPaquete(paqueteId) {
+  const selectedPaqueteInput = document.getElementById('selected-paquete-id');
+  if (selectedPaqueteInput) {
+    selectedPaqueteInput.value = paqueteId;
+  }
+
+  // Actualizar estilos de selección
+  const radios = document.querySelectorAll('input[name="paquete-credito"]');
+  radios.forEach(radio => {
+    const container = radio.closest('div');
+    if (container) {
+      if (radio.value === paqueteId) {
+        container.classList.add('border-blue-500');
+        container.classList.remove('border-gray-200');
+      } else {
+        container.classList.remove('border-blue-500');
+        container.classList.add('border-gray-200');
+      }
+    }
+  });
 }
 
 /**
@@ -621,7 +683,7 @@ function updateTherapistSelects() {
 
   // Actualizar contadores de terapeutas
   const count = terapeutas.length;
-  const counterText = count + ' terapeuta' + (count !== 1 ? 's' : '');
+  const counterText = count + ' terapeuta' + (count !== 1 ? 's' : '') + ' disponibles';
   const counter = document.getElementById('therapist-counter');
   if (counter) counter.textContent = counterText;
   const listCounter = document.getElementById('therapist-list-counter');
@@ -653,70 +715,423 @@ function updateGroupTherapistCheckboxes() {
 }
 
 /**
- * Actualiza la lista de sesiones del dia
+ * Alterna la visibilidad de un grupo de terapeuta
  */
-function updateSessionsList() {
-  const container = document.getElementById('daily-sessions-container');
-  if (!container) return;
+function toggleTherapistGroup(therapistName, type) {
+  type = type || 'normal';
+  const sanitizedName = therapistName.replace(/[^a-zA-Z0-9]/g, '_');
+  const sessionsContainer = document.getElementById('sessions-' + sanitizedName + '_' + type);
+  const chevron = document.getElementById('chevron-' + sanitizedName + '_' + type);
 
-  const total = sesiones.length + sesionesGrupales.length;
+  if (sessionsContainer && chevron) {
+    if (sessionsContainer.classList.contains('hidden')) {
+      sessionsContainer.classList.remove('hidden');
+      chevron.classList.add('rotate-180');
+    } else {
+      sessionsContainer.classList.add('hidden');
+      chevron.classList.remove('rotate-180');
+    }
+  }
+}
 
-  if (total === 0) {
-    container.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-center py-8">No hay sesiones registradas</p>';
-    return;
+/**
+ * Alterna la visibilidad de sesiones de un grupo especifico
+ */
+function toggleGroupSection(groupId) {
+  const sanitizedId = groupId.replace(/[^a-zA-Z0-9]/g, '_');
+  const sessionsContainer = document.getElementById('sessions-group-' + sanitizedId);
+  const chevron = document.getElementById('chevron-group-' + sanitizedId);
+
+  if (sessionsContainer && chevron) {
+    if (sessionsContainer.classList.contains('hidden')) {
+      sessionsContainer.classList.remove('hidden');
+      chevron.classList.add('rotate-180');
+    } else {
+      sessionsContainer.classList.add('hidden');
+      chevron.classList.remove('rotate-180');
+    }
+  }
+}
+
+/**
+ * Formatea el indicador de tipo de aporte
+ */
+function formatContributionIndicator(item) {
+  if (!item) return '';
+
+  // Para sesiones individuales
+  if (item.tipoAporte) {
+    if (item.tipoAporte === 'fixed' || item.tipoAporte === 'fijo') {
+      return '(Fijo)';
+    }
+    return '(' + item.tipoAporte + '%)';
   }
 
-  let html = '';
+  // Para sesiones grupales - usar porcentajeAporte del grupo
+  if (item.porcentajeAporte !== undefined) {
+    return '(' + item.porcentajeAporte + '%)';
+  }
 
-  // Sesiones individuales
-  sesiones.forEach(s => {
-    const creditBadge = s.usaCredito ? '<span class="badge badge-info ml-2">Credito</span>' : '';
-    const editDisabled = s.usaCredito ? 'disabled title="No se puede editar sesiones con credito"' : '';
-    html += `
-      <div class="session-item">
-        <div class="session-item-info">
-          <p class="session-item-patient">${s.paciente}${creditBadge}</p>
-          <p class="session-item-therapist">${s.terapeuta}</p>
-        </div>
-        <div class="flex items-center space-x-3">
-          <span class="session-item-amount">${formatCurrency(s.valorSesion)}</span>
-          <button onclick="editSession(${s.id})" class="text-blue-500 hover:text-blue-700 ${s.usaCredito ? 'opacity-50 cursor-not-allowed' : ''}" ${editDisabled}>
-            <i data-lucide="edit" class="w-4 h-4"></i>
-          </button>
-          <button onclick="deleteSession(${s.id})" class="text-red-500 hover:text-red-700">
-            <i data-lucide="trash-2" class="w-4 h-4"></i>
-          </button>
-        </div>
-      </div>
-    `;
-  });
+  // Calcular porcentaje si no esta guardado
+  if (item.valorSesion && item.aporteNeurotea) {
+    const calculatedPercentage = Math.round((item.aporteNeurotea / item.valorSesion) * 100);
+    return '(' + calculatedPercentage + '%)';
+  }
 
-  // Sesiones grupales
-  sesionesGrupales.forEach(gs => {
-    html += `
-      <div class="session-item bg-purple-50 dark:bg-purple-900/20">
-        <div class="session-item-info">
-          <p class="session-item-patient">
-            <i data-lucide="users-2" class="w-4 h-4 inline mr-1"></i>
-            ${gs.grupoNombre}
-            <span class="badge badge-secondary ml-2">${gs.cantidadPresentes} ninos</span>
-          </p>
-          <p class="session-item-therapist">${(gs.terapeutas || []).join(', ')}</p>
-        </div>
-        <div class="flex items-center space-x-3">
-          <span class="session-item-amount">${formatCurrency(gs.valorTotal)}</span>
-          <button onclick="editGroupSession(${gs.id})" class="text-blue-500 hover:text-blue-700">
-            <i data-lucide="edit" class="w-4 h-4"></i>
-          </button>
-          <button onclick="deleteGroupSession(${gs.id})" class="text-red-500 hover:text-red-700">
-            <i data-lucide="trash-2" class="w-4 h-4"></i>
-          </button>
-        </div>
-      </div>
-    `;
-  });
+  if (item.valorTotal && item.aporteNeurotea) {
+    const calculatedPercentage = Math.round((item.aporteNeurotea / item.valorTotal) * 100);
+    return '(' + calculatedPercentage + '%)';
+  }
 
-  container.innerHTML = html;
+  return '';
+}
+
+/**
+ * Calcula el uso de creditos de una sesion
+ */
+function calculateCreditUsage(session) {
+  try {
+    // Buscar info de creditos del paciente
+    const creditInfo = paquetesActivos.find(p =>
+      p.paciente === session.paciente && p.terapeuta === session.terapeuta
+    );
+
+    if (creditInfo && creditInfo.sesionesTotal && creditInfo.sesionesRestantes !== undefined) {
+      const total = creditInfo.sesionesTotal;
+      const remaining = creditInfo.sesionesRestantes;
+      const used = total - remaining;
+      return 'Credito Usado ' + used + '/' + total;
+    }
+
+    // Usar info de la sesion si existe
+    if (session.creditosRestantes !== undefined) {
+      return 'Creditos restantes: ' + session.creditosRestantes;
+    }
+
+    return 'Credito Usado';
+  } catch (error) {
+    console.warn('Error calculando uso de creditos:', error);
+    return 'Credito Usado';
+  }
+}
+
+/**
+ * Actualiza la lista de sesiones del dia
+ * Estructura: Acordeones agrupados por terapeuta con sesiones grupales e individuales
+ */
+function updateSessionsList() {
+  try {
+    const container = document.getElementById('daily-sessions-container');
+    if (!container) return;
+
+    if (sesiones.length === 0 && sesionesGrupales.length === 0) {
+      container.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-center py-8">No hay sesiones registradas para este dia</p>';
+      return;
+    }
+
+    let finalHTML = '';
+
+    // ========================================
+    // SECCION DE SESIONES GRUPALES (verde) - Agrupadas por GRUPO
+    // ========================================
+    if (sesionesGrupales.length > 0) {
+      // Agrupar sesiones grupales por grupoId
+      const sessionsByGroup = {};
+      sesionesGrupales.forEach(gs => {
+        if (!sessionsByGroup[gs.grupoId]) {
+          sessionsByGroup[gs.grupoId] = [];
+        }
+        sessionsByGroup[gs.grupoId].push(gs);
+      });
+
+      Object.keys(sessionsByGroup).forEach(groupId => {
+        const groupConfig = gruposActivos.find(g => g.id == groupId);
+        const groupName = groupConfig ? groupConfig.nombre : (sessionsByGroup[groupId][0].grupoNombre || 'Grupo');
+        const groupSessionsList = sessionsByGroup[groupId];
+        const sessionCount = groupSessionsList.length;
+        const totalGroupValue = groupSessionsList.reduce((sum, gs) => sum + (gs.valorTotal || 0), 0);
+
+        const groupSessionsHTML = groupSessionsList.map(gs => {
+          const asistencia = gs.asistencia || [];
+          const presentChildren = asistencia.filter(a => a.presente).length;
+          const totalChildren = asistencia.length;
+          const therapistCount = gs.cantidadTerapeutas || (gs.terapeutas ? gs.terapeutas.length : 1);
+
+          // Lista de ninos presentes
+          const presentChildrenNames = asistencia
+            .filter(a => a.presente)
+            .map(a => a.nombre)
+            .join(', ');
+
+          // Lista de terapeutas
+          const therapistNames = gs.terapeutas ? gs.terapeutas.join(', ') : 'Sin terapeutas';
+
+          return '<div class="p-3 border-l-4 border-green-400 bg-green-50 dark:bg-green-900/30 ml-4 mb-2">' +
+            '<div class="flex justify-between items-start mb-2">' +
+              '<div>' +
+                '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-200 text-green-800 dark:bg-green-700 dark:text-green-200">' +
+                  'GRUPAL ÷' + therapistCount +
+                '</span>' +
+              '</div>' +
+              '<div class="flex space-x-1">' +
+                '<button onclick="editGroupSession(' + gs.id + ')" class="text-blue-500 hover:text-blue-700 p-1">' +
+                  '<i data-lucide="edit" class="w-4 h-4"></i>' +
+                '</button>' +
+                '<button onclick="deleteGroupSession(' + gs.id + ')" class="text-red-500 hover:text-red-700 p-1">' +
+                  '<i data-lucide="trash-2" class="w-4 h-4"></i>' +
+                '</button>' +
+              '</div>' +
+            '</div>' +
+            '<div class="text-sm text-green-700 dark:text-green-300 mb-2">' +
+              '<div class="font-medium mb-1">Presentes (' + presentChildren + '/' + totalChildren + '):</div>' +
+              '<div class="ml-2 text-green-600 dark:text-green-400">' + (presentChildrenNames || 'Ninguno') + '</div>' +
+            '</div>' +
+            '<div class="text-sm text-green-700 dark:text-green-300 mb-2">' +
+              '<div class="font-medium">Terapeutas:</div>' +
+              '<div class="ml-2">' + therapistNames + '</div>' +
+            '</div>' +
+            '<div class="grid grid-cols-2 gap-2 text-sm text-green-700 dark:text-green-300 border-t border-green-200 dark:border-green-700 pt-2 mt-2">' +
+              '<div>Valor Total: ' + formatCurrency(gs.valorTotal) + '</div>' +
+              '<div>Aporte NeuroTEA: ' + formatCurrency(gs.aporteNeurotea) + ' ' + formatContributionIndicator(gs) + '</div>' +
+              '<div>Hon. c/Terapeuta: ' + formatCurrency(gs.honorariosPorTerapeuta) + '</div>' +
+              '<div>Efectivo: ' + formatCurrency(gs.efectivo || 0) + '</div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+
+        const sanitizedGroupId = groupId.toString().replace(/[^a-zA-Z0-9]/g, '_');
+
+        finalHTML += '<div class="mb-4 border rounded-md bg-white dark:bg-gray-800 overflow-hidden border-green-300">' +
+          '<div class="bg-green-100 dark:bg-green-800 p-4 cursor-pointer hover:bg-green-200 dark:hover:bg-green-700 transition-colors"' +
+               ' onclick="toggleGroupSection(\'' + groupId.toString().replace(/'/g, "\\'") + '\')">' +
+            '<div class="flex justify-between items-center">' +
+              '<h4 class="font-semibold text-green-800 dark:text-green-200 flex items-center">' +
+                '<i data-lucide="users" class="w-5 h-5 mr-2"></i>' +
+                groupName +
+              '</h4>' +
+              '<div class="flex items-center space-x-2">' +
+                '<span class="text-sm text-green-600 dark:text-green-300">' + sessionCount + ' sesion' + (sessionCount !== 1 ? 'es' : '') + ' - ' + formatCurrency(totalGroupValue) + '</span>' +
+                '<i data-lucide="chevron-down" class="w-4 h-4 text-green-600 dark:text-green-300 transform transition-transform" id="chevron-group-' + sanitizedGroupId + '"></i>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="hidden p-4" id="sessions-group-' + sanitizedGroupId + '">' +
+            groupSessionsHTML +
+          '</div>' +
+        '</div>';
+      });
+    }
+
+    // ========================================
+    // SECCION DE SESIONES INDIVIDUALES - Agrupadas por terapeuta
+    // ========================================
+    const sessionsByTherapist = {};
+    sesiones.forEach(session => {
+      if (!sessionsByTherapist[session.terapeuta]) {
+        sessionsByTherapist[session.terapeuta] = {
+          normal: [],
+          credits: [],
+          groupParticipations: []
+        };
+      }
+
+      // Separar sesiones normales de sesiones con credito
+      if (session.usaCredito === true) {
+        sessionsByTherapist[session.terapeuta].credits.push(session);
+      } else {
+        sessionsByTherapist[session.terapeuta].normal.push(session);
+      }
+    });
+
+    // Agregar participaciones grupales a cada terapeuta
+    sesionesGrupales.forEach(gs => {
+      const terapeutasList = gs.terapeutas || [];
+      if (terapeutasList.length > 0) {
+        const therapistCount = terapeutasList.length;
+        const groupConfig = gruposActivos.find(g => g.id == gs.grupoId);
+        const groupName = groupConfig ? groupConfig.nombre : (gs.grupoNombre || 'Grupo');
+
+        terapeutasList.forEach((therapist, index) => {
+          if (!sessionsByTherapist[therapist]) {
+            sessionsByTherapist[therapist] = {
+              normal: [],
+              credits: [],
+              groupParticipations: []
+            };
+          }
+
+          // Calcular valor proporcional para esta terapeuta
+          const isFirstTherapist = index === 0;
+          const baseValue = Math.floor(gs.valorTotal / therapistCount);
+          const residuo = gs.valorTotal - (baseValue * therapistCount);
+          const valorProporcional = baseValue + (isFirstTherapist ? residuo : 0);
+
+          // Calcular aporte NeuroTEA proporcional
+          const baseAporte = Math.floor(gs.aporteNeurotea / therapistCount);
+          const residuoAporte = gs.aporteNeurotea - (baseAporte * therapistCount);
+          const aporteProporcional = baseAporte + (isFirstTherapist ? residuoAporte : 0);
+
+          // Calcular honorarios proporcionales
+          const honorariosProporcionales = valorProporcional - aporteProporcional;
+
+          // Calcular porcentaje de aporte
+          const porcentajeAporte = valorProporcional > 0
+            ? Math.round((aporteProporcional / valorProporcional) * 100)
+            : 0;
+
+          sessionsByTherapist[therapist].groupParticipations.push({
+            groupName: groupName,
+            totalValue: gs.valorTotal,
+            therapistCount: therapistCount,
+            valorProporcional: valorProporcional,
+            aporteProporcional: aporteProporcional,
+            honorariosProporcionales: honorariosProporcionales,
+            porcentajeAporte: porcentajeAporte
+          });
+        });
+      }
+    });
+
+    // Generar HTML agrupado por terapeuta
+    const therapistGroups = Object.keys(sessionsByTherapist).sort().map(therapist => {
+      const normalSessions = sessionsByTherapist[therapist].normal;
+      const creditSessions = sessionsByTherapist[therapist].credits;
+      const groupParticipations = sessionsByTherapist[therapist].groupParticipations || [];
+
+      let html = '';
+
+      // Calcular totales incluyendo participaciones grupales
+      const normalTotalValue = normalSessions.reduce((sum, s) => sum + (s.valorSesion || 0), 0);
+      const groupTotalValue = groupParticipations.reduce((sum, gp) => sum + gp.valorProporcional, 0);
+      const totalCount = normalSessions.length + groupParticipations.length;
+      const totalValue = normalTotalValue + groupTotalValue;
+
+      const sanitizedName = therapist.replace(/[^a-zA-Z0-9]/g, '_');
+
+      // SECCION NORMAL (azul) - si hay sesiones normales O participaciones grupales
+      if (normalSessions.length > 0 || groupParticipations.length > 0) {
+        // HTML de sesiones individuales normales
+        const normalSessionsHTML = normalSessions.map(session => {
+          return '<div class="p-3 border-l-4 border-blue-300 bg-gray-50 dark:bg-gray-700 ml-4 mb-2">' +
+            '<div class="flex justify-between items-start mb-2">' +
+              '<h5 class="font-semibold text-gray-800 dark:text-gray-200">' + (session.paciente || 'Sin nombre') + '</h5>' +
+              '<div class="flex space-x-1">' +
+                '<button onclick="editSession(' + session.id + ')" class="text-blue-500 hover:text-blue-700 p-1">' +
+                  '<i data-lucide="edit" class="w-4 h-4"></i>' +
+                '</button>' +
+                '<button onclick="deleteSession(' + session.id + ')" class="text-red-500 hover:text-red-700 p-1">' +
+                  '<i data-lucide="trash-2" class="w-4 h-4"></i>' +
+                '</button>' +
+              '</div>' +
+            '</div>' +
+            '<div class="grid grid-cols-2 gap-2 text-sm">' +
+              '<div>Efectivo: ' + formatCurrency(session.efectivo) + '</div>' +
+              '<div>Transf. Terapeuta: ' + formatCurrency(session.transferenciaTerminapeuta) + '</div>' +
+              '<div>Transf. NeuroTEA: ' + formatCurrency(session.transferenciaNeurotea) + '</div>' +
+              '<div class="font-bold">Total: ' + formatCurrency(session.valorSesion) + '</div>' +
+              '<div>Aporte NeuroTEA: ' + formatCurrency(session.aporteNeurotea) + ' ' + formatContributionIndicator(session) + '</div>' +
+              '<div>Honorarios: ' + formatCurrency(session.honorarios) + '</div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+
+        // HTML de participaciones grupales (tarjetas informativas)
+        const groupParticipationsHTML = groupParticipations.map(gp => {
+          return '<div class="p-3 border-l-4 border-green-400 bg-gray-50 dark:bg-gray-700 ml-4 mb-2">' +
+            '<div class="flex justify-between items-start mb-2">' +
+              '<h5 class="font-semibold text-gray-800 dark:text-gray-200">' + gp.groupName + '</h5>' +
+              '<div class="flex items-center space-x-2">' +
+                '<span class="text-xs font-medium px-2 py-1 rounded bg-green-200 text-green-800 dark:bg-green-700 dark:text-green-200">Terapia Grupal</span>' +
+                '<span class="text-blue-500 cursor-help" title="Participacion en sesion grupal. Para eliminar, use el registro del grupo.">' +
+                  '<i data-lucide="info" class="w-4 h-4"></i>' +
+                '</span>' +
+              '</div>' +
+            '</div>' +
+            '<div class="text-sm text-gray-600 dark:text-gray-300 space-y-1">' +
+              '<div class="font-medium">' + formatCurrency(gp.totalValue) + ' ÷ ' + gp.therapistCount + ' = ' + formatCurrency(gp.valorProporcional) + '</div>' +
+              '<div>Aporte NeuroTEA: ' + formatCurrency(gp.aporteProporcional) + ' (' + gp.porcentajeAporte + '%)</div>' +
+              '<div>Honorarios: ' + formatCurrency(gp.honorariosProporcionales) + '</div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+
+        html += '<div class="mb-4 border rounded-md bg-white dark:bg-gray-800 overflow-hidden">' +
+          '<div class="bg-blue-50 dark:bg-blue-900 p-4 cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-800 transition-colors"' +
+               ' onclick="toggleTherapistGroup(\'' + therapist.replace(/'/g, "\\'") + '\', \'normal\')">' +
+            '<div class="flex justify-between items-center">' +
+              '<h4 class="font-semibold text-blue-800 dark:text-blue-200">' + therapist + '</h4>' +
+              '<div class="flex items-center space-x-2">' +
+                '<span class="text-sm text-blue-600 dark:text-blue-300">' + totalCount + ' sesion' + (totalCount !== 1 ? 'es' : '') + ' - ' + formatCurrency(totalValue) + '</span>' +
+                '<i data-lucide="chevron-down" class="w-4 h-4 text-blue-600 dark:text-blue-300 transform transition-transform" id="chevron-' + sanitizedName + '_normal"></i>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="hidden p-4" id="sessions-' + sanitizedName + '_normal">' +
+            normalSessionsHTML +
+            groupParticipationsHTML +
+          '</div>' +
+        '</div>';
+      }
+
+      // SECCION CREDITOS (beige) - solo si hay sesiones con credito
+      if (creditSessions.length > 0) {
+        const creditCount = creditSessions.length;
+
+        const creditSessionsHTML = creditSessions.map(session => {
+          const creditUsage = calculateCreditUsage(session);
+          return '<div class="p-3 border-l-4 border-amber-300 bg-amber-50 dark:bg-amber-900/30 ml-4 mb-2">' +
+            '<div class="flex justify-between items-start mb-2">' +
+              '<h5 class="font-semibold text-amber-800 dark:text-amber-200">' + (session.paciente || 'Sin nombre') + '</h5>' +
+              '<button onclick="deleteSession(' + session.id + ')" class="text-red-500 hover:text-red-700 p-1">' +
+                '<i data-lucide="trash-2" class="w-4 h-4"></i>' +
+              '</button>' +
+            '</div>' +
+            '<div class="grid grid-cols-2 gap-2 text-sm text-amber-700 dark:text-amber-300">' +
+              '<div>Efectivo: Gs 0</div>' +
+              '<div>Transf. Terapeuta: Gs 0</div>' +
+              '<div>Transf. NeuroTEA: Gs 0</div>' +
+              '<div class="font-bold">' + creditUsage + '</div>' +
+              '<div>Aporte NeuroTEA: Gs 0</div>' +
+              '<div>Honorarios: Gs 0</div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+
+        html += '<div class="mb-4 border rounded-md bg-white dark:bg-gray-800 overflow-hidden border-amber-300">' +
+          '<div class="bg-amber-100 dark:bg-amber-800 p-4 cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-700 transition-colors"' +
+               ' onclick="toggleTherapistGroup(\'' + therapist.replace(/'/g, "\\'") + '\', \'credits\')">' +
+            '<div class="flex justify-between items-center">' +
+              '<h4 class="font-semibold text-amber-800 dark:text-amber-200">' + therapist + '</h4>' +
+              '<div class="flex items-center space-x-2">' +
+                '<span class="text-sm text-amber-600 dark:text-amber-300">' + creditCount + ' sesion' + (creditCount !== 1 ? 'es' : '') + ' con credito - Gs 0</span>' +
+                '<i data-lucide="chevron-down" class="w-4 h-4 text-amber-600 dark:text-amber-300 transform transition-transform" id="chevron-' + sanitizedName + '_credits"></i>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="hidden p-4" id="sessions-' + sanitizedName + '_credits">' +
+            creditSessionsHTML +
+          '</div>' +
+        '</div>';
+      }
+
+      return html;
+    }).join('');
+
+    finalHTML += therapistGroups;
+    container.innerHTML = finalHTML;
+
+    // Actualizar iconos de Lucide
+    if (typeof lucide !== 'undefined' && lucide.createIcons) {
+      lucide.createIcons();
+    }
+
+  } catch (error) {
+    console.error('Error en updateSessionsList:', error);
+    const container = document.getElementById('daily-sessions-container');
+    if (container) {
+      container.innerHTML = '<p class="text-red-500 text-center py-4">Error al cargar sesiones. Revise la consola.</p>';
+    }
+  }
 }
 
 /**
@@ -989,9 +1404,12 @@ function updateRendicionView() {
       resumen.terapeutas.forEach(status => {
         const badgeClass = getBadgeClass(status.estado);
         const ingresoTotal = status.valorTotalSesiones || 0;
+        const rowClass = status.confirmacionInfo
+          ? 'bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500'
+          : 'hover:bg-gray-50 dark:hover:bg-gray-700';
 
         html += `
-          <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+          <tr class="${rowClass}">
             <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 font-medium">${status.terapeuta}</td>
             <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">${formatCurrency(ingresoTotal)}</td>
             <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">${formatCurrency(status.aporteNeuroTEA || 0)}</td>
@@ -1228,6 +1646,18 @@ function handleSessionSubmit(e) {
   const modoRegistro = document.querySelector('input[name="modo-registro"]:checked');
   const usaCredito = modoRegistro && modoRegistro.value === 'usar-credito';
 
+  // Obtener paqueteId si usa credito
+  let paqueteId = null;
+  if (usaCredito) {
+    const selectedPaqueteInput = document.getElementById('selected-paquete-id');
+    paqueteId = selectedPaqueteInput ? selectedPaqueteInput.value : null;
+
+    if (!paqueteId) {
+      showNotification('Seleccione un paquete de creditos', 'warning');
+      return;
+    }
+  }
+
   // Obtener tipo de aporte desde radio buttons
   const aporteRadio = document.querySelector('input[name="neurotea-contribution"]:checked');
   const tipoAporte = aporteRadio ? aporteRadio.value : '30';
@@ -1241,7 +1671,8 @@ function handleSessionSubmit(e) {
     transferenciaTerminapeuta: parseNumber(document.getElementById('transfer-to-therapist').value),
     tipoAporte: tipoAporte,
     aporteNeurotea: parseNumber(document.getElementById('fixed-amount-input').value),
-    usaCredito: usaCredito
+    usaCredito: usaCredito,
+    paqueteId: paqueteId
   };
 
   // Validaciones
@@ -2329,7 +2760,14 @@ function renameTherapist(nombreActual) {
  * Elimina un paquete
  */
 function deletePackage(id) {
-  if (!confirm('¿Eliminar este paquete? Los creditos asociados tambien se eliminaran.')) return;
+  const mensaje =
+    '⚠️ ADVERTENCIA: Esta acción eliminará permanentemente:\n\n' +
+    '• El paquete seleccionado\n' +
+    '• Todos los créditos asociados\n\n' +
+    '¿Está seguro de continuar?';
+
+  if (!confirm(mensaje)) return;
+  if (!confirm('Esta acción NO se puede deshacer. ¿Confirma que desea proceder?')) return;
 
   showLoading(true);
 
@@ -2480,6 +2918,159 @@ function handlePaymentOption(terapeuta, option) {
       break;
     default:
       showNotification('Opcion no reconocida', 'error');
+  }
+}
+
+/**
+ * Funcion principal para confirmar rendicion de un terapeuta
+ * Obtiene el estado actual y muestra opciones de pago apropiadas
+ */
+function confirmarRendicion(terapeuta) {
+  showLoading(true);
+
+  // Obtener estado actual del terapeuta
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+
+      if (!result.success) {
+        showNotification('Error obteniendo estado: ' + result.message, 'error');
+        return;
+      }
+
+      const status = result.data;
+
+      // Si ya esta confirmado, no permitir
+      if (status.confirmado || status.confirmacionInfo) {
+        showNotification('Este terapeuta ya tiene una confirmacion', 'warning');
+        return;
+      }
+
+      // Verificar fondos insuficientes
+      if (status.estado === 'FONDOS INSUFICIENTES') {
+        alert('No hay fondos suficientes para realizar el pago.\n\n' +
+              'Saldo en Caja: ' + formatCurrency(status.saldoCajaActual) + '\n' +
+              'Cuenta NeuroTEA: ' + formatCurrency(status.saldoCuentaNeuroTEA) + '\n' +
+              'Monto a pagar: ' + formatCurrency(status.neuroteaLeDebe));
+        return;
+      }
+
+      // Mostrar dialogo con opciones segun estado
+      mostrarOpcionesPago(terapeuta, status);
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .getEstadoTerapeuta(terapeuta, fechaActual);
+}
+
+/**
+ * Muestra dialogo con opciones de pago segun el estado
+ */
+function mostrarOpcionesPago(terapeuta, status) {
+  let opciones = [];
+  let mensaje = '';
+
+  switch (status.estado) {
+    case 'DAR EFECTIVO':
+      const montoADar = formatCurrency(status.neuroteaLeDebe);
+      mensaje = `${terapeuta}\n\nNeuroTEA debe dar: ${montoADar}\n\nSeleccione como pagar:`;
+      opciones = [
+        { texto: `Dar exacto en efectivo (${montoADar})`, valor: 'exacto' },
+        { texto: `Dar efectivo con vuelto (terapeuta transfiere diferencia)`, valor: 'vuelto' },
+        { texto: `Dar efectivo con vuelto en efectivo`, valor: 'vuelto-efectivo' },
+        { texto: `Transferir desde cuenta NeuroTEA (${montoADar})`, valor: 'transferir' }
+      ];
+      break;
+
+    case 'DAR Y TRANSFERIR':
+      mensaje = `${terapeuta}\n\nNeuroTEA debe dar: ${formatCurrency(status.neuroteaLeDebe)}\n` +
+                `Saldo en caja: ${formatCurrency(status.saldoCajaActual)}\n` +
+                `Se dara todo el efectivo disponible y el resto por transferencia.\n\n` +
+                `¿Confirmar pago mixto?`;
+      if (confirm(mensaje)) {
+        executePaymentConfirmation(terapeuta, {
+          tipoOpcion: 'dar-transferir',
+          efectivoUsado: status.saldoCajaActual,
+          bancoUsado: status.neuroteaLeDebe - status.saldoCajaActual
+        });
+      }
+      return;
+
+    case 'TRANSFERIR':
+      mensaje = `${terapeuta}\n\nNeuroTEA debe transferir: ${formatCurrency(status.neuroteaLeDebe)}\n` +
+                `Disponible en cuenta: ${formatCurrency(status.saldoCuentaNeuroTEA)}\n\n` +
+                `¿Confirmar transferencia?`;
+      if (confirm(mensaje)) {
+        executePaymentConfirmation(terapeuta, {
+          tipoOpcion: 'transferir',
+          bancoUsado: status.neuroteaLeDebe
+        });
+      }
+      return;
+
+    case 'LA TERAPEUTA DEBE DAR':
+      const montoTerapeuta = formatCurrency(status.terapeutaDebe);
+      mensaje = `${terapeuta}\n\nLa terapeuta debe entregar: ${montoTerapeuta}\n\nSeleccione como recibe:`;
+      opciones = [
+        { texto: `Recibir en efectivo (${montoTerapeuta})`, valor: 'devolucion-efectivo' },
+        { texto: `Recibir por transferencia a cuenta NeuroTEA (${montoTerapeuta})`, valor: 'devolucion-transferencia' }
+      ];
+      break;
+
+    case 'SALDADO':
+      mensaje = `${terapeuta}\n\nEsta saldado (no hay movimiento de dinero).\n\n¿Confirmar como saldado?`;
+      if (confirm(mensaje)) {
+        executePaymentConfirmation(terapeuta, { tipoOpcion: 'saldado' });
+      }
+      return;
+
+    default:
+      showNotification('Estado no reconocido: ' + status.estado, 'error');
+      return;
+  }
+
+  // Mostrar prompt con opciones para DAR EFECTIVO y LA TERAPEUTA DEBE DAR
+  const opcionesTexto = opciones.map((o, i) => `${i + 1}. ${o.texto}`).join('\n');
+  const seleccion = prompt(mensaje + '\n\n' + opcionesTexto + '\n\nIngrese el numero de la opcion:', '1');
+
+  if (!seleccion) return;
+
+  const indice = parseInt(seleccion) - 1;
+  if (indice < 0 || indice >= opciones.length) {
+    showNotification('Opcion invalida', 'warning');
+    return;
+  }
+
+  const opcionSeleccionada = opciones[indice].valor;
+
+  // Manejar opciones con vuelto
+  if (opcionSeleccionada === 'vuelto' || opcionSeleccionada === 'vuelto-efectivo') {
+    const montoReal = prompt(
+      `Debe dar ${formatCurrency(status.neuroteaLeDebe)}.\n` +
+      `¿Cuanto va a entregar en efectivo?`,
+      status.neuroteaLeDebe
+    );
+
+    if (!montoReal) return;
+
+    const monto = parseNumber(montoReal);
+    if (monto <= status.neuroteaLeDebe) {
+      alert('El monto debe ser mayor al adeudado para generar vuelto');
+      return;
+    }
+
+    const vuelto = monto - status.neuroteaLeDebe;
+    executePaymentConfirmation(terapeuta, {
+      tipoOpcion: opcionSeleccionada,
+      efectivoUsado: monto,
+      vueltoEfectivo: opcionSeleccionada === 'vuelto-efectivo' ? vuelto : 0,
+      vueltoTransferencia: opcionSeleccionada === 'vuelto' ? vuelto : 0
+    });
+  } else {
+    // Opciones simples
+    executePaymentConfirmation(terapeuta, { tipoOpcion: opcionSeleccionada });
   }
 }
 
@@ -3516,7 +4107,7 @@ function createGroup() {
  * Limpiar sesiones del dia
  */
 function clearDaySessions() {
-  if (!confirm('Esta seguro de eliminar TODAS las sesiones de hoy?')) return;
+  if (!confirm('¿Está seguro de eliminar TODAS las sesiones de hoy?')) return;
   showLoading(true);
 
   // Eliminar todas las sesiones del dia actual
@@ -3534,6 +4125,54 @@ function clearDaySessions() {
     showNotification('Sesiones eliminadas', 'success');
     loadDateData(fechaActual);
   });
+}
+
+/**
+ * Limpia TODOS los registros del dia actual
+ * Incluye: sesiones, sesiones grupales, egresos, paquetes, confirmaciones
+ */
+function clearDayRecords() {
+  const mensaje =
+    '⚠️ ADVERTENCIA: Esta acción eliminará TODOS los registros del día:\n\n' +
+    '• ' + sesiones.length + ' sesiones individuales\n' +
+    '• ' + sesionesGrupales.length + ' sesiones grupales\n' +
+    '• ' + egresos.length + ' egresos\n' +
+    '• Paquetes comprados hoy\n' +
+    '• Todas las confirmaciones de rendición\n\n' +
+    '¿Está seguro de continuar?';
+
+  if (!confirm(mensaje)) return;
+
+  // Segunda confirmación para operación destructiva
+  if (!confirm('Esta acción NO se puede deshacer. ¿Confirma que desea proceder?')) return;
+
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        const c = result.data;
+        const resumen =
+          'Registros eliminados:\n' +
+          '• Sesiones: ' + c.sesiones + '\n' +
+          '• Sesiones grupales: ' + c.sesionesGrupales + '\n' +
+          '• Egresos: ' + c.egresos + '\n' +
+          '• Paquetes: ' + c.paquetes + '\n' +
+          '• Confirmaciones: ' + c.confirmaciones;
+
+        alert(resumen);
+        showNotification('Día limpiado exitosamente', 'success');
+        loadDateData(fechaActual);
+      } else {
+        showNotification('Error: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .limpiarDiaCompleto(fechaActual);
 }
 
 /**

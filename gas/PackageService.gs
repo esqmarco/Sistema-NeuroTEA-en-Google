@@ -201,7 +201,12 @@ const PackageService = {
     const pkg = this.getById(paqueteId);
     if (!pkg) return;
 
-    // Insertar en historial
+    // Obtener info del credito antes de limpiarlo
+    const creditos = Database.getAll(SHEETS.CREDITOS);
+    const credito = creditos.find(c => c.paqueteId == paqueteId);
+    const creditoId = credito ? credito.id : null;
+
+    // Insertar en historial con toda la informacion necesaria para restauracion
     Database.insert(SHEETS.HISTORIAL_PAQUETES, {
       id: pkg.id,
       fechaCompra: pkg.fechaCompra,
@@ -212,10 +217,17 @@ const PackageService = {
       valorTotal: pkg.valorTotal,
       efectivo: pkg.efectivo,
       transferenciaNeurotea: pkg.transferenciaNeurotea,
-      aporteNeurotea: pkg.aporteNeurotea
+      aporteNeurotea: pkg.aporteNeurotea,
+      // Guardar info del credito para posible restauracion
+      creditoId: creditoId
     });
 
-    // Marcar como inactivo
+    // Limpiar el registro de credito (ya no es necesario, el paquete esta completo)
+    if (credito) {
+      Database.delete(SHEETS.CREDITOS, credito.id);
+    }
+
+    // Marcar paquete como inactivo
     Database.update(SHEETS.PAQUETES, paqueteId, { activo: false });
   },
 
@@ -234,19 +246,59 @@ const PackageService = {
       // Eliminar del historial
       Database.delete(SHEETS.HISTORIAL_PAQUETES, pkgHistorial.id);
 
-      // Reactivar paquete
+      // Reactivar paquete con 1 sesion restante
       Database.update(SHEETS.PAQUETES, paqueteId, {
         sesionesRestantes: 1,
         activo: true
       });
 
-      // Reactivar credito
+      // Verificar si existe credito, si no, recrearlo
       const creditos = Database.getAll(SHEETS.CREDITOS);
-      const credito = creditos.find(c => c.paqueteId == paqueteId);
-      if (credito) {
-        Database.update(SHEETS.CREDITOS, credito.id, { restante: 1 });
+      const creditoExistente = creditos.find(c => c.paqueteId == paqueteId);
+
+      if (creditoExistente) {
+        // Si existe, actualizar restante a 1
+        Database.update(SHEETS.CREDITOS, creditoExistente.id, { restante: 1 });
+      } else {
+        // Si no existe (fue limpiado en moveToHistory), recrearlo
+        Database.insert(SHEETS.CREDITOS, {
+          paciente: pkgHistorial.paciente,
+          terapeuta: pkgHistorial.terapeuta,
+          total: pkgHistorial.sesionesTotal,
+          restante: 1,
+          paqueteId: paqueteId
+        });
       }
 
+      Logger.log('Paquete restaurado del historial: ' + paqueteId);
+      return resultado(true, null, 'Paquete restaurado del historial');
+    }
+
+    // Buscar por paciente/terapeuta si no se encontro por ID
+    const pkgByPatient = historial.find(p =>
+      p.paciente === paciente && p.terapeuta === terapeuta
+    );
+
+    if (pkgByPatient) {
+      // Eliminar del historial
+      Database.delete(SHEETS.HISTORIAL_PAQUETES, pkgByPatient.id);
+
+      // Reactivar paquete
+      Database.update(SHEETS.PAQUETES, pkgByPatient.id, {
+        sesionesRestantes: 1,
+        activo: true
+      });
+
+      // Recrear credito
+      Database.insert(SHEETS.CREDITOS, {
+        paciente: pkgByPatient.paciente,
+        terapeuta: pkgByPatient.terapeuta,
+        total: pkgByPatient.sesionesTotal,
+        restante: 1,
+        paqueteId: pkgByPatient.id
+      });
+
+      Logger.log('Paquete restaurado del historial por paciente/terapeuta: ' + pkgByPatient.id);
       return resultado(true, null, 'Paquete restaurado del historial');
     }
 

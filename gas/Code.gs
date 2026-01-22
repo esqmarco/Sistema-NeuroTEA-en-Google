@@ -380,6 +380,103 @@ function testConnection() {
 }
 
 /**
+ * Limpia todos los registros de un dia especifico
+ * Elimina: sesiones, sesiones grupales, egresos, paquetes, confirmaciones, estados de transferencia
+ * @param {string} fecha - Fecha en formato YYYY-MM-DD
+ * @returns {Object} - Resultado con contadores de eliminados
+ */
+function limpiarDiaCompleto(fecha) {
+  try {
+    const lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+
+    const contadores = {
+      sesiones: 0,
+      sesionesGrupales: 0,
+      egresos: 0,
+      paquetes: 0,
+      creditos: 0,
+      confirmaciones: 0,
+      estadosTransferencia: 0,
+      historialPaquetes: 0
+    };
+
+    Logger.log('Iniciando limpieza del dia: ' + fecha);
+
+    // 1. Eliminar sesiones individuales
+    const sesiones = SessionService.getByDate(fecha);
+    sesiones.forEach(s => {
+      // Revertir creditos si aplica
+      if (s.usaCredito && s.paqueteId) {
+        PackageService.revertCredit(s.paqueteId, s.terapeuta, s.paciente);
+      }
+      Database.delete(SHEETS.SESIONES, s.id);
+      contadores.sesiones++;
+    });
+
+    // 2. Eliminar sesiones grupales
+    const sesionesGrupales = GroupSessionService.getByDate(fecha);
+    sesionesGrupales.forEach(gs => {
+      Database.delete(SHEETS.SESIONES_GRUPALES, gs.id);
+      contadores.sesionesGrupales++;
+    });
+
+    // 3. Eliminar egresos
+    const egresos = EgresoService.getByDate(fecha);
+    egresos.forEach(e => {
+      Database.delete(SHEETS.EGRESOS, e.id);
+      contadores.egresos++;
+    });
+
+    // 4. Eliminar paquetes comprados en esa fecha y sus creditos
+    const paquetes = PackageService.getByDate(fecha);
+    paquetes.forEach(p => {
+      // Eliminar creditos asociados
+      Database.deleteByColumn(SHEETS.CREDITOS, 'paqueteId', p.id);
+      contadores.creditos++;
+      // Eliminar paquete
+      Database.delete(SHEETS.PAQUETES, p.id);
+      contadores.paquetes++;
+    });
+
+    // 5. Eliminar paquetes del historial que fueron COMPRADOS ese dia
+    const historial = Database.getAll(SHEETS.HISTORIAL_PAQUETES);
+    historial.forEach(h => {
+      if (h.fechaCompra === fecha) {
+        Database.delete(SHEETS.HISTORIAL_PAQUETES, h.id);
+        contadores.historialPaquetes++;
+      }
+    });
+
+    // 6. Eliminar confirmaciones del dia
+    const confirmaciones = RendicionService.getConfirmaciones(fecha);
+    confirmaciones.forEach(c => {
+      Database.delete(SHEETS.CONFIRMACIONES, c.id);
+      contadores.confirmaciones++;
+    });
+
+    // 7. Eliminar estados de transferencia del dia
+    const estados = Database.getAll(SHEETS.ESTADOS_TRANSFERENCIA);
+    estados.forEach(e => {
+      // Verificar si el timestamp corresponde a la fecha
+      if (e.timestamp && e.timestamp.split('T')[0] === fecha) {
+        Database.delete(SHEETS.ESTADOS_TRANSFERENCIA, e.id);
+        contadores.estadosTransferencia++;
+      }
+    });
+
+    lock.releaseLock();
+
+    Logger.log('Limpieza completada: ' + JSON.stringify(contadores));
+
+    return resultado(true, contadores, 'Dia limpiado exitosamente');
+  } catch (error) {
+    Logger.log('Error en limpiarDiaCompleto: ' + error.message);
+    return resultado(false, null, 'Error al limpiar dia: ' + error.message);
+  }
+}
+
+/**
  * FUNCION DE DIAGNOSTICO - Ejecutar desde el editor de Apps Script
  * Muestra exactamente que datos se estan cargando
  */

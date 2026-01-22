@@ -505,6 +505,19 @@ function calcularEstadoTerapeuta(terapeuta, fecha) {
 }
 
 /**
+ * Obtiene estado de terapeuta con resultado estructurado (para frontend)
+ */
+function getEstadoTerapeuta(terapeuta, fecha) {
+  try {
+    const status = RendicionService.calculateTherapistStatus(terapeuta, fecha);
+    return resultado(true, status);
+  } catch (error) {
+    Logger.log('Error en getEstadoTerapeuta: ' + error.message);
+    return resultado(false, null, error.message);
+  }
+}
+
+/**
  * Obtiene resumen del dia (para frontend)
  */
 function getResumenRendicion(fecha) {
