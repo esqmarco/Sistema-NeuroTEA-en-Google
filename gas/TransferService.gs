@@ -147,6 +147,55 @@ const TransferService = {
   },
 
   /**
+   * Limpia estados de transferencia para una sesion individual eliminada
+   * @param {number} sessionId - ID de la sesion
+   */
+  cleanupSessionTransferState: function(sessionId) {
+    const transferId = `session_${sessionId}_transfer`;
+    try {
+      Database.delete(SHEETS.ESTADOS_TRANSFERENCIA, transferId);
+      Logger.log('Estado de transferencia eliminado: ' + transferId);
+    } catch (e) {
+      // Ignorar si no existe
+    }
+  },
+
+  /**
+   * Limpia estados de transferencia para un paquete eliminado
+   * @param {number} packageId - ID del paquete
+   */
+  cleanupPackageTransferState: function(packageId) {
+    const transferId = `package_${packageId}_transfer`;
+    try {
+      Database.delete(SHEETS.ESTADOS_TRANSFERENCIA, transferId);
+      Logger.log('Estado de transferencia de paquete eliminado: ' + transferId);
+    } catch (e) {
+      // Ignorar si no existe
+    }
+  },
+
+  /**
+   * Limpia estados de transferencia para una sesion grupal eliminada
+   * @param {number} groupSessionId - ID de la sesion grupal
+   * @param {Array} asistencia - Lista de asistencia para limpiar estados individuales
+   */
+  cleanupGroupSessionTransferStates: function(groupSessionId, asistencia) {
+    if (!asistencia || !Array.isArray(asistencia)) return;
+
+    asistencia.forEach(a => {
+      if (a.nombre) {
+        const transferId = `group_${groupSessionId}_${a.nombre}_transfer`;
+        try {
+          Database.delete(SHEETS.ESTADOS_TRANSFERENCIA, transferId);
+          Logger.log('Estado de transferencia grupal eliminado: ' + transferId);
+        } catch (e) {
+          // Ignorar si no existe
+        }
+      }
+    });
+  },
+
+  /**
    * Obtiene transferencias pendientes para una fecha
    * Muestra transferencias ENTRANTES a NeuroTEA (para conciliacion bancaria)
    * @param {string} fecha - Fecha

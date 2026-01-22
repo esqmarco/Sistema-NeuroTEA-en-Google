@@ -319,6 +319,9 @@ const PackageService = {
     // Eliminar creditos asociados
     Database.deleteByColumn(SHEETS.CREDITOS, 'paqueteId', id);
 
+    // Limpiar estado de transferencia asociado
+    TransferService.cleanupPackageTransferState(id);
+
     // Eliminar paquete
     Database.delete(SHEETS.PAQUETES, id);
 

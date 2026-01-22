@@ -139,6 +139,10 @@ const GroupSessionService = {
     const terapeutas = session.terapeutasJSON || [];
     RendicionService.cleanupGroupSessionConfirmations(session.fecha, id, terapeutas);
 
+    // Limpiar estados de transferencia de cada niño presente
+    const asistencia = session.asistenciaJSON || [];
+    TransferService.cleanupGroupSessionTransferStates(id, asistencia);
+
     Database.delete(SHEETS.SESIONES_GRUPALES, id);
     return resultado(true, null, 'Sesion grupal eliminada');
   },

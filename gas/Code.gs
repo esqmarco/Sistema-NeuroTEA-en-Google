@@ -324,6 +324,7 @@ function cargarDatosIniciales() {
 
 /**
  * Carga datos de una fecha especifica
+ * También incluye terapeutas y grupos para mantener sincronización
  * @param {string} fecha - Fecha en formato YYYY-MM-DD
  * @returns {Object} - Datos de la fecha
  */
@@ -339,7 +340,10 @@ function cargarDatosFecha(fecha) {
         paquetesFecha: PackageService.getByDate(fecha),
         confirmaciones: RendicionService.getConfirmaciones(fecha),
         saldoInicial: RendicionService.getSaldoInicial(fecha),
-        estadosTransferencia: TransferService.getEstados(fecha)
+        estadosTransferencia: TransferService.getEstados(fecha),
+        // Incluir terapeutas y grupos para mantener sincronización entre pestañas
+        terapeutas: TherapistService.getAll(),
+        grupos: GroupService.getActive()
       }
     };
   } catch (error) {
