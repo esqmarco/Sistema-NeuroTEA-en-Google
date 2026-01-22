@@ -163,16 +163,44 @@ const TherapistService = {
       return resultado(false, null, 'Terapeuta no encontrado');
     }
 
-    // Verificar si tiene sesiones
+    // Verificar si tiene sesiones individuales
     const sessions = Database.getByColumn(SHEETS.SESIONES, 'terapeuta', therapist.nombre);
     if (sessions.length > 0) {
-      return resultado(false, null, 'No se puede eliminar: tiene sesiones registradas. Use desactivar en su lugar.');
+      return resultado(false, null, 'No se puede eliminar: tiene ' + sessions.length + ' sesiones registradas. Use desactivar en su lugar.');
     }
 
     // Verificar si tiene egresos (adelantos)
     const egresos = Database.getByColumn(SHEETS.EGRESOS, 'terapeuta', therapist.nombre);
     if (egresos.length > 0) {
-      return resultado(false, null, 'No se puede eliminar: tiene egresos registrados. Use desactivar en su lugar.');
+      return resultado(false, null, 'No se puede eliminar: tiene ' + egresos.length + ' egresos registrados. Use desactivar en su lugar.');
+    }
+
+    // Verificar si tiene paquetes
+    const paquetes = Database.getByColumn(SHEETS.PAQUETES, 'terapeuta', therapist.nombre);
+    if (paquetes.length > 0) {
+      return resultado(false, null, 'No se puede eliminar: tiene ' + paquetes.length + ' paquetes registrados. Use desactivar en su lugar.');
+    }
+
+    // Verificar si tiene creditos
+    const creditos = Database.getByColumn(SHEETS.CREDITOS, 'terapeuta', therapist.nombre);
+    if (creditos.length > 0) {
+      return resultado(false, null, 'No se puede eliminar: tiene ' + creditos.length + ' creditos activos. Use desactivar en su lugar.');
+    }
+
+    // Verificar si participo en sesiones grupales
+    const allGroupSessions = Database.getAll(SHEETS.SESIONES_GRUPALES);
+    const groupParticipation = allGroupSessions.filter(gs => {
+      const terapeutas = gs.terapeutasJSON || [];
+      return terapeutas.includes(therapist.nombre);
+    });
+    if (groupParticipation.length > 0) {
+      return resultado(false, null, 'No se puede eliminar: participo en ' + groupParticipation.length + ' sesiones grupales. Use desactivar en su lugar.');
+    }
+
+    // Verificar si tiene confirmaciones de rendicion
+    const confirmaciones = Database.getByColumn(SHEETS.CONFIRMACIONES, 'terapeuta', therapist.nombre);
+    if (confirmaciones.length > 0) {
+      return resultado(false, null, 'No se puede eliminar: tiene ' + confirmaciones.length + ' confirmaciones de pago. Use desactivar en su lugar.');
     }
 
     // Eliminar permanentemente
