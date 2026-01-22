@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FILE=\"$CLAUDE_FILE_PATH\"; if [[ \"$FILE\" =~ \\.(gs|html)$ ]]; then OPEN=$(grep -o \"{\" \"$FILE\" 2>/dev/null | wc -l); CLOSE=$(grep -o \"}\" \"$FILE\" 2>/dev/null | wc -l); if [ \"$OPEN\" -ne \"$CLOSE\" ]; then echo \"ADVERTENCIA: Llaves desbalanceadas en $FILE (abiertas: $OPEN, cerradas: $CLOSE)\" >&2; fi; fi'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'echo \"=== Verificacion Final ===\"; cd /home/user/Sistema-NeuroTEA-en-Google && JS_IDS=$(grep -oE \"getElementById\\([\\x27\\\"]([^\\x27\\\"]+)[\\x27\\\"]\\)\" gas/Scripts.html 2>/dev/null | sed \"s/.*getElementById([\\x27\\\"]//;s/[\\x27\\\"].*)//\" | sort -u); HTML_IDS=$(grep -oE \"id=\\\"([^\\\"]+)\\\"\" gas/Index.html 2>/dev/null | sed \"s/id=\\\"//;s/\\\"//\" | sort -u); MISSING=$(comm -23 <(echo \"$JS_IDS\") <(echo \"$HTML_IDS\") 2>/dev/null | head -5); if [ -n \"$MISSING\" ]; then echo \"IDs usados en JS pero no en HTML:\"; echo \"$MISSING\"; fi'"
+          }
+        ]
+      }
+    ]
+  }
+}
