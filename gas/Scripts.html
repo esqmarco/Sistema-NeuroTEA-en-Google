@@ -1638,6 +1638,13 @@ function updateAdminView() {
         </div>
       `;
     })
+    .withFailureHandler(function(error) {
+      console.error('Error cargando estadisticas:', error);
+      const container = document.getElementById('system-info');
+      if (container) {
+        container.innerHTML = '<p class="text-red-500 col-span-4">Error al cargar estadisticas</p>';
+      }
+    })
     .getEstadisticasSistema();
 }
 
@@ -4303,6 +4310,9 @@ function closeSaldoModal() {
   document.getElementById('saldo-modal').classList.add('hidden');
   document.getElementById('saldo-edit-section').classList.add('hidden');
   document.getElementById('saldo-action-buttons').classList.remove('hidden');
+  // Limpiar input para evitar datos residuales
+  const saldoInput = document.getElementById('nuevo-saldo-input');
+  if (saldoInput) saldoInput.value = '';
 }
 
 /**
@@ -4465,6 +4475,11 @@ function closeGroupSessionModal() {
   document.getElementById('group-therapists-section').classList.add('hidden');
   document.getElementById('group-attendance-section').classList.add('hidden');
   document.getElementById('group-values-section').classList.add('hidden');
+  // Limpiar contenido dinamico para evitar memory leaks
+  const therapistsList = document.getElementById('group-therapists-list');
+  if (therapistsList) therapistsList.innerHTML = '';
+  const attendanceList = document.getElementById('group-attendance-list');
+  if (attendanceList) attendanceList.innerHTML = '';
 }
 
 /**
