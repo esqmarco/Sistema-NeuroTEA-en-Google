@@ -2412,9 +2412,14 @@ function editSession(id) {
         // Calcular y mostrar el valor total
         updateEditSessionValue();
 
-        // Event listeners para actualizar valor
-        ['edit-session-efectivo', 'edit-session-transf-neurotea', 'edit-session-transf-terapeuta'].forEach(inputId => {
-          document.getElementById(inputId).addEventListener('input', updateEditSessionValue);
+        // Configurar event listeners (remover primero para evitar duplicados/memory leak)
+        const inputIds = ['edit-session-efectivo', 'edit-session-transf-neurotea', 'edit-session-transf-terapeuta'];
+        inputIds.forEach(inputId => {
+          const el = document.getElementById(inputId);
+          // Clonar y reemplazar para remover todos los listeners anteriores
+          const newEl = el.cloneNode(true);
+          el.parentNode.replaceChild(newEl, el);
+          newEl.addEventListener('input', updateEditSessionValue);
         });
 
         // Mostrar modal
@@ -2448,6 +2453,12 @@ function updateEditSessionValue() {
  */
 function closeEditSessionModal() {
   document.getElementById('edit-session-modal').classList.add('hidden');
+  // Limpiar datos del modal
+  document.getElementById('edit-session-id').value = '';
+  document.getElementById('edit-session-paciente').value = '';
+  document.getElementById('edit-session-efectivo').value = '0';
+  document.getElementById('edit-session-transf-neurotea').value = '0';
+  document.getElementById('edit-session-transf-terapeuta').value = '0';
 }
 
 /**
@@ -2590,6 +2601,9 @@ function updateEditGroupSessionTotals() {
  */
 function closeEditGroupSessionModal() {
   document.getElementById('edit-group-session-modal').classList.add('hidden');
+  // Limpiar datos del modal
+  const container = document.getElementById('edit-group-session-children');
+  if (container) container.innerHTML = '';
 }
 
 /**
@@ -2688,6 +2702,11 @@ function toggleEditEgresoTerapeuta() {
  */
 function closeEditEgresoModal() {
   document.getElementById('edit-egreso-modal').classList.add('hidden');
+  // Limpiar datos del modal
+  document.getElementById('edit-egreso-id').value = '';
+  document.getElementById('edit-egreso-tipo').value = 'gasto-neurotea';
+  document.getElementById('edit-egreso-concepto').value = '';
+  document.getElementById('edit-egreso-monto').value = '0';
 }
 
 /**
