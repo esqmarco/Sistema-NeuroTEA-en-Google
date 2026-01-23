@@ -1885,6 +1885,8 @@ function handleTherapistSubmit(e) {
  */
 function handlePackageSubmit(e) {
   e.preventDefault();
+  const packageBtn = document.getElementById('create-package-btn');
+  if (packageBtn && packageBtn.disabled) return;
 
   const packageData = {
     fecha: fechaActual,
@@ -1906,11 +1908,13 @@ function handlePackageSubmit(e) {
     return;
   }
 
+  if (packageBtn) packageBtn.disabled = true;
   showLoading(true);
 
   google.script.run
     .withSuccessHandler(function(result) {
       showLoading(false);
+      if (packageBtn) packageBtn.disabled = false;
       if (result.success) {
         showNotification('Paquete creado', 'success');
         document.getElementById('package-form').reset();
@@ -1931,6 +1935,7 @@ function handlePackageSubmit(e) {
     })
     .withFailureHandler(function(error) {
       showLoading(false);
+      if (packageBtn) packageBtn.disabled = false;
       showNotification('Error: ' + error.message, 'error');
     })
     .crearPaquete(packageData);
@@ -3999,6 +4004,9 @@ function downloadJSON(data, filename) {
  * Registrar sesion (wrapper para boton)
  */
 function registerSession() {
+  const registerBtn = document.getElementById('register-btn');
+  if (registerBtn && registerBtn.disabled) return;
+
   const terapeuta = document.getElementById('therapist-select').value;
   const paciente = document.getElementById('patient-name').value.trim();
   const efectivo = parseFloat(document.getElementById('cash-to-neurotea').value) || 0;
@@ -4037,10 +4045,12 @@ function registerSession() {
   // Verificar si hay sesiones futuras en el carrito
   const tieneSesionesFuturas = sesionesFuturasTemp.length > 0;
 
+  if (registerBtn) registerBtn.disabled = true;
   showLoading(true);
   google.script.run
     .withSuccessHandler(function(result) {
       showLoading(false);
+      if (registerBtn) registerBtn.disabled = false;
       if (result.success) {
         // Si hay sesiones futuras, procesarlas
         if (tieneSesionesFuturas) {
@@ -4060,6 +4070,7 @@ function registerSession() {
     })
     .withFailureHandler(function(error) {
       showLoading(false);
+      if (registerBtn) registerBtn.disabled = false;
       showNotification('Error: ' + error.message, 'error');
     })
     .registrarSesion({
@@ -4080,6 +4091,9 @@ function registerSession() {
  * Registrar egreso (wrapper para boton)
  */
 function registerEgreso() {
+  const egresoBtn = document.getElementById('add-egreso-btn');
+  if (egresoBtn && egresoBtn.disabled) return;
+
   const tipo = document.getElementById('egreso-type').value;
   const concepto = document.getElementById('egreso-concept').value.trim();
   const monto = parseFloat(document.getElementById('egreso-value').value) || 0;
@@ -4098,10 +4112,12 @@ function registerEgreso() {
     return;
   }
 
+  if (egresoBtn) egresoBtn.disabled = true;
   showLoading(true);
   google.script.run
     .withSuccessHandler(function(result) {
       showLoading(false);
+      if (egresoBtn) egresoBtn.disabled = false;
       if (result.success) {
         showNotification('Egreso registrado correctamente', 'success');
         document.getElementById('egreso-type').value = '';
@@ -4115,6 +4131,7 @@ function registerEgreso() {
     })
     .withFailureHandler(function(error) {
       showLoading(false);
+      if (egresoBtn) egresoBtn.disabled = false;
       showNotification('Error: ' + error.message, 'error');
     })
     .registrarEgreso({
@@ -4130,16 +4147,21 @@ function registerEgreso() {
  * Agregar terapeuta (wrapper para boton)
  */
 function addTherapist() {
+  const therapistBtn = document.getElementById('add-therapist-btn');
+  if (therapistBtn && therapistBtn.disabled) return;
+
   const nombre = document.getElementById('new-therapist-name').value.trim();
   if (!nombre) {
     showNotification('Ingrese el nombre de la terapeuta', 'error');
     return;
   }
 
+  if (therapistBtn) therapistBtn.disabled = true;
   showLoading(true);
   google.script.run
     .withSuccessHandler(function(result) {
       showLoading(false);
+      if (therapistBtn) therapistBtn.disabled = false;
       if (result.success) {
         showNotification('Terapeuta agregada correctamente', 'success');
         document.getElementById('new-therapist-name').value = '';
@@ -4152,6 +4174,7 @@ function addTherapist() {
     })
     .withFailureHandler(function(error) {
       showLoading(false);
+      if (therapistBtn) therapistBtn.disabled = false;
       showNotification('Error: ' + error.message, 'error');
     })
     .crearTerapeuta(nombre);
@@ -4608,6 +4631,9 @@ function updateGroupSessionTotals() {
  * Registrar sesion grupal
  */
 function registerGroupSession() {
+  const groupBtn = document.getElementById('register-group-btn');
+  if (groupBtn && groupBtn.disabled) return;
+
   const grupoId = document.getElementById('group-select').value;
   const grupo = gruposActivos.find(g => g.id == grupoId);
 
@@ -4657,10 +4683,12 @@ function registerGroupSession() {
   const honorariosTotales = valorTotal - aporteNeurotea;
   const honorariosPorTerapeuta = Math.floor(honorariosTotales / terapeutasSeleccionados.length);
 
+  if (groupBtn) groupBtn.disabled = true;
   showLoading(true);
   google.script.run
     .withSuccessHandler(function(result) {
       showLoading(false);
+      if (groupBtn) groupBtn.disabled = false;
       if (result.success) {
         showNotification('Sesion grupal registrada correctamente', 'success');
         closeGroupSessionModal();
@@ -4671,6 +4699,7 @@ function registerGroupSession() {
     })
     .withFailureHandler(function(error) {
       showLoading(false);
+      if (groupBtn) groupBtn.disabled = false;
       showNotification('Error: ' + error.message, 'error');
     })
     .registrarSesionGrupal({
