@@ -339,11 +339,8 @@
               <i data-lucide="list" class="w-5 h-5 mr-2"></i>
               Registros del Dia
             </h3>
-            <button id="new-day-btn" onclick="clearDaySessions()" class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded-md text-sm">
-              Limpiar Sesiones
-            </button>
-            <button onclick="clearDayRecords()" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm ml-2">
-              Limpiar TODO el Dia
+            <button id="new-day-btn" onclick="clearDayRecords()" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm">
+              Limpiar Registros del Dia
             </button>
           </div>
           <div id="daily-sessions-container" class="space-y-3 max-h-96 overflow-y-auto">
@@ -452,11 +449,12 @@
                 <th class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">TERAPEUTA DEBE TRANSF.</th>
                 <th class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">ESTADO</th>
                 <th class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">ACCION</th>
+                <th class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">COMPROB.</th>
               </tr>
             </thead>
             <tbody id="rendicion-therapist-table-body">
               <tr>
-                <td colspan="10" class="text-center py-4 text-gray-500">No hay datos para mostrar</td>
+                <td colspan="11" class="text-center py-4 text-gray-500">No hay datos para mostrar</td>
               </tr>
             </tbody>
           </table>
