@@ -1035,7 +1035,7 @@ function updateSessionsList() {
             '</div>' +
             '<div class="grid grid-cols-2 gap-2 text-sm">' +
               '<div>Efectivo: ' + formatCurrency(session.efectivo) + '</div>' +
-              '<div>Transf. Terapeuta: ' + formatCurrency(session.transferenciaTerminapeuta) + '</div>' +
+              '<div>Transf. Terapeuta: ' + formatCurrency(session.transferenciaTerapeuta) + '</div>' +
               '<div>Transf. NeuroTEA: ' + formatCurrency(session.transferenciaNeurotea) + '</div>' +
               '<div class="font-bold">Total: ' + formatCurrency(session.valorSesion) + '</div>' +
               '<div>Aporte NeuroTEA: ' + formatCurrency(session.aporteNeurotea) + ' ' + formatContributionIndicator(session) + '</div>' +
@@ -1791,7 +1791,7 @@ function handleSessionSubmit(e) {
     paciente: document.getElementById('patient-name').value.trim(),
     efectivo: parseNumber(document.getElementById('cash-to-neurotea').value),
     transferenciaNeurotea: parseNumber(document.getElementById('transfer-to-neurotea').value),
-    transferenciaTerminapeuta: parseNumber(document.getElementById('transfer-to-therapist').value),
+    transferenciaTerapeuta: parseNumber(document.getElementById('transfer-to-therapist').value),
     tipoAporte: tipoAporte,
     aporteNeurotea: parseNumber(document.getElementById('fixed-amount-input').value),
     usaCredito: usaCredito,
@@ -2000,7 +2000,7 @@ function handlePackageSubmit(e) {
     sesionesTotal: parseInt(document.getElementById('package-sessions').value) || 0,
     efectivo: parseInt(document.getElementById('package-cash').value) || 0,
     transferenciaNeurotea: parseInt(document.getElementById('package-transfer-neurotea').value) || 0,
-    transferenciaTerminapeuta: parseInt(document.getElementById('package-transfer-therapist').value) || 0,
+    transferenciaTerapeuta: parseInt(document.getElementById('package-transfer-therapist').value) || 0,
     tipoAporte: document.querySelector('input[name="package-neurotea-contribution"]:checked')?.value || '30'
   };
 
@@ -2531,7 +2531,7 @@ function editSession(id) {
         document.getElementById('edit-session-paciente').value = session.paciente || '';
         document.getElementById('edit-session-efectivo').value = session.efectivo || 0;
         document.getElementById('edit-session-transf-neurotea').value = session.transferenciaNeurotea || 0;
-        document.getElementById('edit-session-transf-terapeuta').value = session.transferenciaTerminapeuta || 0;
+        document.getElementById('edit-session-transf-terapeuta').value = session.transferenciaTerapeuta || 0;
 
         // Calcular y mostrar el valor total
         updateEditSessionValue();
@@ -2595,7 +2595,7 @@ function saveSessionEdit() {
     terapeuta: document.getElementById('edit-session-terapeuta').value,
     efectivo: parseInt(document.getElementById('edit-session-efectivo').value) || 0,
     transferenciaNeurotea: parseInt(document.getElementById('edit-session-transf-neurotea').value) || 0,
-    transferenciaTerminapeuta: parseInt(document.getElementById('edit-session-transf-terapeuta').value) || 0
+    transferenciaTerapeuta: parseInt(document.getElementById('edit-session-transf-terapeuta').value) || 0
   };
 
   if (!updates.paciente) {
@@ -3191,38 +3191,7 @@ function getPaymentActionHTML(status) {
 /**
  * Maneja la seleccion de opcion de pago del dropdown
  */
-function handlePaymentOption(terapeuta, option) {
-  if (!option) return;
-
-  // Resetear el select despues de procesar
-  setTimeout(() => {
-    const selects = document.querySelectorAll('select.form-select');
-    selects.forEach(s => { if (s.value === option) s.value = ''; });
-  }, 100);
-
-  switch(option) {
-    case 'exacto':
-      confirmPaymentExact(terapeuta);
-      break;
-    case 'vuelto':
-      confirmPaymentWithChange(terapeuta, 'transferencia');
-      break;
-    case 'vuelto-efectivo':
-      confirmPaymentWithChange(terapeuta, 'efectivo');
-      break;
-    case 'transferir':
-      confirmPaymentTransfer(terapeuta);
-      break;
-    case 'efectivo':
-      confirmPaymentTherapistGives(terapeuta, 'efectivo');
-      break;
-    case 'transferencia':
-      confirmPaymentTherapistGives(terapeuta, 'transferencia');
-      break;
-    default:
-      showNotification('Opcion no reconocida', 'error');
-  }
-}
+/* handlePaymentOption definida mas abajo (despues de confirmarRendicion) */
 
 /**
  * Funcion principal para confirmar rendicion de un terapeuta
@@ -3544,6 +3513,10 @@ function handlePaymentOption(terapeuta, opcion) {
       return;
     }
     executePaymentConfirmation(terapeuta, { tipoOpcion: 'transferir' });
+  } else if (opcion === 'efectivo') {
+    confirmPaymentTherapistGives(terapeuta, 'efectivo');
+  } else if (opcion === 'transferencia') {
+    confirmPaymentTherapistGives(terapeuta, 'transferencia');
   }
 }
 
@@ -3588,7 +3561,7 @@ function generateTherapistReceipt(terapeuta) {
         doc.text('Terapeuta: ' + terapeuta, 20, 35);
         doc.text('Fecha: ' + fechaActual, 20, 45);
         doc.text('---', 20, 55);
-        doc.text('Ingreso Total: ' + formatCurrency(data.ingresoTotal || 0), 20, 65);
+        doc.text('Ingreso Total: ' + formatCurrency(data.valorTotalSesiones || 0), 20, 65);
         doc.text('Aporte NeuroTEA: ' + formatCurrency(data.aporteNeuroTEA || 0), 20, 75);
         doc.text('Honorarios: ' + formatCurrency(data.honorarios || 0), 20, 85);
         doc.text('Transf. a Terapeuta: ' + formatCurrency(data.transferenciaATerapeuta || 0), 20, 95);
@@ -4036,7 +4009,7 @@ function procesarSesionesFuturas(pacienteName, fechaCompra) {
       porcentajeAporte: sesion.porcentajeAporte,
       efectivo: 0,
       transferenciaNeurotea: 0,
-      transferenciaTerminapeuta: 0,
+      transferenciaTerapeuta: 0,
       notas: 'Sesiones futuras pagadas junto con sesion principal'
     };
 
@@ -4364,7 +4337,7 @@ function registerSession() {
   const paciente = document.getElementById('patient-name').value.trim();
   const efectivo = parseFloat(document.getElementById('cash-to-neurotea').value) || 0;
   const transferenciaNeurotea = parseFloat(document.getElementById('transfer-to-neurotea').value) || 0;
-  const transferenciaTerminapeuta = parseFloat(document.getElementById('transfer-to-therapist').value) || 0;
+  const transferenciaTerapeuta = parseFloat(document.getElementById('transfer-to-therapist').value) || 0;
 
   if (!terapeuta) {
     showNotification('Seleccione un terapeuta', 'error');
@@ -4375,7 +4348,7 @@ function registerSession() {
     return;
   }
 
-  const valorSesion = efectivo + transferenciaNeurotea + transferenciaTerminapeuta;
+  const valorSesion = efectivo + transferenciaNeurotea + transferenciaTerapeuta;
   if (valorSesion <= 0) {
     showNotification('Ingrese un monto de pago', 'error');
     return;
@@ -4429,7 +4402,7 @@ function registerSession() {
       paciente: paciente,
       efectivo: efectivo,
       transferenciaNeurotea: transferenciaNeurotea,
-      transferenciaTerminapeuta: transferenciaTerminapeuta,
+      transferenciaTerapeuta: transferenciaTerapeuta,
       valorSesion: valorSesion,
       aporteNeurotea: aporteNeurotea,
       honorarios: honorarios,

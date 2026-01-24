@@ -55,8 +55,8 @@ const PackageService = {
     // Calcular valores
     const efectivo = parseInt(packageData.efectivo) || 0;
     const transferenciaNeurotea = parseInt(packageData.transferenciaNeurotea) || 0;
-    const transferenciaTerminapeuta = parseInt(packageData.transferenciaTerminapeuta) || 0;
-    const valorTotal = efectivo + transferenciaNeurotea + transferenciaTerminapeuta;
+    const transferenciaTerapeuta = parseInt(packageData.transferenciaTerapeuta) || 0;
+    const valorTotal = efectivo + transferenciaNeurotea + transferenciaTerapeuta;
 
     // Calcular aporte NeuroTEA
     let aporteNeurotea = 0;
@@ -80,7 +80,7 @@ const PackageService = {
       valorTotal: valorTotal,
       efectivo: efectivo,
       transferenciaNeurotea: transferenciaNeurotea,
-      transferenciaTerminapeuta: transferenciaTerminapeuta,
+      transferenciaTerapeuta: transferenciaTerapeuta,
       aporteNeurotea: aporteNeurotea,
       tipoAporte: tipoAporte,
       activo: true,

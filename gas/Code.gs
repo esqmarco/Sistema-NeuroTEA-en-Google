@@ -96,7 +96,7 @@ function initializeSpreadsheet() {
     },
     {
       name: 'Sesiones',
-      headers: ['id', 'fecha', 'terapeuta', 'paciente', 'efectivo', 'transferenciaNeurotea', 'transferenciaTerminapeuta', 'valorSesion', 'aporteNeurotea', 'honorarios', 'tipoAporte', 'usaCredito', 'paqueteId', 'creditosRestantes', 'creadoEn']
+      headers: ['id', 'fecha', 'terapeuta', 'paciente', 'efectivo', 'transferenciaNeurotea', 'transferenciaTerapeuta', 'valorSesion', 'aporteNeurotea', 'honorarios', 'tipoAporte', 'usaCredito', 'paqueteId', 'creditosRestantes', 'creadoEn']
     },
     {
       name: 'SesionesGrupales',
@@ -112,7 +112,7 @@ function initializeSpreadsheet() {
     },
     {
       name: 'Paquetes',
-      headers: ['id', 'fechaCompra', 'paciente', 'terapeuta', 'sesionesTotal', 'sesionesRestantes', 'valorTotal', 'efectivo', 'transferenciaNeurotea', 'transferenciaTerminapeuta', 'aporteNeurotea', 'tipoAporte', 'activo', 'creadoEn']
+      headers: ['id', 'fechaCompra', 'paciente', 'terapeuta', 'sesionesTotal', 'sesionesRestantes', 'valorTotal', 'efectivo', 'transferenciaNeurotea', 'transferenciaTerapeuta', 'aporteNeurotea', 'tipoAporte', 'activo', 'creadoEn']
     },
     {
       name: 'HistorialPaquetes',

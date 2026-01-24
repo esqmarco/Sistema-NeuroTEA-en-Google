@@ -225,7 +225,7 @@ const TransferService = {
         });
       }
       // Transferencia a Terapeuta (saliente)
-      if (s.transferenciaTerminapeuta > 0 && !s.usaCredito) {
+      if (s.transferenciaTerapeuta > 0 && !s.usaCredito) {
         var transferId2 = 'session_' + s.id + '_therapist';
         transferencias.push({
           id: transferId2,
@@ -233,7 +233,7 @@ const TransferService = {
           destinatario: s.terapeuta,
           concepto: 'Pago de sesion con ' + s.terapeuta,
           paciente: s.paciente || 'Sin nombre',
-          monto: s.transferenciaTerminapeuta,
+          monto: s.transferenciaTerapeuta,
           confirmado: false,
           fecha: fecha,
           isGrupal: false
