@@ -273,7 +273,8 @@ function cargarDatosIniciales() {
     egresos: [],
     paquetes: [],
     grupos: [],
-    confirmaciones: {},
+    paquetesFecha: [],
+    confirmaciones: [],
     saldoInicial: 0,
     estadosTransferencia: {},
     config: {}
@@ -295,6 +296,9 @@ function cargarDatosIniciales() {
 
   try { data.paquetes = PackageService.getActive(); }
   catch (e) { errors.push('Paquetes: ' + e.message); }
+
+  try { data.paquetesFecha = PackageService.getByDate(fecha); }
+  catch (e) { errors.push('PaquetesFecha: ' + e.message); }
 
   try { data.grupos = GroupService.getActive(); }
   catch (e) { errors.push('Grupos: ' + e.message); }

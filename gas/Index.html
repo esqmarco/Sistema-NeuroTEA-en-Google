@@ -679,7 +679,7 @@
               </div>
             </div>
 
-            <button type="submit" id="create-package-btn" class="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md">
+            <button type="submit" id="create-package-btn" disabled class="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white py-2 px-4 rounded-md">
               <i data-lucide="package-plus" class="w-4 h-4 inline mr-2"></i>
               Crear Paquete
             </button>
@@ -1083,6 +1083,10 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <div id="group-payment-warning" class="hidden mx-6 mt-3 text-sm text-red-500 bg-red-50 dark:bg-red-900/20 p-2 rounded">
+          El total de pagos no coincide con el valor de la sesion
         </div>
 
         <div class="flex justify-between p-6 border-t dark:border-gray-700">
