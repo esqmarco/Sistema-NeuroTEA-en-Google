@@ -182,9 +182,9 @@ const TransferService = {
   cleanupGroupSessionTransferStates: function(groupSessionId, asistencia) {
     if (!asistencia || !Array.isArray(asistencia)) return;
 
-    asistencia.forEach(a => {
-      if (a.nombre) {
-        const transferId = `group_${groupSessionId}_${a.nombre}_transfer`;
+    asistencia.forEach(function(a, childIndex) {
+      if (a.presente && a.transferencia > 0) {
+        var transferId = 'group_' + groupSessionId + '_child_' + childIndex + '_neurotea';
         try {
           Database.delete(SHEETS.ESTADOS_TRANSFERENCIA, transferId);
           Logger.log('Estado de transferencia grupal eliminado: ' + transferId);

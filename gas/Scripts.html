@@ -219,9 +219,6 @@ function setupEventListeners() {
   safeAddListener('patient-name', 'blur', checkPatientCredits);
   safeAddListener('patient-name', 'input', validateRegisterButton);
 
-  // Seleccion de grupo
-  safeAddListener('group-select', 'change', handleGroupSelection);
-
   // Validacion del boton registrar - escuchar cambios en campos relevantes
   safeAddListener('therapist-select', 'change', function() {
     validateRegisterButton();
@@ -399,6 +396,10 @@ function togglePaymentMode() {
 
     // Abrir modal de sesion grupal
     openGroupSessionModal();
+
+    // Resetear radio a pago-dia (replica comportamiento original)
+    var modoPagoDia = document.getElementById('modo-pago-dia');
+    if (modoPagoDia) modoPagoDia.checked = true;
   }
 
   // Actualizar display de pagos
@@ -1897,81 +1898,6 @@ function handleSessionSubmit(e) {
 }
 
 /**
- * Maneja envio de formulario de sesion grupal
- */
-function handleGroupSessionSubmit(e) {
-  e.preventDefault();
-
-  const grupoId = document.getElementById('group-select').value;
-  if (!grupoId) {
-    showNotification('Seleccione un grupo', 'warning');
-    return;
-  }
-
-  // Obtener terapeutas seleccionados
-  const therapistCheckboxes = document.querySelectorAll('.group-therapist-checkbox:checked');
-  const therapists = Array.from(therapistCheckboxes).map(cb => cb.value);
-
-  if (therapists.length === 0) {
-    showNotification('Seleccione al menos un terapeuta', 'warning');
-    return;
-  }
-
-  // Obtener asistencia
-  const attendanceInputs = document.querySelectorAll('.child-attendance');
-  const asistencia = Array.from(attendanceInputs).map(input => {
-    const row = input.closest('.child-attendance-row');
-    return {
-      nombre: row.dataset.childName,
-      presente: input.checked,
-      valor: parseInt(row.querySelector('.child-session-value').value) || 0,
-      efectivo: parseInt(row.querySelector('.child-cash').value) || 0,
-      transferencia: parseInt(row.querySelector('.child-transfer').value) || 0
-    };
-  });
-
-  const sessionData = {
-    fecha: fechaActual,
-    grupoId: grupoId,
-    terapeutas: therapists,
-    asistencia: asistencia
-  };
-
-  showLoading(true);
-
-  google.script.run
-    .withSuccessHandler(function(result) {
-      showLoading(false);
-      if (result.success) {
-        showNotification('Sesion grupal registrada', 'success');
-        // Resetear campos del modal de sesion grupal
-        const groupSelect = document.getElementById('group-select');
-        if (groupSelect) groupSelect.value = '';
-        const attendanceSection = document.getElementById('group-attendance-section');
-        if (attendanceSection) attendanceSection.classList.add('hidden');
-        const therapistsSection = document.getElementById('group-therapists-section');
-        if (therapistsSection) therapistsSection.classList.add('hidden');
-        const valuesSection = document.getElementById('group-values-section');
-        if (valuesSection) valuesSection.classList.add('hidden');
-        // Resetear checkboxes de terapeutas
-        document.querySelectorAll('.group-therapist-checkbox').forEach(cb => cb.checked = false);
-        // Resetear checkboxes e inputs de asistencia
-        document.querySelectorAll('.child-attendance').forEach(cb => cb.checked = false);
-        document.querySelectorAll('.child-session-value, .child-cash, .child-transfer').forEach(input => input.value = '0');
-        closeGroupSessionModal();
-        loadDateData(fechaActual);
-      } else {
-        showNotification(result.message, 'error');
-      }
-    })
-    .withFailureHandler(function(error) {
-      showLoading(false);
-      showNotification('Error: ' + error.message, 'error');
-    })
-    .registrarSesionGrupal(sessionData);
-}
-
-/**
  * Maneja envio de formulario de egreso
  */
 function handleEgresoSubmit(e) {
@@ -2351,52 +2277,6 @@ function checkPatientCredits() {
       console.warn('Error verificando creditos:', error);
     })
     .verificarCreditos(paciente, terapeuta);
-}
-
-/**
- * Maneja seleccion de grupo
- */
-function handleGroupSelection() {
-  const grupoId = document.getElementById('group-select').value;
-  const childrenContainer = document.getElementById('group-attendance-section');
-  const attendanceDiv = document.getElementById('group-attendance-list');
-
-  if (!grupoId) {
-    childrenContainer.classList.add('hidden');
-    return;
-  }
-
-  // Buscar grupo
-  const grupo = gruposActivos.find(g => g.id == grupoId);
-  if (!grupo) return;
-
-  // Mostrar lista de ninos para asistencia
-  const ninos = grupo.ninos || [];
-
-  attendanceDiv.innerHTML = ninos.map(n => `
-    <div class="child-attendance-row bg-gray-50 dark:bg-gray-700 p-2 rounded" data-child-name="${n.nombre}">
-      <div class="flex items-center space-x-2 mb-2">
-        <input type="checkbox" class="form-checkbox child-attendance" checked>
-        <span class="font-medium">${n.nombre}</span>
-      </div>
-      <div class="grid grid-cols-3 gap-2 text-sm">
-        <div>
-          <label class="text-xs text-gray-500">Valor</label>
-          <input type="number" class="form-input text-sm child-session-value" value="${n.valor}" min="0">
-        </div>
-        <div>
-          <label class="text-xs text-gray-500">Efectivo</label>
-          <input type="number" class="form-input text-sm child-cash" value="${n.valor}" min="0">
-        </div>
-        <div>
-          <label class="text-xs text-gray-500">Transfer.</label>
-          <input type="number" class="form-input text-sm child-transfer" value="0" min="0">
-        </div>
-      </div>
-    </div>
-  `).join('');
-
-  childrenContainer.classList.remove('hidden');
 }
 
 /**
@@ -5539,6 +5419,12 @@ function closeGroupSessionModal() {
   if (therapistsList) therapistsList.innerHTML = '';
   const attendanceList = document.getElementById('group-attendance-list');
   if (attendanceList) attendanceList.innerHTML = '';
+  // Resetear radio a pago-dia (replica comportamiento original)
+  var modoPagoDia = document.getElementById('modo-pago-dia');
+  if (modoPagoDia) {
+    modoPagoDia.checked = true;
+    togglePaymentMode();
+  }
 }
 
 /**
