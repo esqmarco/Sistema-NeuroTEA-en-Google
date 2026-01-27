@@ -56,24 +56,17 @@ const TherapistService = {
 
     nombre = nombre.trim();
 
-    // Verificar si ya existe
-    const existing = this.getByName(nombre);
+    // Verificar si ya existe (activo o inactivo)
+    const allTherapists = this.getAllIncludingInactive();
+    const existing = allTherapists.find(function(t) { return t.nombre === nombre; });
     if (existing) {
-      // Si existe pero esta inactivo, reactivar
-      if (existing.activo === false) {
-        Database.update(SHEETS.TERAPEUTAS, existing.id, {
-          activo: true,
-          actualizadoEn: getTimestamp()
-        });
-        return resultado(true, { ...existing, activo: true }, 'Terapeuta reactivado');
-      }
       return resultado(false, null, 'Ya existe un terapeuta con ese nombre');
     }
 
-    // Verificar limite de terapeutas
-    const count = Database.count(SHEETS.TERAPEUTAS);
-    if (count >= CONFIG.MAX_THERAPISTS) {
-      return resultado(false, null, `Limite de ${CONFIG.MAX_THERAPISTS} terapeutas alcanzado`);
+    // Verificar limite de terapeutas activos
+    const activeCount = this.getAll().length;
+    if (activeCount >= CONFIG.MAX_THERAPISTS) {
+      return resultado(false, null, 'Limite de ' + CONFIG.MAX_THERAPISTS + ' terapeutas alcanzado');
     }
 
     // Crear terapeuta
@@ -283,6 +276,19 @@ function desactivarTerapeuta(nombre) {
     return resultado(false, null, 'Terapeuta no encontrado');
   }
   return TherapistService.deactivate(therapist.id);
+}
+
+/**
+ * Elimina un terapeuta permanentemente (para frontend)
+ * Retorna error si tiene registros asociados
+ * @param {string} nombre - Nombre del terapeuta
+ */
+function eliminarTerapeuta(nombre) {
+  const therapist = TherapistService.getByName(nombre);
+  if (!therapist) {
+    return resultado(false, null, 'Terapeuta no encontrado');
+  }
+  return TherapistService.delete(therapist.id);
 }
 
 /**

@@ -584,6 +584,13 @@ google.script.run
 
 ## Historial de Cambios
 
+### v1.5.1 (2026-01-27)
+- fix: `deleteTherapist()` ahora hace borrado permanente (hard delete) en vez de soft delete
+- fix: Si el terapeuta tiene registros asociados, ofrece desactivar como alternativa
+- feat: Nueva funcion backend `eliminarTerapeuta()` expuesta al frontend
+- fix: `TherapistService.create()` eliminada logica de reactivacion (no hay soft delete)
+- fix: `validateFullBackupStructure()` corregido campo `date` -> `createdAt` (bug que rechazaba backups validos)
+
 ### v1.5.0 (2026-01-27)
 - feat: Deteccion de conflictos al importar datos del dia (replica sistema original)
 - feat: Nueva funcion `validateDayDataStructure()` para validar estructura de archivo antes de importar
