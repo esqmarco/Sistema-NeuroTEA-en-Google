@@ -223,7 +223,13 @@ function setupEventListeners() {
   safeAddListener('group-select', 'change', handleGroupSelection);
 
   // Validacion del boton registrar - escuchar cambios en campos relevantes
-  safeAddListener('therapist-select', 'change', validateRegisterButton);
+  safeAddListener('therapist-select', 'change', function() {
+    validateRegisterButton();
+    var modo = document.querySelector('input[name="modo-registro"]:checked');
+    if (modo && modo.value === 'usar-credito') {
+      updateAvailablePatients();
+    }
+  });
 
   // Campos de pago - calculos en tiempo real
   safeAddListener('cash-to-neurotea', 'input', function() {
