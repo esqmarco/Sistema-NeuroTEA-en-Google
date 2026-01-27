@@ -42,6 +42,26 @@ Autoriza este cambio?
 ## Descripcion
 Sistema web de gestion para centro de terapias TEA migrado a Google Apps Script. Registra sesiones, pagos, egresos y genera rendiciones. Base de datos en Google Sheets.
 
+## Objetivo del Proyecto
+
+### Meta Principal
+Migrar el sistema local NeuroTEA (basado en IndexedDB + HTML) a Google Apps Script, manteniendo **exactamente la misma experiencia de usuario** (funcionalidad frontend identica) pero con un **backend mas eficiente, liviano y robusto** aprovechando la infraestructura de Google.
+
+### Principios de Migracion
+
+1. **Misma funcionalidad frontend**: El usuario debe poder realizar todas las operaciones exactamente como en el sistema original. Los flujos, formularios, modales y pestanas deben comportarse de forma identica.
+
+2. **Backend eficiente**: El codigo backend (.gs) debe ser limpio, sin codigo muerto ni duplicaciones. Menos codigo = pagina mas liviana, menos tiempo de parseo.
+
+3. **No romper lo que funciona**: Cada cambio debe verificarse contra el sistema original. Si el original permite una accion, el GAS tambien debe permitirla. Si el original la bloquea, el GAS tambien.
+
+4. **Referencia original**: El sistema local funcional esta en `5 - Backup del Sistema NeuroTEA con sesion Grupal/`. Ante cualquier duda sobre comportamiento esperado, consultar este codigo fuente.
+
+### Que NO es este proyecto
+- No es una reimaginacion del sistema. No agregar funcionalidades nuevas sin autorizacion.
+- No es una optimizacion prematura. Mantener la simplicidad del original.
+- No agregar validaciones que el original no tiene (ej: no requerir datos opcionales).
+
 ## Arquitectura
 
 ### Stack Tecnologico
@@ -703,6 +723,14 @@ google.script.run
 ```
 
 ## Historial de Cambios
+
+### v1.7.0 (2026-01-27)
+- refactor: Eliminadas funciones duplicadas `handleGroupSelection()` y `handleGroupSessionSubmit()` (~114 lineas menos)
+- fix: Radio button se resetea a "pago-dia" al abrir/cerrar modal grupal (replica original)
+- fix: Transfer IDs de limpieza ahora coinciden con IDs de creacion (patron `child_{index}_neurotea`)
+- fix: `GroupService.create()` permite crear grupos sin ninos (replica original: primero crear, luego agregar ninos)
+- fix: Dropdown de creditos se actualiza dinamicamente al cambiar terapeuta
+- docs: Nueva seccion "Objetivo del Proyecto" con principios de migracion
 
 ### v1.6.0 (2026-01-27)
 - docs: Agregada REGLA CRITICA de autorizacion obligatoria del usuario antes de cambios de codigo

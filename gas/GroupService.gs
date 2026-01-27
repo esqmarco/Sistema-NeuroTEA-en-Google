@@ -69,9 +69,6 @@ const GroupService = {
     if (!groupData.nombre) {
       return resultado(false, null, 'El nombre del grupo es requerido');
     }
-    if (!groupData.ninos || groupData.ninos.length === 0) {
-      return resultado(false, null, 'Debe agregar al menos un nino al grupo');
-    }
 
     // Verificar nombre unico
     const existing = this.getByName(groupData.nombre);
@@ -79,8 +76,9 @@ const GroupService = {
       return resultado(false, null, 'Ya existe un grupo con ese nombre');
     }
 
-    // Validar estructura de ninos
-    const ninosValidados = groupData.ninos.map(nino => ({
+    // Validar estructura de ninos (puede ser vacio, se agregan via edicion)
+    var ninos = groupData.ninos || [];
+    const ninosValidados = ninos.map(nino => ({
       nombre: nino.nombre || '',
       valor: parseInt(nino.valor) || 0,
       terapeuta: nino.terapeuta || ''
