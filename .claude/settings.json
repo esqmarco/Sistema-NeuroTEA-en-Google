@@ -1,6 +1,17 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FILE=\"$CLAUDE_FILE_PATH\"; if [[ \"$FILE\" =~ \\.(gs|html)$ ]]; then echo \"AUTORIZACION REQUERIDA: Antes de modificar $FILE, debes describir el cambio propuesto al usuario y esperar su aprobacion explicita. Si el usuario ya aprobo este cambio, puedes continuar.\" >&2; fi'"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",

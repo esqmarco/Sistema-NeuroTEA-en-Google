@@ -1,5 +1,44 @@
 # NeuroTEA - Sistema de Gestion en Google Apps Script
 
+## REGLA CRITICA: Autorizacion del Usuario
+
+**NUNCA modifiques archivos de codigo (.gs, .html, .js, .json) sin pedir autorizacion EXPLICITA al usuario.**
+
+### Protocolo Obligatorio para Cambios de Codigo
+
+1. **INVESTIGAR** primero: Lee y analiza los archivos involucrados
+2. **DESCRIBIR** los cambios propuestos: Explica que archivo, que funcion, y que se va a cambiar
+3. **ESPERAR** aprobacion: No proceder hasta que el usuario diga explicitamente "si", "adelante", "hazlo" o similar
+4. **EJECUTAR** solo despues de la aprobacion
+5. **REPORTAR** el resultado al usuario
+
+### Lo que SI puedes hacer sin pedir permiso
+- Leer archivos (Read, Grep, Glob)
+- Investigar y analizar codigo
+- Ejecutar verificaciones y tests
+- Responder preguntas sobre el codigo
+- Actualizar archivos de documentacion (CLAUDE.md, SKILL.md, settings.json)
+
+### Lo que NUNCA debes hacer sin permiso
+- Editar archivos .gs (backend)
+- Editar archivos .html (frontend)
+- Crear archivos nuevos de codigo
+- Borrar archivos de codigo
+- Modificar configuracion del proyecto (appsscript.json)
+
+### Formato para Proponer Cambios
+
+```
+CAMBIO PROPUESTO:
+- Archivo: [nombre del archivo]
+- Funcion: [nombre de la funcion]
+- Accion: [crear/modificar/eliminar]
+- Descripcion: [que se va a hacer y por que]
+- Impacto: [que pestanas/flujos se afectan]
+
+Autoriza este cambio?
+```
+
 ## Descripcion
 Sistema web de gestion para centro de terapias TEA migrado a Google Apps Script. Registra sesiones, pagos, egresos y genera rendiciones. Base de datos en Google Sheets.
 
@@ -314,16 +353,96 @@ const CONFIG = {
 
 ## Migracion desde Version Local
 
-### Pasos de Migracion
-1. Exportar backup completo de la version local
-2. Importar en la nueva version GAS
-3. Verificar integridad de datos en cada hoja
-4. Validar calculos de rendicion
+### IMPORTANTE: Incompatibilidad de JSON
 
-### Compatibilidad de Datos
-- El formato de backup JSON es compatible
-- Los IDs se mantienen para referencias cruzadas
-- Las fechas mantienen formato YYYY-MM-DD
+Los archivos JSON exportados del sistema local original **NO son compatibles** directamente con el sistema GAS. Las razones:
+
+1. **Nombres de propiedades diferentes**: El original usa ingles, GAS usa espanol
+
+| Propiedad | Sistema Original | Sistema GAS |
+|-----------|-----------------|-------------|
+| Terapeuta | `therapist` | `terapeuta` |
+| Paciente | `patientName` | `paciente` |
+| Efectivo | `cashToNeurotea` | `efectivo` |
+| Valor sesion | `sessionValue` | `valorSesion` |
+| Honorarios | `therapistFee` | `honorarios` |
+| Aporte | `neuroteaContribution` | `aporteNeurotea` |
+| Transferencia | `transferToNeurotea` | `transferenciaNeurotea` |
+| Tipo egreso | `type` | `tipo` |
+| Concepto | `concept` | `concepto` |
+| Creditos restantes | `remaining` | `restante` |
+| Paquete ID | `packageId` | `paqueteId` |
+
+2. **Estructuras diferentes**:
+   - Terapeutas: original = array de strings `["Maria"]`, GAS = objetos `{id, nombre, activo}`
+   - Confirmaciones: original = objeto por terapeuta, GAS = array de objetos
+   - Creditos: original = anidado por paciente/terapeuta, GAS = tabla plana
+   - Sesiones grupales: original = arrays directos, GAS = JSON strings en celdas
+
+3. **Import/Export GAS-a-GAS**: Funciona correctamente. Exportar desde GAS e importar de vuelta a GAS es compatible.
+
+### Migracion Manual
+Para migrar datos del sistema local al GAS, se requiere:
+1. Exportar backup del sistema local
+2. **Transformar manualmente** los nombres de propiedades (se necesitaria un script de migracion)
+3. Importar el JSON transformado al GAS
+4. Verificar integridad de datos
+
+### Formato de Fechas
+- Las fechas mantienen formato `YYYY-MM-DD` en ambos sistemas
+- Los IDs son timestamps en milisegundos en ambos sistemas
+
+## Comportamiento de Borrado por Entidad
+
+### Regla General
+El sistema usa **borrado permanente (hard delete)** para todas las entidades. La fila se elimina fisicamente de la hoja de Google Sheets. NO existe soft delete (activo=false) excepto como alternativa cuando hay registros asociados.
+
+### Tabla de Borrado
+
+| Entidad | Tipo | Validaciones | Limpieza al Borrar |
+|---------|------|-------------|-------------------|
+| **Terapeuta** | Hard delete | Si tiene registros → ofrece desactivar | Ninguna (registros quedan) |
+| **Sesion individual** | Hard delete | Ninguna | Revierte creditos + limpia confirmaciones + limpia transferencias |
+| **Sesion grupal** | Hard delete | Ninguna | Limpia confirmaciones de cada terapeuta + transferencias |
+| **Egreso** | Hard delete | Ninguna | Sin dependencias |
+| **Paquete** | Hard delete | Si tiene sesiones con credito → bloqueado | Elimina creditos + historial + transferencias |
+| **Grupo** | Hard delete | Si tiene sesiones → bloqueado | Sin dependencias |
+| **Historial paquete** | Hard delete | Ninguna | Solo registro historico |
+
+### Funciones Backend de Borrado
+
+| Frontend | Backend | Servicio |
+|----------|---------|----------|
+| `deleteTherapist(nombre)` | `eliminarTerapeuta(nombre)` | `TherapistService.delete(id)` |
+| `deleteSession(id)` | `eliminarSesion(id)` | `SessionService.delete(id)` |
+| `deleteGroupSession(id)` | `eliminarSesionGrupal(id)` | `GroupSessionService.delete(id)` |
+| `deleteEgreso(id)` | `eliminarEgreso(id)` | `EgresoService.delete(id)` |
+| `deletePackage(id)` | `eliminarPaquete(id)` | `PackageService.delete(id)` |
+| `deleteGroup(id)` | `eliminarGrupo(id)` | `GroupService.delete(id)` |
+
+### Los Calculos se Revierten Automaticamente
+Al borrar cualquier registro, los saldos y calculos se actualizan automaticamente porque el sistema usa **calculo dinamico** (recalcula todo desde datos crudos cada vez que se carga).
+
+## Import/Export Estado Actual
+
+### Exportacion
+- `exportFullBackup()` → Backup JSON completo de todas las hojas
+- `exportDayData()` → Datos de un dia especifico + datos globales de sincronizacion
+
+### Importacion con Deteccion de Conflictos
+- `importDayData()` → Detecta datos existentes en la fecha, muestra dialogo:
+  - **Fusionar**: Agrega datos nuevos sin borrar existentes (merge)
+  - **Sobrescribir**: Elimina datos del dia y los reemplaza (overwrite)
+  - **Cancelar**: Aborta la importacion
+- `importFullBackup()` → Valida estructura del archivo, doble confirmacion, reemplaza TODO
+
+### Validaciones de Estructura
+- `validateDayDataStructure()` → Verifica: `exportInfo.type === 'day_data'`, `fecha`, arrays de `sessions` y `egresos`
+- `validateFullBackupStructure()` → Verifica: `backupInfo.type === 'full_backup'`, `createdAt` o `date`
+
+### Compatibilidad
+- GAS → GAS: Totalmente compatible
+- Local original → GAS: NO compatible (nombres de propiedades diferentes)
 
 ## Notas Importantes
 
@@ -544,8 +663,9 @@ Antes de confirmar que una tarea esta completa:
 
 El proyecto tiene hooks en `.claude/settings.json` que:
 
-1. **PostToolUse (Edit/Write)**: Verifica balance de llaves `{}` despues de cada edicion
-2. **Stop**: Ejecuta verificacion de IDs al terminar la sesion
+1. **PreToolUse (Edit/Write)**: Recuerda al agente que debe pedir autorizacion al usuario antes de modificar archivos de codigo (.gs, .html). No bloquea la edicion pero emite advertencia visible.
+2. **PostToolUse (Edit/Write)**: Verifica balance de llaves `{}` despues de cada edicion en archivos .gs y .html
+3. **Stop**: Ejecuta verificacion de IDs al terminar la sesion (IDs usados en JS que no existen en HTML)
 
 Si un hook reporta advertencias, DEBE corregirse antes de continuar.
 
@@ -583,6 +703,15 @@ google.script.run
 ```
 
 ## Historial de Cambios
+
+### v1.6.0 (2026-01-27)
+- docs: Agregada REGLA CRITICA de autorizacion obligatoria del usuario antes de cambios de codigo
+- docs: Corregida seccion "Migracion" - documentada incompatibilidad entre JSON local y GAS
+- docs: Nueva seccion "Comportamiento de Borrado por Entidad" con tabla completa
+- docs: Nueva seccion "Import/Export Estado Actual" con estado de compatibilidad
+- feat: Nuevo hook PreToolUse que recuerda al agente pedir autorizacion
+- docs: Actualizado skill verify-system con Paso 6 de verificacion de borrado
+- docs: Hooks documentados actualizados (3 hooks: PreToolUse, PostToolUse, Stop)
 
 ### v1.5.1 (2026-01-27)
 - fix: `deleteTherapist()` ahora hace borrado permanente (hard delete) en vez de soft delete
