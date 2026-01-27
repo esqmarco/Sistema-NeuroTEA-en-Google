@@ -204,64 +204,84 @@ const TransferService = {
   getPendientes: function(fecha) {
     const transferencias = [];
 
-    // Obtener sesiones con transferencia a NeuroTEA (entrante)
+    // Obtener sesiones
     const sesiones = SessionService.getByDate(fecha);
     sesiones.forEach(s => {
+      // Transferencia a NeuroTEA (entrante)
       if (s.transferenciaNeurotea > 0 && !s.usaCredito) {
-        const transferId = `session_${s.id}_transfer`;
+        const transferId = 'session_' + s.id + '_neurotea';
         const estado = this.getEstado(transferId);
 
         transferencias.push({
           id: transferId,
-          tipo: 'sesion',
-          sessionId: s.id,
-          terapeuta: s.terapeuta,
-          paciente: s.paciente,
+          tipo: 'A NeuroTEA',
+          destinatario: 'NeuroTEA',
+          concepto: 'Pago de sesion con ' + s.terapeuta,
+          paciente: s.paciente || 'Sin nombre',
           monto: s.transferenciaNeurotea,
           confirmado: estado ? estado.confirmed : false,
-          fecha: fecha
+          fecha: fecha,
+          isGrupal: false
+        });
+      }
+      // Transferencia a Terapeuta (saliente)
+      if (s.transferenciaTerapeuta > 0 && !s.usaCredito) {
+        var transferId2 = 'session_' + s.id + '_therapist';
+        transferencias.push({
+          id: transferId2,
+          tipo: 'A Terapeuta',
+          destinatario: s.terapeuta,
+          concepto: 'Pago de sesion con ' + s.terapeuta,
+          paciente: s.paciente || 'Sin nombre',
+          monto: s.transferenciaTerapeuta,
+          confirmado: false,
+          fecha: fecha,
+          isGrupal: false
         });
       }
     });
 
-    // Obtener paquetes con transferencia a NeuroTEA (entrante)
+    // Obtener paquetes con transferencia a NeuroTEA
     const paquetes = PackageService.getByDate(fecha);
     paquetes.forEach(p => {
       if (p.transferenciaNeurotea > 0) {
-        const transferId = `package_${p.id}_transfer`;
-        const estado = this.getEstado(transferId);
+        var transferId3 = 'package_' + p.id + '_neurotea';
+        var estado2 = this.getEstado(transferId3);
 
         transferencias.push({
-          id: transferId,
-          tipo: 'paquete',
-          packageId: p.id,
-          terapeuta: p.terapeuta,
-          paciente: p.paciente,
+          id: transferId3,
+          tipo: 'A NeuroTEA',
+          destinatario: 'NeuroTEA',
+          concepto: 'Pago de paquete con ' + p.terapeuta,
+          paciente: p.paciente || 'Sin nombre',
           monto: p.transferenciaNeurotea,
-          confirmado: estado ? estado.confirmed : false,
-          fecha: fecha
+          confirmado: estado2 ? estado2.confirmed : false,
+          fecha: fecha,
+          isGrupal: false
         });
       }
     });
 
-    // Obtener sesiones grupales con transferencias a NeuroTEA (entrante por nino)
+    // Obtener sesiones grupales con transferencias a NeuroTEA (por nino)
     const sesionesGrupales = GroupSessionService.getByDate(fecha);
     sesionesGrupales.forEach(gs => {
       const asistencia = gs.asistenciaJSON || gs.asistencia || [];
-      asistencia.forEach(a => {
+      asistencia.forEach(function(a, childIndex) {
         if (a.presente && a.transferencia > 0) {
-          const transferId = `group_${gs.id}_${a.nombre}_transfer`;
-          const estado = this.getEstado(transferId);
+          var transferId4 = 'group_' + gs.id + '_child_' + childIndex + '_neurotea';
+          var estado3 = TransferService.getEstado(transferId4);
+          var groupName = gs.grupoNombre || 'Grupo';
 
           transferencias.push({
-            id: transferId,
-            tipo: 'grupal',
-            groupSessionId: gs.id,
-            grupoNombre: gs.grupoNombre,
-            paciente: a.nombre,
+            id: transferId4,
+            tipo: 'A NeuroTEA (Grupal)',
+            destinatario: 'NeuroTEA',
+            concepto: 'Pago de sesion grupal de ' + (a.nombre || 'Nino') + ' - "' + groupName + '"',
+            paciente: a.nombre || ('Nino ' + (childIndex + 1)),
             monto: a.transferencia,
-            confirmado: estado ? estado.confirmed : false,
-            fecha: fecha
+            confirmado: estado3 ? estado3.confirmed : false,
+            fecha: fecha,
+            isGrupal: true
           });
         }
       });

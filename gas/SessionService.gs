@@ -56,9 +56,9 @@ const SessionService = {
     // Calcular valores
     const efectivo = parseInt(sessionData.efectivo) || 0;
     const transferenciaNeurotea = parseInt(sessionData.transferenciaNeurotea) || 0;
-    const transferenciaTerminapeuta = parseInt(sessionData.transferenciaTerminapeuta) || 0;
+    const transferenciaTerapeuta = parseInt(sessionData.transferenciaTerapeuta) || 0;
 
-    const valorSesion = efectivo + transferenciaNeurotea + transferenciaTerminapeuta;
+    const valorSesion = efectivo + transferenciaNeurotea + transferenciaTerapeuta;
 
     // Calcular aporte NeuroTEA segun tipo
     let aporteNeurotea = 0;
@@ -91,7 +91,7 @@ const SessionService = {
       paciente: sessionData.paciente.trim(),
       efectivo: efectivo,
       transferenciaNeurotea: transferenciaNeurotea,
-      transferenciaTerminapeuta: transferenciaTerminapeuta,
+      transferenciaTerapeuta: transferenciaTerapeuta,
       valorSesion: valorSesion,
       aporteNeurotea: aporteNeurotea,
       honorarios: honorarios,
@@ -122,15 +122,15 @@ const SessionService = {
 
     // Recalcular valores si cambian los montos
     if (updates.efectivo !== undefined || updates.transferenciaNeurotea !== undefined ||
-        updates.transferenciaTerminapeuta !== undefined) {
+        updates.transferenciaTerapeuta !== undefined) {
 
       const efectivo = updates.efectivo !== undefined ? updates.efectivo : session.efectivo;
       const transferenciaNeurotea = updates.transferenciaNeurotea !== undefined ?
         updates.transferenciaNeurotea : session.transferenciaNeurotea;
-      const transferenciaTerminapeuta = updates.transferenciaTerminapeuta !== undefined ?
-        updates.transferenciaTerminapeuta : session.transferenciaTerminapeuta;
+      const transferenciaTerapeuta = updates.transferenciaTerapeuta !== undefined ?
+        updates.transferenciaTerapeuta : session.transferenciaTerapeuta;
 
-      updates.valorSesion = efectivo + transferenciaNeurotea + transferenciaTerminapeuta;
+      updates.valorSesion = efectivo + transferenciaNeurotea + transferenciaTerapeuta;
 
       const tipoAporte = updates.tipoAporte || session.tipoAporte || '30';
       if (tipoAporte !== 'fixed') {
@@ -208,7 +208,7 @@ const SessionService = {
       totalSesiones: sessions.length,
       totalEfectivo: sessions.reduce((sum, s) => sum + (s.efectivo || 0), 0),
       totalTransferenciaNeurotea: sessions.reduce((sum, s) => sum + (s.transferenciaNeurotea || 0), 0),
-      totalTransferenciaTerminapeuta: sessions.reduce((sum, s) => sum + (s.transferenciaTerminapeuta || 0), 0),
+      totalTransferenciaTerapeuta: sessions.reduce((sum, s) => sum + (s.transferenciaTerapeuta || 0), 0),
       totalValorSesiones: sessions.reduce((sum, s) => sum + (s.valorSesion || 0), 0),
       totalAporteNeurotea: sessions.reduce((sum, s) => sum + (s.aporteNeurotea || 0), 0),
       totalHonorarios: sessions.reduce((sum, s) => sum + (s.honorarios || 0), 0),

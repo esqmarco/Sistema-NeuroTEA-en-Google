@@ -1035,7 +1035,7 @@ function updateSessionsList() {
             '</div>' +
             '<div class="grid grid-cols-2 gap-2 text-sm">' +
               '<div>Efectivo: ' + formatCurrency(session.efectivo) + '</div>' +
-              '<div>Transf. Terapeuta: ' + formatCurrency(session.transferenciaTerminapeuta) + '</div>' +
+              '<div>Transf. Terapeuta: ' + formatCurrency(session.transferenciaTerapeuta) + '</div>' +
               '<div>Transf. NeuroTEA: ' + formatCurrency(session.transferenciaNeurotea) + '</div>' +
               '<div class="font-bold">Total: ' + formatCurrency(session.valorSesion) + '</div>' +
               '<div>Aporte NeuroTEA: ' + formatCurrency(session.aporteNeurotea) + ' ' + formatContributionIndicator(session) + '</div>' +
@@ -1088,32 +1088,32 @@ function updateSessionsList() {
 
         const creditSessionsHTML = creditSessions.map(session => {
           const creditUsage = calculateCreditUsage(session);
-          return '<div class="p-3 border-l-4 border-amber-300 bg-amber-50 dark:bg-amber-900/30 ml-4 mb-2">' +
+          return '<div class="session-credit p-3 border-l-4 ml-4 mb-2">' +
             '<div class="flex justify-between items-start mb-2">' +
-              '<h5 class="font-semibold text-amber-800 dark:text-amber-200">' + (session.paciente || 'Sin nombre') + '</h5>' +
+              '<h5 class="font-semibold credit-text-bold">' + (session.paciente || 'Sin nombre') + '</h5>' +
               '<button onclick="deleteSession(' + session.id + ')" class="text-red-500 hover:text-red-700 p-1">' +
                 '<i data-lucide="trash-2" class="w-4 h-4"></i>' +
               '</button>' +
             '</div>' +
-            '<div class="grid grid-cols-2 gap-2 text-sm text-amber-700 dark:text-amber-300">' +
-              '<div>Efectivo: Gs 0</div>' +
-              '<div>Transf. Terapeuta: Gs 0</div>' +
-              '<div>Transf. NeuroTEA: Gs 0</div>' +
-              '<div class="font-bold">' + creditUsage + '</div>' +
-              '<div>Aporte NeuroTEA: Gs 0</div>' +
-              '<div>Honorarios: Gs 0</div>' +
+            '<div class="grid grid-cols-2 gap-2 text-sm">' +
+              '<div class="credit-text-secondary">Efectivo: Gs 0</div>' +
+              '<div class="credit-text-secondary">Transf. Terapeuta: Gs 0</div>' +
+              '<div class="credit-text-secondary">Transf. NeuroTEA: Gs 0</div>' +
+              '<div class="font-bold credit-text-bold">' + creditUsage + '</div>' +
+              '<div class="credit-text-secondary">Aporte NeuroTEA: Gs 0</div>' +
+              '<div class="credit-text-secondary">Honorarios: Gs 0</div>' +
             '</div>' +
           '</div>';
         }).join('');
 
-        html += '<div class="mb-4 border rounded-md bg-white dark:bg-gray-800 overflow-hidden border-amber-300">' +
-          '<div class="bg-amber-100 dark:bg-amber-800 p-4 cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-700 transition-colors"' +
+        html += '<div class="mb-4 border rounded-md bg-white dark:bg-gray-800 overflow-hidden">' +
+          '<div class="therapist-section-credits p-4 cursor-pointer transition-colors"' +
                ' onclick="toggleTherapistGroup(\'' + therapist.replace(/'/g, "\\'") + '\', \'credits\')">' +
             '<div class="flex justify-between items-center">' +
-              '<h4 class="font-semibold text-amber-800 dark:text-amber-200">' + therapist + '</h4>' +
+              '<h4 class="font-semibold credit-text-bold">' + therapist + '</h4>' +
               '<div class="flex items-center space-x-2">' +
-                '<span class="text-sm text-amber-600 dark:text-amber-300">' + creditCount + ' sesion' + (creditCount !== 1 ? 'es' : '') + ' con credito - Gs 0</span>' +
-                '<i data-lucide="chevron-down" class="w-4 h-4 text-amber-600 dark:text-amber-300 transform transition-transform" id="chevron-' + sanitizedName + '_credits"></i>' +
+                '<span class="text-sm credit-text-primary">' + creditCount + ' sesion' + (creditCount !== 1 ? 'es' : '') + ' - Gs 0</span>' +
+                '<i data-lucide="chevron-down" class="w-4 h-4 credit-text-primary transform transition-transform" id="chevron-' + sanitizedName + '_credits"></i>' +
               '</div>' +
             '</div>' +
           '</div>' +
@@ -1313,74 +1313,101 @@ function updateSummaryTable() {
 }
 
 /**
- * Actualiza vista de transferencias
+ * Actualiza vista de transferencias (agrupadas por destinatario como el original)
  */
 function updateTransfersView() {
   const container = document.getElementById('transfers-container');
   if (!container) return;
 
-  // Obtener transferencias del servidor
   google.script.run
     .withSuccessHandler(function(transfers) {
       if (!transfers || transfers.length === 0) {
-        container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay transferencias registradas</p>';
+        container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay transferencias registradas para este dia</p>';
         return;
       }
 
-      const pending = transfers.filter(t => !t.confirmado);
-      const confirmed = transfers.filter(t => t.confirmado);
+      // Agrupar transferencias por destinatario
+      const transfersByDestination = {};
+      transfers.forEach(function(transfer) {
+        const dest = transfer.destinatario || transfer.terapeuta || 'NeuroTEA';
+        if (!transfersByDestination[dest]) {
+          transfersByDestination[dest] = [];
+        }
+        transfersByDestination[dest].push(transfer);
+      });
 
-      let html = '';
+      // Generar HTML agrupado
+      const destinationGroups = Object.keys(transfersByDestination).sort().map(function(destinatario) {
+        const destinationTransfers = transfersByDestination[destinatario];
+        const transferCount = destinationTransfers.length;
+        const totalAmount = destinationTransfers.reduce(function(sum, t) { return sum + (t.monto || 0); }, 0);
 
-      // Seccion de pendientes
-      html += '<div class="mb-6"><h3 class="text-lg font-semibold mb-3 text-yellow-600">Pendientes (' + pending.length + ')</h3>';
-      if (pending.length === 0) {
-        html += '<p class="text-gray-500 text-center py-2">No hay transferencias pendientes</p>';
-      } else {
-        html += '<div class="space-y-2">' + pending.map(t => `
-          <div class="transfer-item bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-md border border-yellow-200 dark:border-yellow-800">
-            <div class="flex justify-between items-center">
-              <div>
-                <p class="font-medium text-gray-800 dark:text-white">${t.paciente || 'Sin paciente'}</p>
-                <p class="text-sm text-gray-500">${t.terapeuta || t.grupoNombre || ''} - ${t.tipo || 'Transferencia'}</p>
-              </div>
-              <div class="flex items-center space-x-3">
-                <span class="font-semibold text-yellow-600">${formatCurrency(t.monto)}</span>
-                <button onclick="toggleTransfer('${t.id}')" class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-sm">
-                  Confirmar
-                </button>
-              </div>
-            </div>
-          </div>
-        `).join('') + '</div>';
-      }
-      html += '</div>';
+        const transfersHTML = destinationTransfers.map(function(transfer) {
+          const isNeuroTEA = destinatario === 'NeuroTEA';
+          const isGroupSession = transfer.isGrupal || false;
+          const borderColor = isGroupSession ? 'border-green-400' : (isNeuroTEA ? 'border-blue-300' : 'border-purple-300');
+          const badgeColor = isGroupSession ? 'bg-green-100 text-green-800' :
+                            (transfer.tipo === 'A NeuroTEA' ? 'bg-blue-100 text-blue-800' :
+                            (transfer.tipo === 'Vuelto de Terapeuta' ? 'bg-orange-100 text-orange-800' :
+                            'bg-purple-100 text-purple-800'));
 
-      // Seccion de confirmadas
-      html += '<div><h3 class="text-lg font-semibold mb-3 text-green-600">Confirmadas (' + confirmed.length + ')</h3>';
-      if (confirmed.length === 0) {
-        html += '<p class="text-gray-500 text-center py-2">No hay transferencias confirmadas</p>';
-      } else {
-        html += '<div class="space-y-2">' + confirmed.map(t => `
-          <div class="transfer-item bg-green-50 dark:bg-green-900/20 p-3 rounded-md border border-green-200 dark:border-green-800">
-            <div class="flex justify-between items-center">
-              <div>
-                <p class="font-medium text-gray-800 dark:text-white">${t.paciente || 'Sin paciente'}</p>
-                <p class="text-sm text-gray-500">${t.terapeuta || t.grupoNombre || ''}</p>
-              </div>
-              <div class="flex items-center space-x-3">
-                <span class="font-semibold text-green-600">${formatCurrency(t.monto)}</span>
-                <button onclick="toggleTransfer('${t.id}')" class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm">
-                  Revertir
-                </button>
-              </div>
-            </div>
-          </div>
-        `).join('') + '</div>';
-      }
-      html += '</div>';
+          // Boton de confirmacion solo para transferencias a NeuroTEA
+          let confirmationButton = '';
+          if (isNeuroTEA) {
+            const isConfirmed = transfer.confirmado || false;
+            const statusClass = isConfirmed ? 'confirmed' : 'pending';
+            const statusText = isConfirmed ? 'Confirmado' : 'Pendiente';
 
-      container.innerHTML = html;
+            confirmationButton = '<button class="transfer-status-btn ' + statusClass + '" ' +
+              'onclick="toggleTransferConfirmation(\'' + transfer.id + '\')">' +
+              '<span class="status-icon">' + (isConfirmed ? '&#10003;' : '&#10060;') + '</span> ' +
+              statusText + '</button>';
+          }
+
+          return '<div class="p-3 border-l-4 ' + borderColor + ' bg-gray-50 dark:bg-gray-700 ml-4 mb-2">' +
+            '<div class="flex justify-between items-center mb-2">' +
+              '<h5 class="font-semibold text-gray-800 dark:text-gray-200">' + (transfer.concepto || transfer.tipo || 'Transferencia') + '</h5>' +
+              confirmationButton +
+              '<span class="text-sm px-2 py-1 rounded-full ' + badgeColor + '">' + (transfer.tipo || 'Transferencia') + '</span>' +
+            '</div>' +
+            '<div class="patient-info mb-2">' + (transfer.paciente || 'Sin paciente') + '</div>' +
+            '<div class="text-lg font-bold text-gray-900 dark:text-gray-100">' + formatCurrency(transfer.monto || 0) + '</div>' +
+          '</div>';
+        }).join('');
+
+        const isNeuroTEA = destinatario === 'NeuroTEA';
+        const iconClass = isNeuroTEA ? 'building-2' : 'user';
+        const colorClass = isNeuroTEA ? 'blue' : 'purple';
+        const sanitizedName = destinatario.replace(/[^a-zA-Z0-9]/g, '_');
+
+        // Contar pendientes y confirmados
+        const confirmedCount = destinationTransfers.filter(function(t) { return t.confirmado; }).length;
+        const pendingCount = transferCount - confirmedCount;
+
+        return '<div class="mb-4 border rounded-md bg-white dark:bg-gray-800 overflow-hidden">' +
+          '<div class="bg-' + colorClass + '-50 dark:bg-' + colorClass + '-900 p-4 cursor-pointer hover:bg-' + colorClass + '-100 dark:hover:bg-' + colorClass + '-800 transition-colors" ' +
+            'onclick="toggleTransferGroup(\'' + destinatario.replace(/'/g, "\\'") + '\')">' +
+            '<div class="flex justify-between items-center">' +
+              '<h4 class="font-semibold text-' + colorClass + '-800 dark:text-' + colorClass + '-200 flex items-center">' +
+                '<i data-lucide="' + iconClass + '" class="w-5 h-5 mr-2"></i>' +
+                'Transferencias a ' + destinatario +
+              '</h4>' +
+              '<div class="flex items-center space-x-2">' +
+                (isNeuroTEA ? '<span class="confirmed-count">' + confirmedCount + '</span>/<span class="pending-count">' + pendingCount + '</span> ' : '') +
+                '<span class="text-sm text-' + colorClass + '-600 dark:text-' + colorClass + '-300">' +
+                  transferCount + ' transferencia' + (transferCount !== 1 ? 's' : '') + ' - ' + formatCurrency(totalAmount) +
+                '</span>' +
+                '<i data-lucide="chevron-down" class="w-4 h-4 text-' + colorClass + '-600 dark:text-' + colorClass + '-300 transform transition-transform" id="chevron-transfer-' + sanitizedName + '"></i>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="hidden p-4" id="transfers-' + sanitizedName + '">' +
+            transfersHTML +
+          '</div>' +
+        '</div>';
+      }).join('');
+
+      container.innerHTML = destinationGroups;
       lucide.createIcons();
     })
     .withFailureHandler(function(error) {
@@ -1388,6 +1415,43 @@ function updateTransfersView() {
       container.innerHTML = '<p class="text-red-500 text-center py-4">Error cargando transferencias</p>';
     })
     .getTransferenciasPendientes(fechaActual);
+}
+
+/**
+ * Toggle visibilidad de grupo de transferencias
+ */
+function toggleTransferGroup(destinationName) {
+  const sanitizedName = destinationName.replace(/[^a-zA-Z0-9]/g, '_');
+  const transfersContainer = document.getElementById('transfers-' + sanitizedName);
+  const chevron = document.getElementById('chevron-transfer-' + sanitizedName);
+
+  if (transfersContainer && chevron) {
+    if (transfersContainer.classList.contains('hidden')) {
+      transfersContainer.classList.remove('hidden');
+      chevron.classList.add('rotate-180');
+    } else {
+      transfersContainer.classList.add('hidden');
+      chevron.classList.remove('rotate-180');
+    }
+  }
+}
+
+/**
+ * Toggle estado de confirmacion individual de transferencia
+ */
+function toggleTransferConfirmation(transferId) {
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        updateTransfersView();
+      } else {
+        showNotification('Error: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .toggleTransferencia(transferId);
 }
 
 /**
@@ -1404,7 +1468,7 @@ function updateRendicionView() {
   google.script.run
     .withSuccessHandler(function(resumen) {
       if (!resumen || !resumen.terapeutas || resumen.terapeutas.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-gray-500">No hay datos de rendicion para esta fecha</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4 text-gray-500">No hay datos de rendicion para esta fecha</td></tr>';
         return;
       }
 
@@ -1414,8 +1478,42 @@ function updateRendicionView() {
         const badgeClass = getBadgeClass(status.estado);
         const ingresoTotal = status.valorTotalSesiones || 0;
         const rowClass = status.confirmacionInfo
-          ? 'bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500'
+          ? 'bg-red-50 dark:bg-red-900/20'
           : 'hover:bg-gray-50 dark:hover:bg-gray-700';
+
+        // Generar boton de accion segun estado
+        let actionButton = '';
+        if (status.confirmacionInfo) {
+          actionButton = `
+            <button onclick="revertConfirmation('${status.terapeuta}')" class="btn-confirmar">
+              Revertir
+            </button>
+          `;
+        } else if (status.estado === 'LA TERAPEUTA DEBE DAR') {
+          actionButton = `
+            <select onchange="handleTherapistDebtPayment('${status.terapeuta}', this.value)" class="debt-payment-select">
+              <option value="">Como entrega?</option>
+              <option value="efectivo">Entrega efectivo</option>
+              <option value="transferencia">Transfiere a cuenta</option>
+            </select>
+          `;
+        } else if (status.estado === 'DAR EFECTIVO') {
+          actionButton = `
+            <select onchange="handlePaymentOption('${status.terapeuta}', this.value)" class="btn-confirmar">
+              <option value="">Seleccionar...</option>
+              <option value="exacto">Dar exacto (${formatCurrency(status.neuroteaLeDebe || 0)})</option>
+              <option value="vuelto">Dar con vuelto (transferencia)...</option>
+              <option value="vuelto-efectivo">Dar con vuelto en efectivo...</option>
+              <option value="transferir">Solo transferir</option>
+            </select>
+          `;
+        } else {
+          actionButton = `
+            <button onclick="confirmarRendicion('${status.terapeuta}')" class="btn-confirmar">
+              Confirmar
+            </button>
+          `;
+        }
 
         html += `
           <tr class="${rowClass}">
@@ -1431,15 +1529,19 @@ function updateRendicionView() {
               <span class="badge ${badgeClass} text-xs">${status.estado}</span>
             </td>
             <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">
-              ${!status.confirmacionInfo ? `
-                <button onclick="confirmarRendicion('${status.terapeuta}')" class="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs">
-                  Confirmar
-                </button>
-              ` : `
-                <button onclick="revertConfirmation('${status.terapeuta}')" class="bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded text-xs">
-                  Revertir
-                </button>
-              `}
+              ${actionButton}
+            </td>
+            <td class="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center">
+              <button onclick="generateTherapistReceipt('${status.terapeuta}')" class="btn-pdf-icon" title="Generar comprobante">
+                <svg width="20" height="24" viewBox="0 0 20 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 2C2 0.895431 2.89543 0 4 0H13L18 5V22C18 23.1046 17.1046 24 16 24H4C2.89543 24 2 23.1046 2 22V2Z" fill="#E5E7EB"/>
+                  <path d="M13 0V4C13 4.55228 13.4477 5 14 5H18L13 0Z" fill="#D1D5DB"/>
+                  <rect x="5" y="8" width="8" height="1" rx="0.5" fill="#9CA3AF"/>
+                  <rect x="5" y="11" width="10" height="1" rx="0.5" fill="#9CA3AF"/>
+                  <rect x="1" y="14" width="18" height="6" rx="1" fill="#DC2626"/>
+                  <text x="10" y="18.5" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="6" font-weight="bold">PDF</text>
+                </svg>
+              </button>
             </td>
           </tr>
         `;
@@ -1450,7 +1552,7 @@ function updateRendicionView() {
     })
     .withFailureHandler(function(error) {
       console.error('Error cargando rendicion:', error);
-      tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-red-500">Error cargando rendicion</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4 text-red-500">Error cargando rendicion</td></tr>';
     })
     .getResumenRendicion(fechaActual);
 }
@@ -1575,9 +1677,14 @@ function updateGroupsList() {
             <p class="font-medium text-gray-800 dark:text-white">${g.nombre}</p>
             <p class="text-sm text-gray-500">${ninos.length} ninos - ${g.porcentajeAporte}% aporte</p>
           </div>
-          <button onclick="deleteGroup(${g.id})" class="text-red-500 hover:text-red-700">
-            <i data-lucide="trash-2" class="w-4 h-4"></i>
-          </button>
+          <div class="flex items-center space-x-2">
+            <button onclick="editGroup(${g.id})" class="text-blue-500 hover:text-blue-700" title="Editar grupo">
+              <i data-lucide="edit" class="w-4 h-4"></i>
+            </button>
+            <button onclick="deleteGroup(${g.id})" class="text-red-500 hover:text-red-700" title="Eliminar grupo">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </div>
         </div>
         <div class="mt-2 flex flex-wrap gap-1">
           ${ninos.map(n => `<span class="badge badge-secondary">${n.nombre}</span>`).join('')}
@@ -1684,7 +1791,7 @@ function handleSessionSubmit(e) {
     paciente: document.getElementById('patient-name').value.trim(),
     efectivo: parseNumber(document.getElementById('cash-to-neurotea').value),
     transferenciaNeurotea: parseNumber(document.getElementById('transfer-to-neurotea').value),
-    transferenciaTerminapeuta: parseNumber(document.getElementById('transfer-to-therapist').value),
+    transferenciaTerapeuta: parseNumber(document.getElementById('transfer-to-therapist').value),
     tipoAporte: tipoAporte,
     aporteNeurotea: parseNumber(document.getElementById('fixed-amount-input').value),
     usaCredito: usaCredito,
@@ -1893,7 +2000,7 @@ function handlePackageSubmit(e) {
     sesionesTotal: parseInt(document.getElementById('package-sessions').value) || 0,
     efectivo: parseInt(document.getElementById('package-cash').value) || 0,
     transferenciaNeurotea: parseInt(document.getElementById('package-transfer-neurotea').value) || 0,
-    transferenciaTerminapeuta: parseInt(document.getElementById('package-transfer-therapist').value) || 0,
+    transferenciaTerapeuta: parseInt(document.getElementById('package-transfer-therapist').value) || 0,
     tipoAporte: document.querySelector('input[name="package-neurotea-contribution"]:checked')?.value || '30'
   };
 
@@ -2424,7 +2531,7 @@ function editSession(id) {
         document.getElementById('edit-session-paciente').value = session.paciente || '';
         document.getElementById('edit-session-efectivo').value = session.efectivo || 0;
         document.getElementById('edit-session-transf-neurotea').value = session.transferenciaNeurotea || 0;
-        document.getElementById('edit-session-transf-terapeuta').value = session.transferenciaTerminapeuta || 0;
+        document.getElementById('edit-session-transf-terapeuta').value = session.transferenciaTerapeuta || 0;
 
         // Calcular y mostrar el valor total
         updateEditSessionValue();
@@ -2488,7 +2595,7 @@ function saveSessionEdit() {
     terapeuta: document.getElementById('edit-session-terapeuta').value,
     efectivo: parseInt(document.getElementById('edit-session-efectivo').value) || 0,
     transferenciaNeurotea: parseInt(document.getElementById('edit-session-transf-neurotea').value) || 0,
-    transferenciaTerminapeuta: parseInt(document.getElementById('edit-session-transf-terapeuta').value) || 0
+    transferenciaTerapeuta: parseInt(document.getElementById('edit-session-transf-terapeuta').value) || 0
   };
 
   if (!updates.paciente) {
@@ -2843,6 +2950,136 @@ function deletePackage(id) {
 }
 
 /**
+ * Edita un grupo existente - abre el modal de edicion
+ */
+function editGroup(id) {
+  const group = gruposActivos.find(g => g.id == id);
+  if (!group) {
+    showNotification('Grupo no encontrado', 'error');
+    return;
+  }
+
+  // Llenar el modal con datos del grupo
+  document.getElementById('edit-group-id').value = group.id;
+  document.getElementById('edit-group-name').value = group.nombre || '';
+  document.getElementById('edit-group-percentage').value = group.porcentajeAporte || 30;
+  const titleEl = document.getElementById('edit-group-title');
+  if (titleEl) titleEl.textContent = group.nombre;
+
+  // Renderizar lista de ninos
+  updateEditGroupChildrenList(group.ninos || []);
+
+  // Mostrar modal
+  document.getElementById('edit-group-modal').classList.remove('hidden');
+}
+
+/**
+ * Cierra el modal de edicion de grupo
+ */
+function closeEditGroupModal() {
+  document.getElementById('edit-group-modal').classList.add('hidden');
+}
+
+/**
+ * Actualiza la lista de ninos en el modal de edicion de grupo
+ */
+function updateEditGroupChildrenList(ninos) {
+  const container = document.getElementById('edit-group-children-list');
+  if (!container) return;
+
+  if (ninos.length === 0) {
+    container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay ninos en este grupo</p>';
+    return;
+  }
+
+  container.innerHTML = ninos.map((n, i) => `
+    <div class="flex items-center justify-between p-2 bg-white dark:bg-gray-600 rounded border dark:border-gray-500">
+      <span class="text-sm font-medium">${n.nombre || n}</span>
+      <button onclick="removeChildFromGroup(${i})" class="text-red-500 hover:text-red-700 p-1" title="Quitar nino">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+  `).join('');
+  lucide.createIcons();
+}
+
+/**
+ * Agrega un nino al grupo actual en edicion
+ */
+function addChildToCurrentGroup() {
+  const nameInput = document.getElementById('new-child-name');
+  const name = nameInput.value.trim();
+  if (!name) {
+    showNotification('Ingrese un nombre', 'warning');
+    return;
+  }
+
+  const groupId = document.getElementById('edit-group-id').value;
+  const group = gruposActivos.find(g => g.id == groupId);
+  if (!group) return;
+
+  if (!group.ninos) group.ninos = [];
+  group.ninos.push({ nombre: name });
+  nameInput.value = '';
+  updateEditGroupChildrenList(group.ninos);
+}
+
+/**
+ * Remueve un nino del grupo actual en edicion
+ */
+function removeChildFromGroup(index) {
+  const groupId = document.getElementById('edit-group-id').value;
+  const group = gruposActivos.find(g => g.id == groupId);
+  if (!group || !group.ninos) return;
+
+  group.ninos.splice(index, 1);
+  updateEditGroupChildrenList(group.ninos);
+}
+
+/**
+ * Guarda cambios del grupo editado
+ */
+function saveGroupChanges() {
+  const groupId = document.getElementById('edit-group-id').value;
+  const nombre = document.getElementById('edit-group-name').value.trim();
+  const porcentaje = parseInt(document.getElementById('edit-group-percentage').value) || 30;
+
+  if (!nombre) {
+    showNotification('El nombre del grupo es obligatorio', 'warning');
+    return;
+  }
+
+  const group = gruposActivos.find(g => g.id == groupId);
+  if (!group) {
+    showNotification('Grupo no encontrado', 'error');
+    return;
+  }
+
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        showNotification('Grupo actualizado', 'success');
+        // Actualizar datos locales
+        group.nombre = nombre;
+        group.porcentajeAporte = porcentaje;
+        updateGroupsList();
+        updateGroupSelects();
+        closeEditGroupModal();
+      } else {
+        showNotification(result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error al guardar grupo: ' + error.message, 'error');
+    })
+    .actualizarGrupo(groupId, { nombre: nombre, porcentajeAporte: porcentaje, ninos: group.ninos });
+}
+
+/**
  * Elimina un grupo
  */
 function deleteGroup(id) {
@@ -2954,38 +3191,7 @@ function getPaymentActionHTML(status) {
 /**
  * Maneja la seleccion de opcion de pago del dropdown
  */
-function handlePaymentOption(terapeuta, option) {
-  if (!option) return;
-
-  // Resetear el select despues de procesar
-  setTimeout(() => {
-    const selects = document.querySelectorAll('select.form-select');
-    selects.forEach(s => { if (s.value === option) s.value = ''; });
-  }, 100);
-
-  switch(option) {
-    case 'exacto':
-      confirmPaymentExact(terapeuta);
-      break;
-    case 'vuelto':
-      confirmPaymentWithChange(terapeuta, 'transferencia');
-      break;
-    case 'vuelto-efectivo':
-      confirmPaymentWithChange(terapeuta, 'efectivo');
-      break;
-    case 'transferir':
-      confirmPaymentTransfer(terapeuta);
-      break;
-    case 'efectivo':
-      confirmPaymentTherapistGives(terapeuta, 'efectivo');
-      break;
-    case 'transferencia':
-      confirmPaymentTherapistGives(terapeuta, 'transferencia');
-      break;
-    default:
-      showNotification('Opcion no reconocida', 'error');
-  }
-}
+/* handlePaymentOption definida mas abajo (despues de confirmarRendicion) */
 
 /**
  * Funcion principal para confirmar rendicion de un terapeuta
@@ -3254,6 +3460,134 @@ function executePaymentConfirmation(terapeuta, opcionPago) {
  */
 function showPaymentOptions(terapeuta) {
   confirmPaymentSimple(terapeuta);
+}
+
+/**
+ * Maneja seleccion de opcion de pago desde dropdown inline (DAR EFECTIVO)
+ */
+function handlePaymentOption(terapeuta, opcion) {
+  if (!opcion) return;
+
+  if (opcion === 'exacto') {
+    if (!confirm('Dar exacto en efectivo a ' + terapeuta + '?')) {
+      updateRendicionView();
+      return;
+    }
+    executePaymentConfirmation(terapeuta, { tipoOpcion: 'exacto' });
+  } else if (opcion === 'vuelto' || opcion === 'vuelto-efectivo') {
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (!result.success) {
+          showNotification('Error: ' + result.message, 'error');
+          return;
+        }
+        const status = result.data;
+        const montoADar = status.neuroteaLeDebe;
+        const tipoVuelto = opcion === 'vuelto-efectivo' ? 'en efectivo' : 'por transferencia';
+        const montoReal = prompt(
+          'Debe dar ' + formatCurrency(montoADar) + '.\nCuanto va a entregar en efectivo?\n(Vuelto sera ' + tipoVuelto + ')',
+          montoADar
+        );
+        if (!montoReal) { updateRendicionView(); return; }
+        const monto = parseNumber(montoReal);
+        if (monto <= montoADar) {
+          alert('El monto debe ser mayor al adeudado para generar vuelto');
+          updateRendicionView();
+          return;
+        }
+        const vuelto = monto - montoADar;
+        executePaymentConfirmation(terapeuta, {
+          tipoOpcion: opcion,
+          efectivoUsado: monto,
+          vueltoEfectivo: opcion === 'vuelto-efectivo' ? vuelto : 0,
+          vueltoTransferencia: opcion === 'vuelto' ? vuelto : 0
+        });
+      })
+      .withFailureHandler(function(error) {
+        showNotification('Error: ' + error.message, 'error');
+      })
+      .getEstadoTerapeuta(terapeuta, fechaActual);
+  } else if (opcion === 'transferir') {
+    if (!confirm('Transferir desde cuenta NeuroTEA a ' + terapeuta + '?')) {
+      updateRendicionView();
+      return;
+    }
+    executePaymentConfirmation(terapeuta, { tipoOpcion: 'transferir' });
+  } else if (opcion === 'efectivo') {
+    confirmPaymentTherapistGives(terapeuta, 'efectivo');
+  } else if (opcion === 'transferencia') {
+    confirmPaymentTherapistGives(terapeuta, 'transferencia');
+  }
+}
+
+/**
+ * Maneja seleccion de pago cuando la terapeuta debe dar (dropdown inline)
+ */
+function handleTherapistDebtPayment(terapeuta, metodo) {
+  if (!metodo) return;
+
+  const mensaje = metodo === 'efectivo'
+    ? 'Confirmar que ' + terapeuta + ' entrega efectivo?'
+    : 'Confirmar que ' + terapeuta + ' transfiere a cuenta NeuroTEA?';
+
+  if (!confirm(mensaje)) {
+    updateRendicionView();
+    return;
+  }
+
+  executePaymentConfirmation(terapeuta, {
+    tipoOpcion: metodo === 'efectivo' ? 'devolucion-efectivo' : 'devolucion-transferencia'
+  });
+}
+
+/**
+ * Genera comprobante PDF individual para un terapeuta
+ */
+function generateTherapistReceipt(terapeuta) {
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success && result.data) {
+        // Generar PDF con los datos recibidos
+        const data = result.data;
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+
+        doc.setFontSize(16);
+        doc.text('Comprobante de Rendicion', 20, 20);
+        doc.setFontSize(12);
+        doc.text('Terapeuta: ' + terapeuta, 20, 35);
+        doc.text('Fecha: ' + fechaActual, 20, 45);
+        doc.text('---', 20, 55);
+        doc.text('Ingreso Total: ' + formatCurrency(data.valorTotalSesiones || 0), 20, 65);
+        doc.text('Aporte NeuroTEA: ' + formatCurrency(data.aporteNeuroTEA || 0), 20, 75);
+        doc.text('Honorarios: ' + formatCurrency(data.honorarios || 0), 20, 85);
+        doc.text('Transf. a Terapeuta: ' + formatCurrency(data.transferenciaATerapeuta || 0), 20, 95);
+        doc.text('Adelantos: ' + formatCurrency(data.adelantosRecibidos || 0), 20, 105);
+        doc.text('---', 20, 115);
+        doc.text('NeuroTEA debe dar: ' + formatCurrency(data.neuroteaLeDebe || 0), 20, 125);
+        doc.text('Terapeuta debe: ' + formatCurrency(data.terapeutaDebe || 0), 20, 135);
+        doc.text('Estado: ' + (data.estado || 'N/A'), 20, 145);
+
+        if (data.confirmacionInfo) {
+          doc.text('---', 20, 155);
+          doc.text('CONFIRMADO', 20, 165);
+          doc.text('Tipo: ' + (data.confirmacionInfo.tipoOpcion || ''), 20, 175);
+        }
+
+        doc.save('Comprobante_' + terapeuta.replace(/\s+/g, '_') + '_' + fechaActual + '.pdf');
+        showNotification('Comprobante generado', 'success');
+      } else {
+        showNotification('No hay datos para generar comprobante', 'warning');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error generando comprobante: ' + error.message, 'error');
+    })
+    .getEstadoTerapeuta(terapeuta, fechaActual);
 }
 
 /**
@@ -3675,7 +4009,7 @@ function procesarSesionesFuturas(pacienteName, fechaCompra) {
       porcentajeAporte: sesion.porcentajeAporte,
       efectivo: 0,
       transferenciaNeurotea: 0,
-      transferenciaTerminapeuta: 0,
+      transferenciaTerapeuta: 0,
       notas: 'Sesiones futuras pagadas junto con sesion principal'
     };
 
@@ -4003,7 +4337,7 @@ function registerSession() {
   const paciente = document.getElementById('patient-name').value.trim();
   const efectivo = parseFloat(document.getElementById('cash-to-neurotea').value) || 0;
   const transferenciaNeurotea = parseFloat(document.getElementById('transfer-to-neurotea').value) || 0;
-  const transferenciaTerminapeuta = parseFloat(document.getElementById('transfer-to-therapist').value) || 0;
+  const transferenciaTerapeuta = parseFloat(document.getElementById('transfer-to-therapist').value) || 0;
 
   if (!terapeuta) {
     showNotification('Seleccione un terapeuta', 'error');
@@ -4014,7 +4348,7 @@ function registerSession() {
     return;
   }
 
-  const valorSesion = efectivo + transferenciaNeurotea + transferenciaTerminapeuta;
+  const valorSesion = efectivo + transferenciaNeurotea + transferenciaTerapeuta;
   if (valorSesion <= 0) {
     showNotification('Ingrese un monto de pago', 'error');
     return;
@@ -4068,7 +4402,7 @@ function registerSession() {
       paciente: paciente,
       efectivo: efectivo,
       transferenciaNeurotea: transferenciaNeurotea,
-      transferenciaTerminapeuta: transferenciaTerminapeuta,
+      transferenciaTerapeuta: transferenciaTerapeuta,
       valorSesion: valorSesion,
       aporteNeurotea: aporteNeurotea,
       honorarios: honorarios,

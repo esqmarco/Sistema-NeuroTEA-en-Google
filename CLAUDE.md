@@ -76,7 +76,7 @@ Crea los archivos en este orden en Google Apps Script:
 | Hoja | Descripcion | Columnas Principales |
 |------|-------------|---------------------|
 | `Terapeutas` | Lista de terapeutas | id, nombre, activo, creadoEn |
-| `Sesiones` | Sesiones individuales | id, fecha, terapeuta, paciente, valor, efectivo, transferenciaNeurotea, transferenciaTerminapeuta, aporte, honorarios, usaCredito |
+| `Sesiones` | Sesiones individuales | id, fecha, terapeuta, paciente, valor, efectivo, transferenciaNeurotea, transferenciaTerapeuta, aporte, honorarios, usaCredito |
 | `SesionesGrupales` | Sesiones de grupo | id, fecha, grupoId, grupoNombre, asistencia (JSON), terapeutas (JSON), valorTotal, aporte, honorariosPorTerapeuta |
 | `Egresos` | Gastos y adelantos | id, fecha, tipo, concepto, monto, terapeuta |
 | `Confirmaciones` | Confirmaciones de pago | id, fecha, terapeuta, tipo, flujo (JSON), estadoCongelado (JSON) |
@@ -396,7 +396,7 @@ Backend devuelve objetos con estas propiedades (verificar en TODOS los .gs):
 
 **Sesion Individual** (SessionService.create):
 - `id`, `fecha`, `terapeuta`, `paciente`, `efectivo`
-- `transferenciaNeurotea`, `transferenciaTerminapeuta`, `valorSesion`
+- `transferenciaNeurotea`, `transferenciaTerapeuta`, `valorSesion`
 - `aporteNeurotea`, `honorarios`, `tipoAporte`, `usaCredito`
 - `paqueteId`, `creditosRestantes`, `creadoEn`
 

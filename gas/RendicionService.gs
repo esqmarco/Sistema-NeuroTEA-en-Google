@@ -43,7 +43,7 @@ const RendicionService = {
       valorTotalSesiones += s.valorSesion || 0;
       aporteIndividual += s.aporteNeurotea || 0;
       honorariosIndividuales += s.honorarios || 0;
-      transferenciaATerapeuta += s.transferenciaTerminapeuta || 0;
+      transferenciaATerapeuta += s.transferenciaTerapeuta || 0;
     });
 
     // Calcular totales de sesiones grupales (proporcionales)
@@ -70,7 +70,7 @@ const RendicionService = {
       // Honorarios de paquete = valor - aporte
       const honPaquete = (p.valorTotal || 0) - (p.aporteNeurotea || 0);
       honorariosPaquetes += honPaquete;
-      transferenciaATerapeuta += p.transferenciaTerminapeuta || 0;
+      transferenciaATerapeuta += p.transferenciaTerapeuta || 0;
     });
 
     // Totales combinados
@@ -86,6 +86,10 @@ const RendicionService = {
     // Terapeuta debe: si (transferencias + adelantos) > honorarios
     const terapeutaDebe = Math.max(0, transferenciaATerapeuta + totalAdelantos - honorariosTotales);
 
+    // Calcular saldos (necesarios para determinar estado y para el frontend)
+    const saldoCaja = this.calcularSaldoCaja(fecha);
+    const saldoBanco = this.calcularSaldoCuenta(fecha);
+
     // Determinar estado
     let estado = ESTADOS_RENDICION.SALDADO;
     let colorClass = 'badge-secondary';
@@ -93,8 +97,6 @@ const RendicionService = {
     if (neuroteaLeDebe > 0 && terapeutaDebe === 0) {
       // NeuroTEA debe pagar
       // Determinar si hay fondos suficientes
-      const saldoCaja = this.calcularSaldoCaja(fecha);
-      const saldoBanco = this.calcularSaldoCuenta(fecha);
 
       if (saldoCaja >= neuroteaLeDebe) {
         estado = ESTADOS_RENDICION.DAR_EFECTIVO;
@@ -157,7 +159,12 @@ const RendicionService = {
       terapeutaDebe: terapeutaDebe,
 
       // Confirmacion
+      confirmado: !!confirmacion,
       confirmacionInfo: confirmacionInfo,
+
+      // Saldos actuales (para el frontend)
+      saldoCajaActual: saldoCaja,
+      saldoCuentaNeuroTEA: saldoBanco,
 
       // Conteos
       totalSesionesIndividuales: sesiones.length,
