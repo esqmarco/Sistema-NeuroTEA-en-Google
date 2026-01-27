@@ -584,6 +584,19 @@ google.script.run
 
 ## Historial de Cambios
 
+### v1.4.0 (2026-01-27)
+- fix: Corregido calculo de saldo en caja y cuenta NeuroTEA en Dashboard (faltaban confirmaciones)
+- feat: Nuevas funciones `calcularSaldoCajaLocal()` y `calcularCuentaNeuroTEALocal()` para calculos dinamicos en frontend
+- fix: Agregado `paquetesFecha` a carga de datos iniciales (faltaba en `cargarDatosIniciales`)
+- feat: Reconstruido generador de comprobantes/recibos HTML con layout profesional A4 completo
+- feat: Reconstruido generador de reporte de rendicion HTML con calculos por terapeuta
+- fix: Agregada advertencia de pago grupal `group-payment-warning` en modal de sesion grupal
+- fix: `updatePaymentDisplay()` ahora llama `validateRegisterButton()` para validacion en tiempo real
+- fix: Boton crear paquete ahora se habilita/deshabilita segun validez del formulario
+- feat: Nueva funcion `updateSaldoBadge()` para mostrar estado de saldo inicial en badge
+- fix: Inicializacion de `confirmaciones` como array (era `{}`, ahora `[]`)
+- Documentacion actualizada con cambios v1.4.0
+
 ### v1.3.0 (2026-01-22)
 - Agregado sistema de verificacion automatica con hooks
 - Nuevo skill `/verify-system` para verificacion completa

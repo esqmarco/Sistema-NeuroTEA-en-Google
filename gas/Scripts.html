@@ -74,8 +74,9 @@ function loadInitialData() {
           sesionesGrupales = data.sesionesGrupales || [];
           egresos = data.egresos || [];
           paquetesActivos = data.paquetes || [];
+          paquetesFecha = data.paquetesFecha || [];
           gruposActivos = data.grupos || [];
-          confirmaciones = data.confirmaciones || {};
+          confirmaciones = data.confirmaciones || [];
           estadosTransferencia = data.estadosTransferencia || {};
           saldoInicial = data.saldoInicial || 0;
           config = data.config || {};
@@ -187,6 +188,9 @@ function setupEventListeners() {
   ['package-sessions', 'package-cash', 'package-transfer-therapist', 'package-transfer-neurotea'].forEach(id => {
     safeAddListener(id, 'input', updatePackageCalculations);
   });
+  // Validacion de terapeuta y paciente para habilitar boton crear paquete
+  safeAddListener('package-therapist', 'change', updatePackageCalculations);
+  safeAddListener('package-patient-name', 'input', updatePackageCalculations);
 
   // Aporte NeuroTEA en paquetes
   document.querySelectorAll('input[name="package-neurotea-contribution"]').forEach(radio => {
@@ -335,6 +339,9 @@ function updatePaymentDisplay() {
   document.getElementById('session-value-display').textContent = formatCurrency(valorSesion);
   document.getElementById('neurotea-contribution-display').textContent = formatCurrency(aporteNeurotea);
   document.getElementById('therapist-fee-display').textContent = formatCurrency(honorarios);
+
+  // Validar boton de registro
+  validateRegisterButton();
 }
 
 /**
@@ -620,6 +627,15 @@ function updatePackageCalculations() {
   document.getElementById('package-aporte-neurotea').textContent = formatCurrency(aporteNeurotea);
   document.getElementById('package-honorarios-terapeuta').textContent = formatCurrency(honorarios);
   document.getElementById('package-per-session').textContent = formatCurrency(perSession);
+
+  // Habilitar/deshabilitar boton de crear paquete
+  const createBtn = document.getElementById('create-package-btn');
+  if (createBtn) {
+    const terapeuta = document.getElementById('package-therapist')?.value;
+    const paciente = document.getElementById('package-patient-name')?.value?.trim();
+    const isValid = terapeuta && paciente && sessions > 0 && total > 0;
+    createBtn.disabled = !isValid;
+  }
 }
 
 // ===========================
@@ -641,7 +657,8 @@ function updateAllViews() {
     { name: 'PackagesList', fn: updatePackagesList },
     { name: 'GroupsList', fn: updateGroupsList },
     { name: 'GroupSelects', fn: updateGroupSelects },
-    { name: 'AdminView', fn: updateAdminView }
+    { name: 'AdminView', fn: updateAdminView },
+    { name: 'SaldoBadge', fn: updateSaldoBadge }
   ];
 
   viewUpdaters.forEach(updater => {
@@ -1147,90 +1164,135 @@ function updateSessionsList() {
  * Actualiza la vista de resumen
  */
 function updateSummaryView() {
-  // Calcular totales
-  let totalSessions = sesiones.length + sesionesGrupales.length;
-  let totalCash = saldoInicial;
-  let totalBank = 0;
-  let totalContribution = 0;
+  try {
+    // Calcular ingresos por tipo (sesiones, grupales, paquetes)
+    const sessionIncome = sesiones.filter(s => !s.usaCredito).reduce((sum, s) => sum + (s.valorSesion || 0), 0);
+    const packageIncome = paquetesFecha.reduce((sum, p) => sum + (p.valorTotal || 0), 0);
+    const groupIncome = sesionesGrupales.reduce((sum, gs) => sum + (gs.valorTotal || 0), 0);
+    const ingresoTotal = sessionIncome + packageIncome + groupIncome;
 
-  // Sumar de sesiones individuales
-  sesiones.forEach(s => {
-    if (!s.usaCredito) {
-      totalCash += s.efectivo || 0;
-      totalBank += s.transferenciaNeurotea || 0;
-      totalContribution += s.aporteNeurotea || 0;
+    // Aporte NeuroTEA
+    const sessionAporte = sesiones.filter(s => !s.usaCredito).reduce((sum, s) => sum + (s.aporteNeurotea || 0), 0);
+    const packageAporte = paquetesFecha.reduce((sum, p) => sum + (p.aporteNeurotea || 0), 0);
+    const groupAporte = sesionesGrupales.reduce((sum, gs) => sum + (gs.aporteNeurotea || 0), 0);
+    const totalContribution = sessionAporte + packageAporte + groupAporte;
+
+    // Efectivo bruto del dia (sin restar pagos confirmados)
+    const sessionEfectivo = sesiones.reduce((sum, s) => sum + (s.efectivo || 0), 0);
+    const packageEfectivo = paquetesFecha.reduce((sum, p) => sum + (p.efectivo || 0), 0);
+    const groupEfectivo = sesionesGrupales.reduce((sum, gs) => sum + (gs.efectivo || 0), 0);
+    const totalEfectivo = sessionEfectivo + packageEfectivo + groupEfectivo;
+
+    // Transferencias a cuenta NeuroTEA (bruto)
+    const sessionTransfNeurotea = sesiones.filter(s => !s.usaCredito).reduce((sum, s) => sum + (s.transferenciaNeurotea || 0), 0);
+    const packageTransfNeurotea = paquetesFecha.reduce((sum, p) => sum + (p.transferenciaNeurotea || 0), 0);
+    const groupTransfNeurotea = sesionesGrupales.reduce((sum, gs) => sum + (gs.transferenciaNeurotea || 0), 0);
+
+    // Total egresos
+    const totalEgresos = egresos.reduce((sum, e) => sum + (e.monto || 0), 0);
+
+    // SALDO CAJA = Saldo inicial + efectivo ingresado - egresos - pagos confirmados en efectivo
+    const saldoCaja = calcularSaldoCajaLocal();
+
+    // CUENTA NEUROTEA = Transferencias recibidas - transferencias salientes (pagos confirmados)
+    const saldoCuentaNeuroTEA = calcularCuentaNeuroTEALocal();
+
+    // Actualizar dashboard cards
+    const elements = {
+      'dashboard-ingreso-total': ingresoTotal,
+      'dashboard-aporte-neurotea': totalContribution,
+      'dashboard-saldo-caja': saldoCaja,
+      'dashboard-total-efectivo': totalEfectivo,
+      'dashboard-cuenta-neurotea': saldoCuentaNeuroTEA,
+      'dashboard-total-egresos': totalEgresos
+    };
+
+    Object.entries(elements).forEach(([id, value]) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = formatCurrency(value);
+    });
+
+    // Actualizar cards en rendicion tambien
+    const rendicionBanco = document.getElementById('rendicion-banco');
+    if (rendicionBanco) rendicionBanco.textContent = formatCurrency(saldoCuentaNeuroTEA);
+
+    const rendicionSaldoCaja = document.getElementById('rendicion-saldo-caja');
+    if (rendicionSaldoCaja) rendicionSaldoCaja.textContent = formatCurrency(saldoCaja);
+
+    const totalEgresosDisplay = document.getElementById('total-egresos-display');
+    if (totalEgresosDisplay) totalEgresosDisplay.textContent = formatCurrency(totalEgresos);
+
+    // Actualizar tabla de resumen por terapeuta
+    updateSummaryTable();
+
+  } catch (error) {
+    console.error('Error en updateSummaryView:', error);
+  }
+}
+
+/**
+ * Calcula el saldo en caja de forma DINAMICA (replica calcularSaldoCajaReal del original)
+ * Saldo = Inicial + Efectivo ingresado - Egresos - Pagos confirmados en efectivo
+ */
+function calcularSaldoCajaLocal() {
+  let saldo = saldoInicial || 0;
+
+  // Sumar efectivo de sesiones
+  sesiones.forEach(s => { saldo += s.efectivo || 0; });
+
+  // Sumar efectivo de sesiones grupales
+  sesionesGrupales.forEach(gs => { saldo += gs.efectivo || 0; });
+
+  // Sumar efectivo de paquetes comprados en la fecha
+  paquetesFecha.forEach(p => { saldo += p.efectivo || 0; });
+
+  // Restar egresos
+  egresos.forEach(e => { saldo -= e.monto || 0; });
+
+  // Restar pagos confirmados en efectivo a terapeutas
+  const confs = Array.isArray(confirmaciones) ? confirmaciones : [];
+  confs.forEach(c => {
+    const flujo = c.flujo || c.flujoJSON || {};
+    // Efectivo que salio de caja
+    saldo -= flujo.efectivoUsado || 0;
+    // Vuelto en efectivo regresa a caja
+    saldo += flujo.vueltoEfectivo || 0;
+    // Si la terapeuta entrego efectivo, se suma a caja
+    if (c.tipo === 'LA TERAPEUTA DEBE DAR' && flujo.efectivoRecibido) {
+      saldo += flujo.efectivoRecibido;
     }
   });
 
-  // Sumar de sesiones grupales
-  sesionesGrupales.forEach(gs => {
-    totalCash += gs.efectivo || 0;
-    totalBank += gs.transferenciaNeurotea || 0;
-    totalContribution += gs.aporteNeurotea || 0;
+  return Math.max(0, saldo);
+}
+
+/**
+ * Calcula el saldo en cuenta NeuroTEA de forma DINAMICA (replica calcularSaldoCuentaNeuroTEA del original)
+ * Saldo = Transferencias recibidas - Transferencias salientes por confirmaciones
+ */
+function calcularCuentaNeuroTEALocal() {
+  let saldo = 0;
+
+  // Sumar transferencias a NeuroTEA de sesiones
+  sesiones.forEach(s => { saldo += s.transferenciaNeurotea || 0; });
+
+  // Sumar transferencias de sesiones grupales
+  sesionesGrupales.forEach(gs => { saldo += gs.transferenciaNeurotea || 0; });
+
+  // Sumar transferencias de paquetes
+  paquetesFecha.forEach(p => { saldo += p.transferenciaNeurotea || 0; });
+
+  // Considerar confirmaciones de pago que afectan la cuenta
+  const confs = Array.isArray(confirmaciones) ? confirmaciones : [];
+  confs.forEach(c => {
+    const flujo = c.flujo || c.flujoJSON || {};
+    // Restar transferencias confirmadas (dinero que salio de la cuenta)
+    saldo -= flujo.bancoUsado || 0;
+    // Sumar vueltos por transferencia (regresa a cuenta)
+    saldo += flujo.vueltoTransferencia || 0;
   });
 
-  // Sumar de paquetes comprados en la fecha (incluye activos e historico)
-  paquetesFecha.forEach(p => {
-    totalCash += p.efectivo || 0;
-    totalBank += p.transferenciaNeurotea || 0;
-    totalContribution += p.aporteNeurotea || 0;
-  });
-
-  // Restar egresos
-  egresos.forEach(e => {
-    totalCash -= e.monto || 0;
-  });
-
-  // Calcular ingreso total
-  let ingresoTotal = 0;
-  sesiones.forEach(s => {
-    if (!s.usaCredito) ingresoTotal += s.valorSesion || 0;
-  });
-  sesionesGrupales.forEach(gs => {
-    ingresoTotal += gs.valorTotal || 0;
-  });
-  // Incluir paquetes en ingreso total
-  paquetesFecha.forEach(p => {
-    ingresoTotal += p.valorTotal || 0;
-  });
-
-  // Calcular total egresos
-  let totalEgresos = 0;
-  egresos.forEach(e => {
-    totalEgresos += e.monto || 0;
-  });
-
-  // Actualizar dashboard cards (usando IDs correctos del HTML)
-  const dashboardIngresoTotal = document.getElementById('dashboard-ingreso-total');
-  if (dashboardIngresoTotal) dashboardIngresoTotal.textContent = formatCurrency(ingresoTotal);
-
-  const dashboardAporteNeurotea = document.getElementById('dashboard-aporte-neurotea');
-  if (dashboardAporteNeurotea) dashboardAporteNeurotea.textContent = formatCurrency(totalContribution);
-
-  const dashboardSaldoCaja = document.getElementById('dashboard-saldo-caja');
-  if (dashboardSaldoCaja) dashboardSaldoCaja.textContent = formatCurrency(Math.max(0, totalCash));
-
-  const dashboardTotalEfectivo = document.getElementById('dashboard-total-efectivo');
-  if (dashboardTotalEfectivo) dashboardTotalEfectivo.textContent = formatCurrency(totalCash);
-
-  const dashboardCuentaNeurotea = document.getElementById('dashboard-cuenta-neurotea');
-  if (dashboardCuentaNeurotea) dashboardCuentaNeurotea.textContent = formatCurrency(Math.max(0, totalBank));
-
-  const dashboardTotalEgresos = document.getElementById('dashboard-total-egresos');
-  if (dashboardTotalEgresos) dashboardTotalEgresos.textContent = formatCurrency(totalEgresos);
-
-  // Actualizar cards en rendicion tambien
-  const rendicionBanco = document.getElementById('rendicion-banco');
-  if (rendicionBanco) rendicionBanco.textContent = formatCurrency(Math.max(0, totalBank));
-
-  const rendicionSaldoCaja = document.getElementById('rendicion-saldo-caja');
-  if (rendicionSaldoCaja) rendicionSaldoCaja.textContent = formatCurrency(Math.max(0, totalCash));
-
-  const totalEgresosDisplay = document.getElementById('total-egresos-display');
-  if (totalEgresosDisplay) totalEgresosDisplay.textContent = formatCurrency(totalEgresos);
-
-  // Actualizar tabla de resumen por terapeuta
-  updateSummaryTable();
+  return Math.max(0, saldo);
 }
 
 /**
@@ -3541,43 +3603,20 @@ function handleTherapistDebtPayment(terapeuta, metodo) {
 }
 
 /**
- * Genera comprobante PDF individual para un terapeuta
+ * Genera comprobante HTML individual para un terapeuta
+ * Obtiene estado del backend y usa datos cliente para construir el HTML profesional
  */
 function generateTherapistReceipt(terapeuta) {
   showLoading(true);
+  showNotification('Generando comprobante...', 'info');
 
   google.script.run
     .withSuccessHandler(function(result) {
       showLoading(false);
       if (result.success && result.data) {
-        // Generar PDF con los datos recibidos
-        const data = result.data;
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF();
-
-        doc.setFontSize(16);
-        doc.text('Comprobante de Rendicion', 20, 20);
-        doc.setFontSize(12);
-        doc.text('Terapeuta: ' + terapeuta, 20, 35);
-        doc.text('Fecha: ' + fechaActual, 20, 45);
-        doc.text('---', 20, 55);
-        doc.text('Ingreso Total: ' + formatCurrency(data.valorTotalSesiones || 0), 20, 65);
-        doc.text('Aporte NeuroTEA: ' + formatCurrency(data.aporteNeuroTEA || 0), 20, 75);
-        doc.text('Honorarios: ' + formatCurrency(data.honorarios || 0), 20, 85);
-        doc.text('Transf. a Terapeuta: ' + formatCurrency(data.transferenciaATerapeuta || 0), 20, 95);
-        doc.text('Adelantos: ' + formatCurrency(data.adelantosRecibidos || 0), 20, 105);
-        doc.text('---', 20, 115);
-        doc.text('NeuroTEA debe dar: ' + formatCurrency(data.neuroteaLeDebe || 0), 20, 125);
-        doc.text('Terapeuta debe: ' + formatCurrency(data.terapeutaDebe || 0), 20, 135);
-        doc.text('Estado: ' + (data.estado || 'N/A'), 20, 145);
-
-        if (data.confirmacionInfo) {
-          doc.text('---', 20, 155);
-          doc.text('CONFIRMADO', 20, 165);
-          doc.text('Tipo: ' + (data.confirmacionInfo.tipoOpcion || ''), 20, 175);
-        }
-
-        doc.save('Comprobante_' + terapeuta.replace(/\s+/g, '_') + '_' + fechaActual + '.pdf');
+        var status = result.data;
+        var htmlContent = generateReceiptHTMLContent(terapeuta, fechaActual, status);
+        downloadHTMLFile(htmlContent, terapeuta, fechaActual);
         showNotification('Comprobante generado', 'success');
       } else {
         showNotification('No hay datos para generar comprobante', 'warning');
@@ -3616,147 +3655,770 @@ function revertConfirmation(terapeuta) {
     .revertirConfirmacionPago(terapeuta, fechaActual);
 }
 
-/**
- * Genera comprobante HTML
- */
-function generateReceipt(terapeuta) {
-  showNotification('Generando comprobante...', 'info');
+// ===========================
+// GENERACION DE COMPROBANTES - SISTEMA COMPLETO
+// Portado del sistema original NeuroTEA con diseño profesional
+// ===========================
 
-  // Obtener datos del terapeuta para la fecha actual
-  google.script.run
-    .withSuccessHandler(function(result) {
-      if (result.success && result.data) {
-        const htmlContent = generateReceiptHTML(result.data, terapeuta, fechaActual);
-        downloadHTMLFile(htmlContent, terapeuta, fechaActual);
-        showNotification('Comprobante generado', 'success');
-      } else {
-        showNotification('No hay datos para generar comprobante', 'warning');
-      }
-    })
-    .withFailureHandler(function(error) {
-      showNotification('Error al generar comprobante', 'error');
-    })
-    .getReceiptData(terapeuta, fechaActual);
+/**
+ * Formatea fecha para comprobante (Ejemplo: "Lunes, 15 de Enero de 2025")
+ * @param {string} fecha - Fecha en formato YYYY-MM-DD
+ * @returns {string} - Fecha formateada
+ */
+function formatDateForReceipt(fecha) {
+  var parts = fecha.split('-').map(Number);
+  var fechaObj = new Date(parts[0], parts[1] - 1, parts[2]);
+  var diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+  var meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+               'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  return diasSemana[fechaObj.getDay()] + ', ' + fechaObj.getDate() + ' de ' + meses[fechaObj.getMonth()] + ' de ' + fechaObj.getFullYear();
 }
 
 /**
- * Genera el HTML del comprobante
+ * Genera filas HTML de ingresos del dia para la tabla del comprobante
+ * Usa variables globales del cliente: sesiones, paquetesFecha, sesionesGrupales
+ * @param {string} terapeuta - Nombre del terapeuta
+ * @returns {string} - Filas HTML de la tabla
  */
-function generateReceiptHTML(data, terapeuta, fecha) {
-  const numeroComprobante = '#CP-' + fecha.replace(/-/g, '') + '-001';
+function generatePackageAndCreditRows(terapeuta) {
+  var rows = [];
 
-  return `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Comprobante NeuroTEA - ${terapeuta}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px; color: #333; }
-    .receipt { max-width: 800px; margin: 0 auto; background: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-    .header { background: #1e4d8b; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
-    .header-left { font-size: 24px; font-style: italic; }
-    .header-right { font-size: 28px; font-weight: bold; }
-    .info-section { padding: 20px; border-bottom: 1px solid #eee; }
-    .info-row { display: flex; justify-content: space-between; margin-bottom: 10px; }
-    .info-label { font-weight: bold; color: #666; }
-    .info-value { font-weight: 500; }
-    .table-section { padding: 20px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-    th { background: #f5f5f5; padding: 10px; text-align: left; border-bottom: 2px solid #ddd; }
-    td { padding: 10px; border-bottom: 1px solid #eee; }
-    .text-right { text-align: right; }
-    .text-center { text-align: center; }
-    .summary { background: #f9f9f9; padding: 20px; }
-    .summary-row { display: flex; justify-content: space-between; padding: 8px 0; }
-    .summary-row.total { border-top: 2px solid #333; font-weight: bold; font-size: 18px; margin-top: 10px; padding-top: 15px; }
-    .footer { text-align: center; padding: 20px; color: #999; font-size: 12px; }
-    .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
-    .badge-success { background: #d4edda; color: #155724; }
-    .badge-info { background: #cce5ff; color: #004085; }
-    @media print { body { padding: 0; background: white; } .receipt { box-shadow: none; } }
-  </style>
-</head>
-<body>
-  <div class="receipt">
-    <div class="header">
-      <div class="header-left">Avanza<br><small style="font-style: normal; font-size: 14px;">Centro de Terapias</small></div>
-      <div class="header-right">COMPROBANTE</div>
-    </div>
+  // 1. Sesiones normales (sin credito usado)
+  sesiones.filter(function(s) {
+    return s.terapeuta === terapeuta && !s.usaCredito;
+  }).forEach(function(session) {
+    rows.push(
+      '<tr>' +
+        '<td>' + (session.paciente || 'Sin nombre') + '</td>' +
+        '<td>SESION NORMAL</td>' +
+        '<td class="currency">' + formatCurrency(session.valorSesion || 0) + '</td>' +
+        '<td class="currency">' + formatCurrency(session.aporteNeurotea || 0) + '</td>' +
+        '<td class="currency">' + formatCurrency(session.honorarios || 0) + '</td>' +
+      '</tr>'
+    );
+  });
 
-    <div class="info-section">
-      <div class="info-row">
-        <div><span class="info-label">TERAPEUTA:</span> <span class="info-value">${terapeuta}</span></div>
-        <div><span class="info-label">COMPROBANTE:</span> <span class="info-value">${numeroComprobante}</span></div>
-      </div>
-      <div class="info-row">
-        <div><span class="info-label">FECHA:</span> <span class="info-value">${formatDateDisplay(fecha)}</span></div>
-        <div><span class="info-label">ESTADO:</span> <span class="badge ${data.confirmado ? 'badge-success' : 'badge-info'}">${data.confirmado ? 'CONFIRMADO' : 'PENDIENTE'}</span></div>
-      </div>
-    </div>
+  // 2. Sesiones con credito usado (valores en Gs 0)
+  sesiones.filter(function(s) {
+    return s.terapeuta === terapeuta && s.usaCredito === true;
+  }).forEach(function(session) {
+    rows.push(
+      '<tr>' +
+        '<td>' + (session.paciente || 'Sin nombre') + '</td>' +
+        '<td>SESION CON CREDITO</td>' +
+        '<td class="currency">Gs 0</td>' +
+        '<td class="currency">Gs 0</td>' +
+        '<td class="currency">Gs 0</td>' +
+      '</tr>'
+    );
+  });
 
-    <div class="table-section">
-      <h3 style="margin-bottom: 15px;">Detalle de Sesiones</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Paciente</th>
-            <th class="text-center">Tipo</th>
-            <th class="text-right">Valor</th>
-            <th class="text-right">Aporte</th>
-            <th class="text-right">Honorarios</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${data.sesiones.map(s => `
-            <tr>
-              <td>${s.paciente}</td>
-              <td class="text-center">${s.usaCredito ? 'Credito' : 'Pago'}</td>
-              <td class="text-right">${formatCurrency(s.valorSesion)}</td>
-              <td class="text-right">${formatCurrency(s.aporteNeurotea)}</td>
-              <td class="text-right">${formatCurrency(s.honorarios)}</td>
-            </tr>
-          `).join('')}
-          ${data.sesiones.length === 0 ? '<tr><td colspan="5" class="text-center">Sin sesiones individuales</td></tr>' : ''}
-        </tbody>
-      </table>
-    </div>
+  // 3. Paquetes comprados en la fecha actual
+  paquetesFecha.filter(function(p) {
+    return p.terapeuta === terapeuta;
+  }).forEach(function(pkg) {
+    var honorarios = (pkg.valorTotal || 0) - (pkg.aporteNeurotea || 0);
+    rows.push(
+      '<tr>' +
+        '<td>' + (pkg.paciente || 'Sin nombre') + '</td>' +
+        '<td>PAQUETE</td>' +
+        '<td class="currency">' + formatCurrency(pkg.valorTotal || 0) + '</td>' +
+        '<td class="currency">' + formatCurrency(pkg.aporteNeurotea || 0) + '</td>' +
+        '<td class="currency">' + formatCurrency(honorarios) + '</td>' +
+      '</tr>'
+    );
+  });
 
-    <div class="summary">
-      <div class="summary-row">
-        <span>Total Sesiones:</span>
-        <span>${data.totalSesiones}</span>
-      </div>
-      <div class="summary-row">
-        <span>Valor Total:</span>
-        <span>${formatCurrency(data.valorTotal)}</span>
-      </div>
-      <div class="summary-row">
-        <span>Aporte NeuroTEA:</span>
-        <span>${formatCurrency(data.aporteTotal)}</span>
-      </div>
-      <div class="summary-row">
-        <span>Transferencias Recibidas:</span>
-        <span>${formatCurrency(data.transferenciasRecibidas)}</span>
-      </div>
-      <div class="summary-row">
-        <span>Adelantos:</span>
-        <span>${formatCurrency(data.adelantos)}</span>
-      </div>
-      <div class="summary-row total">
-        <span>HONORARIOS NETOS:</span>
-        <span>${formatCurrency(data.honorariosNetos)}</span>
-      </div>
-    </div>
+  // 4. Sesiones grupales donde participo esta terapeuta
+  sesionesGrupales.filter(function(gs) {
+    return gs.terapeutas && gs.terapeutas.indexOf(terapeuta) !== -1;
+  }).forEach(function(gs) {
+    var therapistCount = gs.cantidadTerapeutas || (gs.terapeutas ? gs.terapeutas.length : 1);
+    var therapistIndex = gs.terapeutas ? gs.terapeutas.indexOf(terapeuta) : -1;
+    var isFirstTherapist = therapistIndex === 0;
 
-    <div class="footer">
-      <p>Comprobante generado por Sistema NeuroTEA</p>
-      <p>Generado el ${new Date().toLocaleString('es-PY')}</p>
-    </div>
-  </div>
-</body>
-</html>`;
+    // Valor proporcional
+    var baseValor = Math.floor((gs.valorTotal || 0) / therapistCount);
+    var residuoValor = (gs.valorTotal || 0) - (baseValor * therapistCount);
+    var valorProporcional = baseValor + (isFirstTherapist ? residuoValor : 0);
+
+    // Aporte proporcional
+    var baseAporte = Math.floor((gs.aporteNeurotea || 0) / therapistCount);
+    var residuoAporte = (gs.aporteNeurotea || 0) - (baseAporte * therapistCount);
+    var aporteProporcion = baseAporte + (isFirstTherapist ? residuoAporte : 0);
+
+    // Honorarios proporcionales
+    var baseHonorarios = gs.honorariosPorTerapeuta || 0;
+    var residuoHonorarios = gs.residuoHonorarios || 0;
+    var honorariosProporcion = baseHonorarios + (isFirstTherapist ? residuoHonorarios : 0);
+
+    rows.push(
+      '<tr>' +
+        '<td>' + (gs.grupoNombre || 'Sin nombre') + '</td>' +
+        '<td>SESION GRUPAL</td>' +
+        '<td class="currency">' + formatCurrency(valorProporcional) + '</td>' +
+        '<td class="currency">' + formatCurrency(aporteProporcion) + '</td>' +
+        '<td class="currency">' + formatCurrency(honorariosProporcion) + '</td>' +
+      '</tr>'
+    );
+  });
+
+  if (rows.length === 0) {
+    return '<tr><td colspan="5" style="text-align: center; font-style: italic;">No hay registros para esta fecha</td></tr>';
+  }
+
+  return rows.join('');
+}
+
+/**
+ * Genera la seccion HTML de detalle del pago para el comprobante
+ * Incluye informacion sobre vueltos y modalidad de pago
+ * @param {Object} status - Estado del terapeuta (de getEstadoTerapeuta)
+ * @returns {string} - HTML de la seccion de detalle de pago
+ */
+function generatePaymentDetailSection(status) {
+  var conf = status.confirmacionInfo;
+
+  // Si no hay confirmacion, mostrar estado pendiente
+  if (!conf || !conf.confirmado) {
+    return '<div class="payment-detail-section pending">' +
+      '<div class="payment-detail-title pending">' +
+        'PAGO PENDIENTE DE CONFIRMACION' +
+      '</div>' +
+      '<div class="payment-modalidad">El pago aun no ha sido procesado en el sistema.</div>' +
+    '</div>';
+  }
+
+  // Determinar modalidad de pago
+  var modalidadTexto = '';
+  var detalleHTML = '';
+  var tipoOpcion = conf.tipoOpcion || 'exacto';
+
+  // Detectar pago mixto para confirmaciones antiguas que no tienen tipoOpcion correcto
+  if (tipoOpcion === 'exacto' && conf.efectivoUsado > 0 && conf.bancoUsado > 0) {
+    tipoOpcion = 'dar-transferir';
+  }
+
+  switch(tipoOpcion) {
+    case 'exacto':
+      modalidadTexto = 'Pago en efectivo exacto';
+      detalleHTML =
+        '<div class="payment-detail-line">' +
+          '<span>Efectivo entregado:</span>' +
+          '<span>' + formatCurrency(conf.efectivoUsado || 0) + '</span>' +
+        '</div>';
+      break;
+
+    case 'vuelto':
+      var vueltoTransf = conf.vueltoTransferencia || 0;
+      var entregadoVuelto = conf.efectivoUsado || 0;
+      modalidadTexto = 'Pago en efectivo con vuelto por transferencia';
+      detalleHTML =
+        '<div class="payment-detail-line">' +
+          '<span>Efectivo entregado:</span>' +
+          '<span>' + formatCurrency(entregadoVuelto) + '</span>' +
+        '</div>' +
+        '<div class="payment-detail-line">' +
+          '<span>Vuelto (transferencia a cuenta NeuroTEA):</span>' +
+          '<span>' + formatCurrency(vueltoTransf) + '</span>' +
+        '</div>' +
+        '<div class="payment-detail-line highlight">' +
+          '<span>Neto recibido por terapeuta:</span>' +
+          '<span>' + formatCurrency(entregadoVuelto - vueltoTransf) + '</span>' +
+        '</div>';
+      break;
+
+    case 'vuelto-efectivo':
+      var vueltoEfectivo = conf.vueltoEfectivo || 0;
+      var netoEfectivo = conf.efectivoUsado || 0;
+      var entregadoTotal = netoEfectivo + vueltoEfectivo;
+      modalidadTexto = 'Pago en efectivo con vuelto en efectivo';
+      detalleHTML =
+        '<div class="payment-detail-line">' +
+          '<span>Efectivo entregado:</span>' +
+          '<span>' + formatCurrency(entregadoTotal) + '</span>' +
+        '</div>' +
+        '<div class="payment-detail-line">' +
+          '<span>Vuelto en efectivo (regresa a caja):</span>' +
+          '<span>' + formatCurrency(vueltoEfectivo) + '</span>' +
+        '</div>' +
+        '<div class="payment-detail-line highlight">' +
+          '<span>Neto recibido por terapeuta:</span>' +
+          '<span>' + formatCurrency(netoEfectivo) + '</span>' +
+        '</div>';
+      break;
+
+    case 'transferir':
+      modalidadTexto = 'Pago por transferencia bancaria';
+      detalleHTML =
+        '<div class="payment-detail-line">' +
+          '<span>Transferido desde cuenta NeuroTEA:</span>' +
+          '<span>' + formatCurrency(conf.bancoUsado || 0) + '</span>' +
+        '</div>';
+      break;
+
+    case 'dar-transferir':
+      var efectivoDado = conf.efectivoUsado || 0;
+      var transferenciaComplemento = conf.bancoUsado || 0;
+      var totalPagado = efectivoDado + transferenciaComplemento;
+      modalidadTexto = 'Pago mixto (efectivo + transferencia)';
+      detalleHTML =
+        '<div class="payment-detail-line">' +
+          '<span>Efectivo entregado de caja:</span>' +
+          '<span>' + formatCurrency(efectivoDado) + '</span>' +
+        '</div>' +
+        '<div class="payment-detail-line">' +
+          '<span>Transferido desde cuenta NeuroTEA:</span>' +
+          '<span>' + formatCurrency(transferenciaComplemento) + '</span>' +
+        '</div>' +
+        '<div class="payment-detail-line highlight">' +
+          '<span>Total pagado a terapeuta:</span>' +
+          '<span>' + formatCurrency(totalPagado) + '</span>' +
+        '</div>';
+      break;
+
+    case 'devolucion-transferencia':
+      modalidadTexto = 'Devolucion por transferencia bancaria';
+      detalleHTML =
+        '<div class="payment-detail-line">' +
+          '<span>Transferencia recibida de terapeuta:</span>' +
+          '<span>' + formatCurrency(Math.abs(conf.bancoUsado || 0)) + '</span>' +
+        '</div>';
+      break;
+
+    case 'devolucion-efectivo':
+      modalidadTexto = 'Devolucion en efectivo';
+      detalleHTML =
+        '<div class="payment-detail-line">' +
+          '<span>Efectivo recibido de terapeuta:</span>' +
+          '<span>' + formatCurrency(conf.efectivoRecibido || 0) + '</span>' +
+        '</div>';
+      break;
+
+    default:
+      if (conf.efectivoUsado > 0 && conf.bancoUsado > 0) {
+        modalidadTexto = 'Pago mixto (efectivo + transferencia)';
+        detalleHTML =
+          '<div class="payment-detail-line">' +
+            '<span>Efectivo de caja:</span>' +
+            '<span>' + formatCurrency(conf.efectivoUsado || 0) + '</span>' +
+          '</div>' +
+          '<div class="payment-detail-line">' +
+            '<span>Transferencia desde cuenta:</span>' +
+            '<span>' + formatCurrency(conf.bancoUsado || 0) + '</span>' +
+          '</div>' +
+          '<div class="payment-detail-line highlight">' +
+            '<span>Total pagado a terapeuta:</span>' +
+            '<span>' + formatCurrency((conf.efectivoUsado || 0) + (conf.bancoUsado || 0)) + '</span>' +
+          '</div>';
+      } else if (conf.bancoUsado < 0) {
+        modalidadTexto = 'Devolucion por transferencia bancaria';
+        detalleHTML =
+          '<div class="payment-detail-line">' +
+            '<span>Transferencia recibida de terapeuta:</span>' +
+            '<span>' + formatCurrency(Math.abs(conf.bancoUsado)) + '</span>' +
+          '</div>';
+      } else if (conf.efectivoRecibido > 0) {
+        modalidadTexto = 'Devolucion en efectivo';
+        detalleHTML =
+          '<div class="payment-detail-line">' +
+            '<span>Efectivo recibido de terapeuta:</span>' +
+            '<span>' + formatCurrency(conf.efectivoRecibido || 0) + '</span>' +
+          '</div>';
+      } else {
+        modalidadTexto = 'Pago procesado';
+        detalleHTML =
+          '<div class="payment-detail-line">' +
+            '<span>Monto procesado:</span>' +
+            '<span>' + formatCurrency(conf.efectivoUsado || conf.bancoUsado || 0) + '</span>' +
+          '</div>';
+      }
+  }
+
+  // Formatear timestamp de confirmacion
+  var fechaConfirmacion = conf.timestamp ? new Date(conf.timestamp).toLocaleString('es-PY') : 'No disponible';
+
+  return '<div class="payment-detail-section">' +
+    '<div class="payment-detail-title">' +
+      'DETALLE DEL PAGO CONFIRMADO' +
+    '</div>' +
+    '<div class="payment-modalidad">Modalidad: ' + modalidadTexto + '</div>' +
+    detalleHTML +
+    '<div class="payment-detail-line" style="margin-top: 10px; font-size: 9px; color: #666;">' +
+      '<span>Confirmado:</span>' +
+      '<span>' + fechaConfirmacion + '</span>' +
+    '</div>' +
+  '</div>';
+}
+
+/**
+ * Genera observaciones dinamicas para el comprobante
+ * Usa variables globales del cliente: sesiones, sesionesGrupales
+ * @param {string} terapeuta - Nombre del terapeuta
+ * @returns {Array<string>} - Lista de observaciones
+ */
+function generateDynamicObservations(terapeuta) {
+  var observaciones = [];
+
+  // Observaciones de sesiones con credito
+  sesiones.filter(function(s) {
+    return s.terapeuta === terapeuta;
+  }).forEach(function(session) {
+    if (session.usaCredito === true) {
+      observaciones.push(
+        (session.paciente || 'Sin nombre') + ': Sesion pagada con credito de paquete'
+      );
+    }
+  });
+
+  // Observaciones de sesiones grupales
+  sesionesGrupales.filter(function(gs) {
+    return gs.terapeutas && gs.terapeutas.indexOf(terapeuta) !== -1;
+  }).forEach(function(gs) {
+    var groupName = gs.grupoNombre || 'Sin nombre';
+    var presentCount = gs.cantidadPresentes || 0;
+    var therapistCount = gs.cantidadTerapeutas || (gs.terapeutas ? gs.terapeutas.length : 1);
+    var totalValue = gs.valorTotal || 0;
+    var valorPorTerapeuta = Math.floor(totalValue / therapistCount);
+
+    observaciones.push(
+      groupName + ': ' + presentCount + ' ninos presentes. ' +
+      formatCurrency(totalValue) + ' / ' + therapistCount + ' = ' +
+      formatCurrency(valorPorTerapeuta) + ' p/terapeuta'
+    );
+  });
+
+  if (observaciones.length === 0) {
+    observaciones.push('Comprobante generado automaticamente por Sistema NeuroTEA');
+  }
+
+  return observaciones;
+}
+
+/**
+ * Genera el HTML completo del comprobante con diseño profesional A4
+ * Portado del sistema original con adaptacion a nombres GAS
+ * @param {string} terapeuta - Nombre del terapeuta
+ * @param {string} fecha - Fecha en formato YYYY-MM-DD
+ * @param {Object} status - Estado calculado del terapeuta (de getEstadoTerapeuta)
+ * @returns {string} - HTML completo del comprobante
+ */
+function generateReceiptHTMLContent(terapeuta, fecha, status) {
+  try {
+    // Datos basicos
+    var fechaFormateada = formatDateForReceipt(fecha);
+    var horaActual = new Date().toLocaleTimeString('es-PY', { hour: '2-digit', minute: '2-digit' });
+    var numeroComprobante = '#CP-' + fecha.replace(/-/g, '') + '-001';
+
+    // Conteo total de sesiones (individuales + grupales)
+    var totalSesiones = (status.totalSesionesIndividuales || 0) + (status.totalSesionesGrupales || 0);
+
+    // Calcular diferencia
+    var diferencia = (status.neuroteaLeDebe || 0) - (status.terapeutaDebe || 0);
+
+    // Generar filas de ingresos
+    var ingresoRows = generatePackageAndCreditRows(terapeuta);
+
+    // Texto del resultado final
+    var textoResultado;
+    if (diferencia > 0) {
+      textoResultado = 'LA TERAPEUTA DEBE RECIBIR: ' + formatCurrency(Math.abs(diferencia));
+    } else if (diferencia < 0) {
+      textoResultado = 'LA TERAPEUTA DEBE DAR: ' + formatCurrency(Math.abs(diferencia));
+    } else {
+      textoResultado = 'SALDOS EQUILIBRADOS: Gs 0';
+    }
+
+    // Generar seccion de detalle del pago
+    var detallePagoHTML = generatePaymentDetailSection(status);
+
+    // Observaciones
+    var observaciones = generateDynamicObservations(terapeuta);
+    var observacionesHTML = observaciones.length > 0
+      ? observaciones.join('<br>')
+      : 'Comprobante generado automaticamente por Sistema NeuroTEA';
+
+    // HTML completo con estilos profesionales para impresion A4
+    return '<!DOCTYPE html>' +
+'<html lang="es">' +
+'<head>' +
+    '<meta charset="UTF-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+    '<title>Comprobante NeuroTEA - ' + terapeuta + '</title>' +
+    '<style>' +
+        'body {' +
+            'margin: 0;' +
+            'padding: 0;' +
+            'font-family: Helvetica, Arial, sans-serif;' +
+            'background: white;' +
+            'color: black;' +
+            'width: 210mm;' +
+            'min-height: 297mm;' +
+            'box-sizing: border-box;' +
+        '}' +
+        '.header {' +
+            'background: #e6e6e6;' +
+            'height: 60px;' +
+            'padding: 0 30px;' +
+            'position: relative;' +
+            'display: flex;' +
+            'align-items: center;' +
+            'justify-content: space-between;' +
+            'border-bottom: 1px solid #ccc;' +
+            'margin: 0 auto;' +
+            'max-width: 190mm;' +
+        '}' +
+        '.header-left {' +
+            'position: relative;' +
+            'flex: 1;' +
+        '}' +
+        '.avanza-text {' +
+            'color: black;' +
+            'font-style: italic;' +
+            'font-size: 18px;' +
+            'margin-bottom: -5px;' +
+        '}' +
+        '.neurotea-text {' +
+            'color: black;' +
+            'font-weight: bold;' +
+            'font-size: 32px;' +
+            'margin-top: -5px;' +
+        '}' +
+        '.tea-orange {' +
+            'color: black;' +
+        '}' +
+        '.header-right {' +
+            'color: black;' +
+            'font-weight: bold;' +
+            'font-size: 36px;' +
+            'padding-right: 20px;' +
+            'text-align: right;' +
+            'flex: 0 0 auto;' +
+        '}' +
+        '.content {' +
+            'padding: 20px 30px;' +
+        '}' +
+        '.basic-info {' +
+            'margin-bottom: 20px;' +
+            'border-bottom: 1px solid #000;' +
+            'padding-bottom: 10px;' +
+        '}' +
+        '.info-grid {' +
+            'display: grid;' +
+            'grid-template-columns: 1fr 1fr;' +
+            'gap: 20px;' +
+            'margin-bottom: 10px;' +
+        '}' +
+        '.info-column {' +
+            'display: flex;' +
+            'flex-direction: column;' +
+            'gap: 8px;' +
+        '}' +
+        '.info-item {' +
+            'display: flex;' +
+            'justify-content: space-between;' +
+            'font-size: 12px;' +
+        '}' +
+        '.info-label {' +
+            'font-weight: bold;' +
+            'color: black;' +
+        '}' +
+        '.info-value {' +
+            'color: black;' +
+        '}' +
+        '.packages-section {' +
+            'margin: 20px 0;' +
+        '}' +
+        '.section-title {' +
+            'background-color: #f5f5f5;' +
+            'padding: 8px 12px;' +
+            'font-weight: bold;' +
+            'font-size: 12px;' +
+            'color: black;' +
+            'border: 1px solid #ddd;' +
+            'margin-bottom: 0;' +
+        '}' +
+        '.sessions-table {' +
+            'width: 100%;' +
+            'border-collapse: collapse;' +
+            'font-size: 10px;' +
+            'margin-bottom: 20px;' +
+        '}' +
+        '.sessions-table th,' +
+        '.sessions-table td {' +
+            'padding: 6px 8px;' +
+            'text-align: left;' +
+            'border: 1px solid #ddd;' +
+        '}' +
+        '.sessions-table th {' +
+            'background-color: #f5f5f5;' +
+            'font-weight: bold;' +
+            'color: black;' +
+            'font-size: 10px;' +
+        '}' +
+        '.totals-section {' +
+            'border: 1px solid #ddd;' +
+            'padding: 15px;' +
+            'margin: 20px 0;' +
+            'background-color: #f9f9f9;' +
+        '}' +
+        '.total-line {' +
+            'display: flex;' +
+            'justify-content: space-between;' +
+            'padding: 4px 0;' +
+            'font-size: 11px;' +
+        '}' +
+        '.total-label {' +
+            'font-weight: bold;' +
+            'color: black;' +
+        '}' +
+        '.total-value {' +
+            'color: black;' +
+            'font-weight: bold;' +
+        '}' +
+        '.calculation-section {' +
+            'border: 2px solid #000;' +
+            'padding: 15px;' +
+            'margin: 20px 0;' +
+            'background-color: #f0f0f0;' +
+        '}' +
+        '.calc-title {' +
+            'font-weight: bold;' +
+            'font-size: 12px;' +
+            'color: black;' +
+            'margin-bottom: 10px;' +
+            'text-align: center;' +
+        '}' +
+        '.calc-result {' +
+            'font-size: 14px;' +
+            'font-weight: bold;' +
+            'text-align: center;' +
+            'color: black;' +
+            'background-color: white;' +
+            'padding: 10px;' +
+            'border: 1px solid #000;' +
+            'margin-top: 10px;' +
+        '}' +
+        '.payment-detail-section {' +
+            'margin: 20px 0;' +
+            'padding: 15px;' +
+            'border: 1px solid #ccc;' +
+            'background-color: #f5f5f5;' +
+            'border-radius: 0;' +
+        '}' +
+        '.payment-detail-section.pending {' +
+            'border-color: #999;' +
+            'background-color: #e8e8e8;' +
+        '}' +
+        '.payment-detail-title {' +
+            'font-weight: bold;' +
+            'font-size: 12px;' +
+            'color: #333;' +
+            'margin-bottom: 10px;' +
+            'display: flex;' +
+            'align-items: center;' +
+        '}' +
+        '.payment-detail-title.pending {' +
+            'color: #555;' +
+        '}' +
+        '.payment-detail-line {' +
+            'display: flex;' +
+            'justify-content: space-between;' +
+            'padding: 4px 0;' +
+            'font-size: 11px;' +
+            'color: black;' +
+        '}' +
+        '.payment-detail-line.highlight {' +
+            'font-weight: bold;' +
+            'border-top: 1px solid #999;' +
+            'padding-top: 8px;' +
+            'margin-top: 5px;' +
+        '}' +
+        '.payment-modalidad {' +
+            'font-size: 11px;' +
+            'color: #666;' +
+            'margin-bottom: 8px;' +
+            'font-style: italic;' +
+        '}' +
+        '.observations-section {' +
+            'margin: 20px 0;' +
+            'padding: 10px;' +
+            'border: 1px solid #ddd;' +
+            'background-color: #f9f9f9;' +
+        '}' +
+        '.obs-title {' +
+            'font-weight: bold;' +
+            'margin-bottom: 8px;' +
+            'color: black;' +
+            'font-size: 11px;' +
+        '}' +
+        '.obs-content {' +
+            'font-size: 10px;' +
+            'color: #555;' +
+            'font-style: italic;' +
+        '}' +
+        '.signatures-section {' +
+            'margin-top: 50px;' +
+            'display: grid;' +
+            'grid-template-columns: 1fr 1fr;' +
+            'gap: 60px;' +
+            'font-size: 11px;' +
+            'padding: 0 40px;' +
+        '}' +
+        '.signature-block {' +
+            'text-align: center;' +
+        '}' +
+        '.signature-line {' +
+            'border-bottom: 2px dotted #666;' +
+            'width: 150px;' +
+            'margin: 0 auto 10px auto;' +
+            'height: 40px;' +
+        '}' +
+        '.signature-text {' +
+            'font-weight: bold;' +
+            'margin-bottom: 8px;' +
+            'color: black;' +
+            'font-size: 11px;' +
+        '}' +
+        '.signature-name {' +
+            'font-weight: normal;' +
+            'color: black;' +
+            'font-size: 11px;' +
+        '}' +
+        '.currency {' +
+            'font-family: monospace;' +
+            'color: black;' +
+        '}' +
+        '@media print {' +
+            'body { width: auto; min-height: auto; }' +
+        '}' +
+    '</style>' +
+'</head>' +
+'<body>' +
+    '<!-- ENCABEZADO -->' +
+    '<div class="header">' +
+        '<div class="header-left">' +
+            '<div class="avanza-text">Avanza</div>' +
+            '<div class="neurotea-text">Neuro<span class="tea-orange">TEA</span></div>' +
+        '</div>' +
+        '<div class="header-right">COMPROBANTE</div>' +
+    '</div>' +
+    '<!-- CONTENIDO -->' +
+    '<div class="content">' +
+        '<!-- INFORMACION BASICA -->' +
+        '<div class="basic-info">' +
+            '<div class="info-grid">' +
+                '<div class="info-column">' +
+                    '<div class="info-item">' +
+                        '<span class="info-label">TERAPEUTA:</span>' +
+                        '<span class="info-value">' + terapeuta + '</span>' +
+                    '</div>' +
+                    '<div class="info-item">' +
+                        '<span class="info-label">FECHA:</span>' +
+                        '<span class="info-value">' + fechaFormateada + '</span>' +
+                    '</div>' +
+                    '<div class="info-item">' +
+                        '<span class="info-label">SESIONES:</span>' +
+                        '<span class="info-value">' + totalSesiones + ' sesiones realizadas</span>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="info-column">' +
+                    '<div class="info-item">' +
+                        '<span class="info-label">COMPROBANTE:</span>' +
+                        '<span class="info-value">' + numeroComprobante + '</span>' +
+                    '</div>' +
+                    '<div class="info-item">' +
+                        '<span class="info-label">HORA:</span>' +
+                        '<span class="info-value">' + horaActual + '</span>' +
+                    '</div>' +
+                    '<div class="info-item">' +
+                        '<span class="info-label">ESTADO:</span>' +
+                        '<span class="info-value">' + (diferencia > 0 ? 'DEBE RECIBIR' : diferencia < 0 ? 'DEBE DAR' : 'EQUILIBRADO') + '</span>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+        '</div>' +
+        '<!-- DETALLE DE INGRESOS DEL DIA -->' +
+        '<div class="packages-section">' +
+            '<h3 class="section-title">DETALLE DE INGRESOS DEL DIA</h3>' +
+            '<table class="sessions-table">' +
+                '<thead>' +
+                    '<tr>' +
+                        '<th style="width: 25%;">PACIENTE</th>' +
+                        '<th style="width: 20%;">TIPO</th>' +
+                        '<th style="width: 20%;">VALOR SESION</th>' +
+                        '<th style="width: 17.5%;">APORTE NEUROTEA</th>' +
+                        '<th style="width: 17.5%;">HONORARIOS</th>' +
+                    '</tr>' +
+                '</thead>' +
+                '<tbody>' +
+                    ingresoRows +
+                '</tbody>' +
+            '</table>' +
+        '</div>' +
+        '<!-- TOTALES -->' +
+        '<div class="totals-section">' +
+            '<div class="total-line">' +
+                '<span class="total-label">VALOR TOTAL SESIONES:</span>' +
+                '<span class="total-value currency">' + formatCurrency(status.valorTotalSesiones || 0) + '</span>' +
+            '</div>' +
+            '<div class="total-line">' +
+                '<span class="total-label">TOTAL APORTE NEUROTEA:</span>' +
+                '<span class="total-value currency">' + formatCurrency(status.aporteNeuroTEA || 0) + '</span>' +
+            '</div>' +
+            '<div class="total-line">' +
+                '<span class="total-label">TOTAL HONORARIOS:</span>' +
+                '<span class="total-value currency">' + formatCurrency(status.honorarios || 0) + '</span>' +
+            '</div>' +
+            '<div class="total-line">' +
+                '<span class="total-label">TRANSFERENCIAS A TERAPEUTA:</span>' +
+                '<span class="total-value currency">' + formatCurrency(status.transferenciaATerapeuta || 0) + '</span>' +
+            '</div>' +
+            '<div class="total-line">' +
+                '<span class="total-label">ADELANTOS RECIBIDOS:</span>' +
+                '<span class="total-value currency">' + formatCurrency(status.adelantosRecibidos || 0) + '</span>' +
+            '</div>' +
+        '</div>' +
+        '<!-- CALCULO FINAL -->' +
+        '<div class="calculation-section">' +
+            '<div class="calc-title">CALCULO FINAL</div>' +
+            '<div class="calc-result">' + textoResultado + '</div>' +
+        '</div>' +
+        '<!-- DETALLE DEL PAGO -->' +
+        detallePagoHTML +
+        '<!-- OBSERVACIONES -->' +
+        '<div class="observations-section">' +
+            '<div class="obs-title">OBSERVACIONES:</div>' +
+            '<div class="obs-content">' +
+                observacionesHTML +
+            '</div>' +
+        '</div>' +
+        '<!-- FIRMAS -->' +
+        '<div class="signatures-section">' +
+            '<div class="signature-block">' +
+                '<div class="signature-line"></div>' +
+                '<div class="signature-text">RECIBI CONFORME</div>' +
+                '<div class="signature-name">' + terapeuta + '</div>' +
+            '</div>' +
+            '<div class="signature-block">' +
+                '<div class="signature-line"></div>' +
+                '<div class="signature-text">ENTREGUE CONFORME</div>' +
+                '<div class="signature-name">Secretaria NeuroTEA</div>' +
+            '</div>' +
+        '</div>' +
+    '</div>' +
+'</body>' +
+'</html>';
+
+  } catch (error) {
+    console.error('Error en generateReceiptHTMLContent:', error);
+    return '<!DOCTYPE html><html><head><title>Error</title></head><body style="color: #000;">' +
+      '<h1>Error al generar comprobante</h1>' +
+      '<p>Error: ' + error.message + '</p>' +
+      '<p>Terapeuta: ' + terapeuta + '</p>' +
+      '<p>Fecha: ' + fecha + '</p>' +
+    '</body></html>';
+  }
 }
 
 /**
@@ -4629,6 +5291,28 @@ function clearDayEgresos() {
 // ===========================
 
 /**
+ * Actualiza el badge de saldo inicial (color del punto segun estado)
+ */
+function updateSaldoBadge() {
+  const badge = document.getElementById('saldo-inicial-badge');
+  const dot = document.getElementById('saldo-status-dot');
+  if (!badge || !dot) return;
+
+  // Limpiar clases previas
+  dot.classList.remove('bg-gray-400', 'bg-green-500', 'bg-orange-500');
+
+  if (saldoInicial === 0) {
+    // Gris: Sin definir
+    dot.classList.add('bg-gray-400');
+    badge.title = 'Saldo inicial: No definido';
+  } else {
+    // Verde: Configurado
+    dot.classList.add('bg-green-500');
+    badge.title = 'Saldo inicial: ' + formatCurrency(saldoInicial);
+  }
+}
+
+/**
  * Abrir modal de saldo inicial
  */
 function openSaldoModal() {
@@ -4930,6 +5614,18 @@ function updateGroupSessionTotals() {
   document.getElementById('group-therapist-fee').textContent = formatCurrency(honorariosPorTerapeuta);
   document.getElementById('group-total-cash').textContent = formatCurrency(totalCash);
   document.getElementById('group-total-transfer-neurotea').textContent = formatCurrency(totalTransfer);
+
+  // Mostrar advertencia si totales de pago no coinciden con valor
+  const totalPagos = totalCash + totalTransfer;
+  const warningEl = document.getElementById('group-payment-warning');
+  if (warningEl) {
+    if (childrenCount > 0 && totalPagos !== totalValue) {
+      warningEl.classList.remove('hidden');
+      warningEl.textContent = 'El total de pagos (' + formatCurrency(totalPagos) + ') no coincide con el valor de la sesion (' + formatCurrency(totalValue) + ')';
+    } else {
+      warningEl.classList.add('hidden');
+    }
+  }
 
   // Habilitar/deshabilitar boton de registro
   const registerBtn = document.getElementById('register-group-btn');
@@ -5282,76 +5978,739 @@ function importDayData() {
 }
 
 /**
- * Generar reporte HTML de rendicion (genera localmente)
+ * Generar reporte HTML profesional de rendicion
+ * Calcula todos los datos localmente desde variables globales GAS
+ * Genera documento HTML standalone optimizado para impresion
  */
 function generateRendicionHTML() {
-  // Generar HTML simple con datos actuales
-  const tableBody = document.getElementById('rendicion-therapist-table-body');
-  const rendicionBanco = document.getElementById('rendicion-banco').textContent;
-  const totalEgresos = document.getElementById('total-egresos-display').textContent;
-  const saldoCaja = document.getElementById('rendicion-saldo-caja').textContent;
+  const fecha = fechaActual;
 
-  const html = `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <title>Rendicion de Cuentas - ${fechaActual}</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    h1 { color: #4A90E2; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-    th { background-color: #4A90E2; color: white; }
-    .resumen { display: flex; gap: 20px; margin-bottom: 20px; }
-    .card { padding: 15px; border-radius: 8px; }
-    .card-banco { background-color: #dbeafe; }
-    .card-egresos { background-color: #fee2e2; }
-    .card-caja { background-color: #fef3c7; }
-  </style>
-</head>
-<body>
-  <h1>NeuroTEA - Rendicion de Cuentas</h1>
-  <p><strong>Fecha:</strong> ${fechaActual}</p>
+  // Formatear fecha legible
+  const [year, month, day] = fecha.split('-').map(Number);
+  const fechaLocal = new Date(year, month - 1, day);
+  const fechaFormateada = fechaLocal.toLocaleDateString('es-PY', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+  });
+  const fechaCapitalizada = fechaFormateada.charAt(0).toUpperCase() + fechaFormateada.slice(1);
 
-  <div class="resumen">
-    <div class="card card-banco">
-      <strong>Cuenta NeuroTEA:</strong><br>${rendicionBanco}
-    </div>
-    <div class="card card-egresos">
-      <strong>Total Egresos:</strong><br>${totalEgresos}
-    </div>
-    <div class="card card-caja">
-      <strong>Saldo en Caja:</strong><br>${saldoCaja}
-    </div>
-  </div>
+  // Datos del dia desde variables globales GAS
+  const daySessions = sesiones || [];
+  const dayGroupSessions = sesionesGrupales || [];
+  const dayEgresos = egresos || [];
+  const dayPackages = paquetesFecha || [];
+  const confs = Array.isArray(confirmaciones) ? confirmaciones : [];
 
-  <h2>Detalle por Terapeuta</h2>
-  <table>
-    <thead>
-      ${document.querySelector('#rendicion-therapist-table-body')?.closest('table')?.querySelector('thead')?.innerHTML || ''}
-    </thead>
-    <tbody>
-      ${tableBody?.innerHTML || '<tr><td colspan="10">No hay datos</td></tr>'}
-    </tbody>
-  </table>
+  // Calcular totales generales
+  let totalGeneral = 0;
+  let totalEfectivo = 0;
+  let totalTransfNeurotea = 0;
+  let aporteTotalNeuroTEA = 0;
 
-  <p style="margin-top: 30px; color: #666; font-size: 12px;">
-    Generado: ${new Date().toLocaleString('es-PY')}
-  </p>
-</body>
-</html>`;
+  daySessions.forEach(function(s) {
+    if (!s.usaCredito) {
+      totalGeneral += s.valorSesion || 0;
+      totalEfectivo += s.efectivo || 0;
+      totalTransfNeurotea += s.transferenciaNeurotea || 0;
+      aporteTotalNeuroTEA += s.aporteNeurotea || 0;
+    }
+  });
 
-  // Descargar archivo HTML
-  const blob = new Blob([html], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  dayPackages.forEach(function(p) {
+    totalGeneral += p.valorTotal || 0;
+    totalEfectivo += p.efectivo || 0;
+    totalTransfNeurotea += p.transferenciaNeurotea || 0;
+    aporteTotalNeuroTEA += p.aporteNeurotea || 0;
+  });
+
+  dayGroupSessions.forEach(function(gs) {
+    totalGeneral += gs.valorTotal || 0;
+    totalEfectivo += gs.efectivo || 0;
+    totalTransfNeurotea += gs.transferenciaNeurotea || 0;
+    aporteTotalNeuroTEA += gs.aporteNeurotea || 0;
+  });
+
+  var totalEgresosVal = 0;
+  dayEgresos.forEach(function(e) { totalEgresosVal += e.monto || 0; });
+
+  // Saldos dinamicos
+  var saldoCaja = calcularSaldoCajaLocal();
+  var cuentaNeuroTEA = calcularCuentaNeuroTEALocal();
+
+  // Obtener terapeutas unicos del dia
+  var therapistsFromSessions = daySessions.map(function(s) { return s.terapeuta; });
+  var therapistsFromPackages = dayPackages.map(function(p) { return p.terapeuta; });
+  var therapistsFromGroupSessions = dayGroupSessions.reduce(function(acc, gs) {
+    var t = gs.terapeutas || gs.terapeutasJSON || [];
+    return acc.concat(t);
+  }, []);
+  var uniqueTherapists = [];
+  var seen = {};
+  therapistsFromSessions.concat(therapistsFromPackages).concat(therapistsFromGroupSessions).forEach(function(t) {
+    if (t && !seen[t]) {
+      seen[t] = true;
+      uniqueTherapists.push(t);
+    }
+  });
+
+  // Helper para clase de badge de estado
+  function getStatusBadgeClass(estado, isConfirmed) {
+    if (isConfirmed) return 'confirmado';
+    if (estado === 'SALDADO') return 'equilibrado';
+    if (estado === 'LA TERAPEUTA DEBE DAR') return 'debe-dar';
+    if (estado === 'DAR EFECTIVO' || estado === 'DAR Y TRANSFERIR' || estado === 'TRANSFERIR') return 'debe-recibir';
+    return 'equilibrado';
+  }
+
+  // Generar filas de terapeutas con calculo local de estado
+  var therapistRowsHTML = '';
+  if (uniqueTherapists.length > 0) {
+    uniqueTherapists.forEach(function(therapist) {
+      // Sesiones individuales
+      var valorTotal = 0, aporteNeurotea = 0, honorariosTotal = 0, transferenciaATerapeuta = 0;
+
+      daySessions.forEach(function(s) {
+        if (s.terapeuta !== therapist) return;
+        if (s.usaCredito) return;
+        valorTotal += s.valorSesion || 0;
+        aporteNeurotea += s.aporteNeurotea || 0;
+        honorariosTotal += s.honorarios || 0;
+        transferenciaATerapeuta += s.transferenciaTerapeuta || 0;
+      });
+
+      // Sesiones grupales (proporcional por terapeuta)
+      dayGroupSessions.forEach(function(gs) {
+        var terapeutasList = gs.terapeutas || gs.terapeutasJSON || [];
+        var index = terapeutasList.indexOf(therapist);
+        if (index === -1) return;
+
+        var isFirst = index === 0;
+        var cantidadTerapeutas = gs.cantidadTerapeutas || terapeutasList.length;
+
+        var valorProp = Math.floor((gs.valorTotal || 0) / cantidadTerapeutas);
+        var residuoValor = (gs.valorTotal || 0) - (valorProp * cantidadTerapeutas);
+
+        var aporteProp = Math.floor((gs.aporteNeurotea || 0) / cantidadTerapeutas);
+        var residuoAporte = (gs.aporteNeurotea || 0) - (aporteProp * cantidadTerapeutas);
+
+        var honPorTerapeuta = gs.honorariosPorTerapeuta || 0;
+        var residuoHon = gs.residuoHonorarios || 0;
+
+        valorTotal += valorProp + (isFirst ? residuoValor : 0);
+        aporteNeurotea += aporteProp + (isFirst ? residuoAporte : 0);
+        honorariosTotal += honPorTerapeuta + (isFirst ? residuoHon : 0);
+      });
+
+      // Paquetes comprados en la fecha
+      dayPackages.forEach(function(p) {
+        if (p.terapeuta !== therapist) return;
+        valorTotal += p.valorTotal || 0;
+        aporteNeurotea += p.aporteNeurotea || 0;
+        var honPaquete = (p.valorTotal || 0) - (p.aporteNeurotea || 0);
+        honorariosTotal += honPaquete;
+        transferenciaATerapeuta += p.transferenciaTerapeuta || 0;
+      });
+
+      // Adelantos (egresos tipo adelanto)
+      var totalAdelantos = 0;
+      dayEgresos.forEach(function(e) {
+        if (e.tipo === 'adelanto' && e.terapeuta === therapist) {
+          totalAdelantos += e.monto || 0;
+        }
+      });
+
+      // Calcular deudas
+      var neuroteaLeDebe = Math.max(0, honorariosTotal - transferenciaATerapeuta - totalAdelantos);
+      var terapeutaDebe = Math.max(0, transferenciaATerapeuta + totalAdelantos - honorariosTotal);
+
+      // Determinar estado
+      var estado = 'SALDADO';
+      if (neuroteaLeDebe > 0 && terapeutaDebe === 0) {
+        if (saldoCaja >= neuroteaLeDebe) {
+          estado = 'DAR EFECTIVO';
+        } else if (saldoCaja > 0 && (saldoCaja + cuentaNeuroTEA) >= neuroteaLeDebe) {
+          estado = 'DAR Y TRANSFERIR';
+        } else if (cuentaNeuroTEA >= neuroteaLeDebe) {
+          estado = 'TRANSFERIR';
+        } else {
+          estado = 'FONDOS INSUFICIENTES';
+        }
+      } else if (terapeutaDebe > 0) {
+        estado = 'LA TERAPEUTA DEBE DAR';
+      }
+
+      // Verificar confirmacion
+      var conf = null;
+      for (var ci = 0; ci < confs.length; ci++) {
+        if (confs[ci].terapeuta === therapist) { conf = confs[ci]; break; }
+      }
+      var isConfirmed = !!conf;
+
+      // Valores para mostrar (usar estado congelado si esta confirmado)
+      var displayIngresoTotal = valorTotal;
+      var displayAporte = aporteNeurotea;
+      var displayHonorarios = honorariosTotal;
+      var displayTransfTerapeuta = transferenciaATerapeuta;
+      var displayAdelantos = totalAdelantos;
+      var displayNeuroteaLeDebe = neuroteaLeDebe;
+      var displayTerapeutaDebe = terapeutaDebe;
+      var displayEstado = estado;
+
+      if (isConfirmed) {
+        var frozen = conf.estadoCongelado || conf.estadoCongeladoJSON || null;
+        if (frozen && typeof frozen === 'object') {
+          displayIngresoTotal = frozen.valorTotalSesiones != null ? frozen.valorTotalSesiones : valorTotal;
+          displayAporte = frozen.aporteNeuroTEA != null ? frozen.aporteNeuroTEA : aporteNeurotea;
+          displayHonorarios = frozen.honorarios != null ? frozen.honorarios : honorariosTotal;
+          displayTransfTerapeuta = frozen.transferenciaATerapeuta != null ? frozen.transferenciaATerapeuta : transferenciaATerapeuta;
+          displayAdelantos = frozen.adelantosRecibidos != null ? frozen.adelantosRecibidos : totalAdelantos;
+          displayNeuroteaLeDebe = frozen.neuroteaLeDebe != null ? frozen.neuroteaLeDebe : neuroteaLeDebe;
+          displayTerapeutaDebe = frozen.terapeutaDebe != null ? frozen.terapeutaDebe : terapeutaDebe;
+          displayEstado = frozen.estado || estado;
+        }
+      }
+
+      var badgeClass = getStatusBadgeClass(displayEstado, isConfirmed);
+      var estadoTexto = displayEstado + (isConfirmed ? ' &#10003;' : '');
+
+      therapistRowsHTML += '<tr>' +
+        '<td class="therapist-name">' + therapist + '</td>' +
+        '<td class="right amount">' + formatCurrency(displayIngresoTotal) + '</td>' +
+        '<td class="right amount">' + formatCurrency(displayAporte) + '</td>' +
+        '<td class="right amount">' + formatCurrency(displayHonorarios) + '</td>' +
+        '<td class="right amount">' + formatCurrency(displayTransfTerapeuta) + '</td>' +
+        '<td class="right amount">' + formatCurrency(displayAdelantos) + '</td>' +
+        '<td class="right amount' + (displayNeuroteaLeDebe > 0 ? ' positive' : '') + '">' + formatCurrency(displayNeuroteaLeDebe > 0 ? displayNeuroteaLeDebe : 0) + '</td>' +
+        '<td class="right amount' + (displayTerapeutaDebe > 0 ? ' negative' : '') + '">' + formatCurrency(displayTerapeutaDebe > 0 ? displayTerapeutaDebe : 0) + '</td>' +
+        '<td class="center"><span class="status-badge ' + badgeClass + '"><span class="status-dot"></span>' + estadoTexto + '</span></td>' +
+        '</tr>';
+    });
+  } else {
+    therapistRowsHTML = '<tr><td colspan="9" class="empty-state">No hay terapeutas registradas para este dia</td></tr>';
+  }
+
+  // Generar filas de egresos
+  var egresosRowsHTML = '';
+  if (dayEgresos.length > 0) {
+    dayEgresos.forEach(function(e) {
+      var tipoTexto = e.tipo === 'adelanto' ? ('Adelanto a ' + e.terapeuta) : 'Gasto de NeuroTEA';
+      egresosRowsHTML += '<tr>' +
+        '<td>' + (e.concepto || '') + '</td>' +
+        '<td>' + tipoTexto + '</td>' +
+        '<td class="right amount">' + formatCurrency(e.monto) + '</td>' +
+        '</tr>';
+    });
+  } else {
+    egresosRowsHTML = '<tr><td colspan="3" class="empty-state">No hay egresos registrados para este dia</td></tr>';
+  }
+
+  // Recopilar transferencias
+  var transfers = [];
+
+  // Transferencias de sesiones individuales
+  daySessions.forEach(function(s) {
+    if ((s.transferenciaNeurotea || 0) > 0) {
+      transfers.push({
+        destinatario: 'NeuroTEA',
+        monto: s.transferenciaNeurotea,
+        concepto: 'Pago de sesion con ' + s.terapeuta
+      });
+    }
+  });
+
+  // Transferencias de sesiones grupales - individualizado por nino
+  dayGroupSessions.forEach(function(gs) {
+    var groupName = gs.grupoNombre || 'Grupo';
+    var asistencia = gs.asistencia || gs.asistenciaJSON || [];
+    asistencia.forEach(function(child) {
+      if (child.presente && (child.transferencia || 0) > 0) {
+        transfers.push({
+          destinatario: 'NeuroTEA',
+          monto: child.transferencia,
+          concepto: 'Pago de sesion grupal de ' + (child.nombre || 'Nino') + ' - "' + groupName + '"'
+        });
+      }
+    });
+  });
+
+  // Transferencias de paquetes
+  dayPackages.forEach(function(p) {
+    if ((p.transferenciaNeurotea || 0) > 0) {
+      transfers.push({
+        destinatario: 'NeuroTEA',
+        monto: p.transferenciaNeurotea,
+        concepto: 'Pago de paquete con ' + p.terapeuta
+      });
+    }
+  });
+
+  // Vueltos de terapeutas y transferencias de rendicion
+  confs.forEach(function(c) {
+    var flujo = c.flujo || c.flujoJSON || {};
+    if ((flujo.vueltoTransferencia || 0) > 0) {
+      transfers.push({
+        destinatario: 'NeuroTEA',
+        monto: flujo.vueltoTransferencia,
+        concepto: 'Vuelto de ' + c.terapeuta + ' por pago en efectivo'
+      });
+    }
+    if (c.tipo === 'LA TERAPEUTA DEBE DAR' && c.tipoOpcion === 'devolucion-transferencia') {
+      var frozenState = c.estadoCongelado || c.estadoCongeladoJSON || {};
+      var montoTransf = frozenState.terapeutaDebe || 0;
+      if (montoTransf > 0) {
+        transfers.push({
+          destinatario: 'NeuroTEA',
+          monto: montoTransf,
+          concepto: 'Transferencia de ' + c.terapeuta + ' por rendicion'
+        });
+      }
+    }
+  });
+
+  // Filtrar solo transferencias a NeuroTEA
+  var neuroteaTransfers = transfers.filter(function(t) { return t.destinatario === 'NeuroTEA'; });
+
+  // Generar filas de transferencias
+  var transfersRowsHTML = '';
+  var totalNeuroteaTransfers = 0;
+  if (neuroteaTransfers.length > 0) {
+    neuroteaTransfers.forEach(function(t) {
+      totalNeuroteaTransfers += t.monto;
+      transfersRowsHTML += '<tr>' +
+        '<td>' + t.destinatario + '</td>' +
+        '<td class="right amount">' + formatCurrency(t.monto) + '</td>' +
+        '<td>' + t.concepto + '</td>' +
+        '</tr>';
+    });
+  } else {
+    transfersRowsHTML = '<tr><td colspan="3" class="empty-state">No hay transferencias registradas para este dia</td></tr>';
+  }
+
+  // Timestamp de generacion
+  var now = new Date();
+  var timestampGeneracion = now.toLocaleDateString('es-PY') + ' a las ' + now.toLocaleTimeString('es-PY');
+
+  // Generar HTML completo profesional
+  var htmlContent = '<!DOCTYPE html>\n' +
+'<html lang="es">\n' +
+'<head>\n' +
+'    <meta charset="UTF-8">\n' +
+'    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
+'    <title>Rendicion de Cuentas - NeuroTEA</title>\n' +
+'    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">\n' +
+'    <style>\n' +
+'        * {\n' +
+'            margin: 0;\n' +
+'            padding: 0;\n' +
+'            box-sizing: border-box;\n' +
+'        }\n' +
+'\n' +
+'        @page {\n' +
+'            size: A4;\n' +
+'            margin: 15mm;\n' +
+'        }\n' +
+'\n' +
+'        body {\n' +
+'            font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;\n' +
+'            background: #f5f5f5;\n' +
+'            color: #1a1a1a;\n' +
+'            line-height: 1.4;\n' +
+'            font-size: 11px;\n' +
+'        }\n' +
+'\n' +
+'        .page {\n' +
+'            width: 210mm;\n' +
+'            min-height: 297mm;\n' +
+'            margin: 0 auto;\n' +
+'            background: white;\n' +
+'            padding: 15mm;\n' +
+'            box-shadow: 0 2px 8px rgba(0,0,0,0.1);\n' +
+'        }\n' +
+'\n' +
+'        /* Header */\n' +
+'        .header {\n' +
+'            background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);\n' +
+'            margin: -15mm -15mm 20px -15mm;\n' +
+'            padding: 20px 15mm;\n' +
+'            color: white;\n' +
+'            display: flex;\n' +
+'            justify-content: space-between;\n' +
+'            align-items: center;\n' +
+'        }\n' +
+'\n' +
+'        .brand {\n' +
+'            display: flex;\n' +
+'            flex-direction: column;\n' +
+'        }\n' +
+'\n' +
+'        .brand-prefix {\n' +
+'            font-size: 12px;\n' +
+'            font-weight: 300;\n' +
+'            letter-spacing: 1.5px;\n' +
+'            opacity: 0.8;\n' +
+'            text-transform: uppercase;\n' +
+'        }\n' +
+'\n' +
+'        .brand-name {\n' +
+'            font-size: 28px;\n' +
+'            font-weight: 700;\n' +
+'            letter-spacing: -0.5px;\n' +
+'        }\n' +
+'\n' +
+'        .brand-name span {\n' +
+'            color: #f59e0b;\n' +
+'        }\n' +
+'\n' +
+'        .header-subtitle {\n' +
+'            font-size: 12px;\n' +
+'            opacity: 0.9;\n' +
+'            margin-top: 2px;\n' +
+'        }\n' +
+'\n' +
+'        .header-right {\n' +
+'            text-align: right;\n' +
+'        }\n' +
+'\n' +
+'        .header-right .date {\n' +
+'            font-size: 14px;\n' +
+'            font-weight: 600;\n' +
+'        }\n' +
+'\n' +
+'        .header-right .report-type {\n' +
+'            font-size: 11px;\n' +
+'            opacity: 0.8;\n' +
+'            margin-top: 2px;\n' +
+'        }\n' +
+'\n' +
+'        /* Section Title */\n' +
+'        .section-title {\n' +
+'            font-size: 12px;\n' +
+'            font-weight: 700;\n' +
+'            text-transform: uppercase;\n' +
+'            letter-spacing: 0.5px;\n' +
+'            color: #1e3a5f;\n' +
+'            margin: 20px 0 10px 0;\n' +
+'            padding-bottom: 6px;\n' +
+'            border-bottom: 2px solid #1e3a5f;\n' +
+'        }\n' +
+'\n' +
+'        /* Tables */\n' +
+'        table {\n' +
+'            width: 100%;\n' +
+'            border-collapse: collapse;\n' +
+'            margin-bottom: 15px;\n' +
+'            font-size: 10px;\n' +
+'        }\n' +
+'\n' +
+'        th {\n' +
+'            background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);\n' +
+'            color: white;\n' +
+'            text-align: left;\n' +
+'            padding: 10px 12px;\n' +
+'            font-weight: 600;\n' +
+'            font-size: 9px;\n' +
+'            text-transform: uppercase;\n' +
+'            letter-spacing: 0.3px;\n' +
+'        }\n' +
+'\n' +
+'        th.right, td.right {\n' +
+'            text-align: right;\n' +
+'        }\n' +
+'\n' +
+'        th.center, td.center {\n' +
+'            text-align: center;\n' +
+'        }\n' +
+'\n' +
+'        td {\n' +
+'            padding: 10px 12px;\n' +
+'            border-bottom: 1px solid #e5e7eb;\n' +
+'            vertical-align: middle;\n' +
+'        }\n' +
+'\n' +
+'        tr:hover {\n' +
+'            background: #f8fafc;\n' +
+'        }\n' +
+'\n' +
+'        /* Resumen Table */\n' +
+'        .resumen-table td:first-child {\n' +
+'            font-weight: 500;\n' +
+'            color: #374151;\n' +
+'        }\n' +
+'\n' +
+'        .resumen-table td:last-child {\n' +
+'            font-weight: 600;\n' +
+'            color: #1e3a5f;\n' +
+'            font-family: "SF Mono", "Consolas", monospace;\n' +
+'        }\n' +
+'\n' +
+'        /* Therapist Table */\n' +
+'        .therapist-table th {\n' +
+'            font-size: 8px;\n' +
+'            padding: 8px 6px;\n' +
+'        }\n' +
+'\n' +
+'        .therapist-table td {\n' +
+'            padding: 8px 6px;\n' +
+'            font-size: 9px;\n' +
+'        }\n' +
+'\n' +
+'        .therapist-name {\n' +
+'            font-weight: 600;\n' +
+'            color: #1e3a5f;\n' +
+'        }\n' +
+'\n' +
+'        .amount {\n' +
+'            font-family: "SF Mono", "Consolas", monospace;\n' +
+'            font-weight: 500;\n' +
+'        }\n' +
+'\n' +
+'        .amount.positive {\n' +
+'            color: #059669;\n' +
+'        }\n' +
+'\n' +
+'        .amount.negative {\n' +
+'            color: #dc2626;\n' +
+'        }\n' +
+'\n' +
+'        /* Status Badge */\n' +
+'        .status-badge {\n' +
+'            display: inline-flex;\n' +
+'            align-items: center;\n' +
+'            gap: 5px;\n' +
+'            font-size: 8px;\n' +
+'            font-weight: 500;\n' +
+'            color: #1a1a1a;\n' +
+'        }\n' +
+'\n' +
+'        .status-dot {\n' +
+'            width: 7px;\n' +
+'            height: 7px;\n' +
+'            border-radius: 50%;\n' +
+'            flex-shrink: 0;\n' +
+'        }\n' +
+'\n' +
+'        .status-badge.equilibrado .status-dot {\n' +
+'            background: #22c55e;\n' +
+'        }\n' +
+'\n' +
+'        .status-badge.debe-recibir .status-dot {\n' +
+'            background: #f59e0b;\n' +
+'        }\n' +
+'\n' +
+'        .status-badge.debe-dar .status-dot {\n' +
+'            background: #ef4444;\n' +
+'        }\n' +
+'\n' +
+'        .status-badge.confirmado .status-dot {\n' +
+'            background: #3b82f6;\n' +
+'        }\n' +
+'\n' +
+'        /* Egresos Table Header */\n' +
+'        .egresos-table th {\n' +
+'            background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);\n' +
+'        }\n' +
+'\n' +
+'        /* Total Row */\n' +
+'        .total-row {\n' +
+'            font-size: 11px;\n' +
+'            font-weight: 700;\n' +
+'            color: #1e3a5f;\n' +
+'            margin: 8px 0 20px 0;\n' +
+'        }\n' +
+'\n' +
+'        .total-row span {\n' +
+'            font-family: "SF Mono", "Consolas", monospace;\n' +
+'        }\n' +
+'\n' +
+'        /* Empty State */\n' +
+'        .empty-state {\n' +
+'            font-style: italic;\n' +
+'            color: #6b7280;\n' +
+'            padding: 12px 0;\n' +
+'        }\n' +
+'\n' +
+'        /* Footer */\n' +
+'        .footer {\n' +
+'            margin-top: 30px;\n' +
+'            padding-top: 15px;\n' +
+'            border-top: 1px solid #e5e7eb;\n' +
+'            display: flex;\n' +
+'            justify-content: space-between;\n' +
+'            align-items: center;\n' +
+'            font-size: 9px;\n' +
+'            color: #9ca3af;\n' +
+'        }\n' +
+'\n' +
+'        .footer-brand {\n' +
+'            font-weight: 600;\n' +
+'            color: #6b7280;\n' +
+'        }\n' +
+'\n' +
+'        .page-number {\n' +
+'            color: #6b7280;\n' +
+'        }\n' +
+'\n' +
+'        /* Print Styles */\n' +
+'        @media print {\n' +
+'            body {\n' +
+'                background: white;\n' +
+'            }\n' +
+'\n' +
+'            .page {\n' +
+'                width: 100%;\n' +
+'                min-height: auto;\n' +
+'                box-shadow: none;\n' +
+'                padding: 0;\n' +
+'                margin: 0;\n' +
+'            }\n' +
+'\n' +
+'            .header {\n' +
+'                margin: 0 0 20px 0;\n' +
+'                padding: 20px;\n' +
+'                -webkit-print-color-adjust: exact;\n' +
+'                print-color-adjust: exact;\n' +
+'            }\n' +
+'\n' +
+'            th {\n' +
+'                -webkit-print-color-adjust: exact;\n' +
+'                print-color-adjust: exact;\n' +
+'            }\n' +
+'\n' +
+'            .egresos-table th {\n' +
+'                -webkit-print-color-adjust: exact;\n' +
+'                print-color-adjust: exact;\n' +
+'            }\n' +
+'\n' +
+'            .status-badge {\n' +
+'                -webkit-print-color-adjust: exact;\n' +
+'                print-color-adjust: exact;\n' +
+'            }\n' +
+'        }\n' +
+'    </style>\n' +
+'</head>\n' +
+'<body>\n' +
+'    <div class="page">\n' +
+'        <!-- Header -->\n' +
+'        <div class="header">\n' +
+'            <div class="brand">\n' +
+'                <span class="brand-prefix">Avanza</span>\n' +
+'                <span class="brand-name">Neuro<span>TEA</span></span>\n' +
+'                <span class="header-subtitle">Sistema de Gestion - Reporte de Rendicion de Cuentas</span>\n' +
+'            </div>\n' +
+'            <div class="header-right">\n' +
+'                <div class="date">' + fechaCapitalizada + '</div>\n' +
+'                <div class="report-type">Rendicion Diaria</div>\n' +
+'            </div>\n' +
+'        </div>\n' +
+'\n' +
+'        <!-- Resumen Financiero -->\n' +
+'        <h2 class="section-title">Resumen Financiero</h2>\n' +
+'        <table class="resumen-table">\n' +
+'            <thead>\n' +
+'                <tr>\n' +
+'                    <th>Concepto</th>\n' +
+'                    <th class="right">Monto</th>\n' +
+'                </tr>\n' +
+'            </thead>\n' +
+'            <tbody>\n' +
+'                <tr>\n' +
+'                    <td>Ingreso Total del Dia</td>\n' +
+'                    <td class="right">' + formatCurrency(totalGeneral) + '</td>\n' +
+'                </tr>\n' +
+'                <tr>\n' +
+'                    <td>Ingreso Total Efectivo</td>\n' +
+'                    <td class="right">' + formatCurrency(totalEfectivo) + '</td>\n' +
+'                </tr>\n' +
+'                <tr>\n' +
+'                    <td>Aporte Total a NeuroTEA</td>\n' +
+'                    <td class="right">' + formatCurrency(aporteTotalNeuroTEA) + '</td>\n' +
+'                </tr>\n' +
+'                <tr>\n' +
+'                    <td>Cuenta NeuroTEA</td>\n' +
+'                    <td class="right">' + formatCurrency(cuentaNeuroTEA) + '</td>\n' +
+'                </tr>\n' +
+'                <tr>\n' +
+'                    <td>Total Egresos</td>\n' +
+'                    <td class="right">' + formatCurrency(totalEgresosVal) + '</td>\n' +
+'                </tr>\n' +
+'                <tr>\n' +
+'                    <td>Saldo en Caja</td>\n' +
+'                    <td class="right">' + formatCurrency(saldoCaja) + '</td>\n' +
+'                </tr>\n' +
+'            </tbody>\n' +
+'        </table>\n' +
+'        <div class="total-row">Total Aporte a NeuroTEA: <span>' + formatCurrency(aporteTotalNeuroTEA) + '</span></div>\n' +
+'\n' +
+'        <!-- Rendicion por Terapeuta -->\n' +
+'        <h2 class="section-title">Rendicion por Terapeuta</h2>\n' +
+'        <table class="therapist-table">\n' +
+'            <thead>\n' +
+'                <tr>\n' +
+'                    <th>Terapeuta</th>\n' +
+'                    <th class="right">Ingreso Total</th>\n' +
+'                    <th class="right">Aporte NeuroTEA</th>\n' +
+'                    <th class="right">Honorarios</th>\n' +
+'                    <th class="right">Transf. a Terapeuta</th>\n' +
+'                    <th class="right">Adelantos</th>\n' +
+'                    <th class="right">NeuroTEA Debe</th>\n' +
+'                    <th class="right">Terapeuta Debe</th>\n' +
+'                    <th class="center">Estado</th>\n' +
+'                </tr>\n' +
+'            </thead>\n' +
+'            <tbody>\n' +
+'                ' + therapistRowsHTML + '\n' +
+'            </tbody>\n' +
+'        </table>\n' +
+'\n' +
+'        <!-- Egresos del Dia -->\n' +
+'        <h2 class="section-title">Egresos del Dia</h2>\n' +
+'        <table class="egresos-table">\n' +
+'            <thead>\n' +
+'                <tr>\n' +
+'                    <th>Concepto</th>\n' +
+'                    <th>Tipo</th>\n' +
+'                    <th class="right">Monto</th>\n' +
+'                </tr>\n' +
+'            </thead>\n' +
+'            <tbody>\n' +
+'                ' + egresosRowsHTML + '\n' +
+'            </tbody>\n' +
+'        </table>\n' +
+'        <div class="total-row">Total Egresos: <span>' + formatCurrency(totalEgresosVal) + '</span></div>\n' +
+'\n' +
+'        <!-- Transferencias del Dia -->\n' +
+'        <h2 class="section-title">Transferencias del Dia</h2>\n' +
+'        <table>\n' +
+'            <thead>\n' +
+'                <tr>\n' +
+'                    <th>Destinatario</th>\n' +
+'                    <th class="right">Monto</th>\n' +
+'                    <th>Concepto</th>\n' +
+'                </tr>\n' +
+'            </thead>\n' +
+'            <tbody>\n' +
+'                ' + transfersRowsHTML + '\n' +
+'            </tbody>\n' +
+'        </table>\n' +
+'        <div class="total-row">Total Transferencias a NeuroTEA: <span>' + formatCurrency(totalNeuroteaTransfers) + '</span></div>\n' +
+'\n' +
+'        <!-- Footer -->\n' +
+'        <div class="footer">\n' +
+'            <span class="footer-brand">Sistema NeuroTEA</span>\n' +
+'            <span>Generado el ' + timestampGeneracion + '</span>\n' +
+'            <span class="page-number">Pagina 1 de 1</span>\n' +
+'        </div>\n' +
+'    </div>\n' +
+'</body>\n' +
+'</html>';
+
+  // Descargar como archivo HTML
+  var blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
   a.href = url;
-  a.download = `rendicion_${fechaActual}.html`;
-  document.body.appendChild(a);
+  a.download = 'NeuroTEA_Rendicion_' + fecha.replace(/-/g, '_') + '.html';
   a.click();
-  document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  showNotification('Reporte generado', 'success');
+  showNotification('Reporte de rendicion generado', 'success');
 }
 </script>
