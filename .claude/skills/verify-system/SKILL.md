@@ -124,6 +124,47 @@ echo "Backend define: $(grep -c 'function crearPaquete' gas/*.gs) veces"
 echo "Crea creditos: $(grep -c 'createCredits' gas/PackageService.gs) veces"
 ```
 
+## Paso 6: Verificar Operaciones de Borrado e Import/Export
+
+Verificar que cada entidad tenga flujo de borrado completo:
+
+```bash
+cd /home/user/Sistema-NeuroTEA-en-Google
+
+echo "=== Verificar funciones de borrado backend ==="
+echo "eliminarTerapeuta: $(grep -c 'function eliminarTerapeuta' gas/TherapistService.gs)"
+echo "eliminarSesion: $(grep -c 'function eliminarSesion' gas/SessionService.gs)"
+echo "eliminarSesionGrupal: $(grep -c 'function eliminarSesionGrupal' gas/GroupSessionService.gs)"
+echo "eliminarEgreso: $(grep -c 'function eliminarEgreso' gas/EgresoService.gs)"
+echo "eliminarPaquete: $(grep -c 'function eliminarPaquete' gas/PackageService.gs)"
+echo "eliminarGrupo: $(grep -c 'function eliminarGrupo' gas/GroupService.gs)"
+
+echo ""
+echo "=== Verificar llamadas frontend → backend de borrado ==="
+echo "eliminarTerapeuta llamado: $(grep -c 'eliminarTerapeuta' gas/Scripts.html)"
+echo "eliminarSesion llamado: $(grep -c 'eliminarSesion' gas/Scripts.html)"
+echo "eliminarSesionGrupal llamado: $(grep -c 'eliminarSesionGrupal' gas/Scripts.html)"
+echo "eliminarEgreso llamado: $(grep -c 'eliminarEgreso' gas/Scripts.html)"
+echo "eliminarPaquete llamado: $(grep -c 'eliminarPaquete' gas/Scripts.html)"
+echo "eliminarGrupo llamado: $(grep -c 'eliminarGrupo' gas/Scripts.html)"
+
+echo ""
+echo "=== Verificar limpieza de dependencias al borrar sesion ==="
+echo "revertCredit en SessionService: $(grep -c 'revertCredit' gas/SessionService.gs)"
+echo "cleanupSessionConfirmations: $(grep -c 'cleanupSessionConfirmations' gas/SessionService.gs)"
+echo "cleanupSessionTransferState: $(grep -c 'cleanupSessionTransferState' gas/SessionService.gs)"
+
+echo ""
+echo "=== Verificar import/export ==="
+echo "validateDayDataStructure: $(grep -c 'validateDayDataStructure' gas/Scripts.html)"
+echo "validateFullBackupStructure: $(grep -c 'validateFullBackupStructure' gas/Scripts.html)"
+echo "detectDataConflicts: $(grep -c 'detectDataConflicts' gas/Scripts.html)"
+echo "showConflictResolutionDialog: $(grep -c 'showConflictResolutionDialog' gas/Scripts.html)"
+echo "executeDayDataImport: $(grep -c 'executeDayDataImport' gas/Scripts.html)"
+```
+
+**Todas las funciones deben existir (> 0)**. Si falta alguna, es un ERROR CRITICO.
+
 ## Reporte Final
 
 Despues de ejecutar todos los pasos:
@@ -136,10 +177,13 @@ ERRORES CRITICOS (deben corregirse):
 - [ ] IDs faltantes en HTML: ___
 - [ ] Funciones faltantes en backend: ___
 - [ ] Propiedades inconsistentes: ___
+- [ ] Funciones de borrado faltantes: ___
+- [ ] Funciones de import/export faltantes: ___
 
 ADVERTENCIAS (revisar):
 - [ ] Llamadas sin withFailureHandler: ___
 - [ ] Flujos incompletos: ___
+- [ ] Limpieza de dependencias incompleta: ___
 
 RESULTADO: ___ errores, ___ advertencias
 ACCION: [Corregir errores / Listo para commit]
