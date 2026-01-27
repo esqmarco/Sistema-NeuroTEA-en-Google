@@ -2540,29 +2540,56 @@ function deleteEgreso(id) {
  * Elimina un terapeuta
  */
 function deleteTherapist(nombre) {
-  if (!confirm(`¿Desactivar al terapeuta ${nombre}?`)) return;
+  if (!confirm('Eliminar al terapeuta ' + nombre + '?\n\nSi tiene registros asociados, se ofrecera desactivar en su lugar.')) return;
 
   showLoading(true);
 
+  // Intentar borrado permanente primero
   google.script.run
     .withSuccessHandler(function(result) {
       showLoading(false);
       if (result.success) {
-        showNotification('Terapeuta desactivado', 'success');
-        terapeutas = terapeutas.filter(t => {
-          const n = typeof t === 'string' ? t : t.nombre;
+        // Borrado permanente exitoso
+        showNotification('Terapeuta eliminado permanentemente', 'success');
+        terapeutas = terapeutas.filter(function(t) {
+          var n = typeof t === 'string' ? t : t.nombre;
           return n !== nombre;
         });
         updateAllViews();
       } else {
-        showNotification(result.message, 'error');
+        // No se puede borrar (tiene registros asociados), ofrecer desactivar
+        var ofrecerDesactivar = confirm(
+          result.message + '\n\nDesea desactivar al terapeuta en su lugar?\n(El terapeuta no aparecera en la lista pero sus registros se conservan)'
+        );
+        if (ofrecerDesactivar) {
+          showLoading(true);
+          google.script.run
+            .withSuccessHandler(function(deactResult) {
+              showLoading(false);
+              if (deactResult.success) {
+                showNotification('Terapeuta desactivado', 'success');
+                terapeutas = terapeutas.filter(function(t) {
+                  var n = typeof t === 'string' ? t : t.nombre;
+                  return n !== nombre;
+                });
+                updateAllViews();
+              } else {
+                showNotification(deactResult.message, 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              showLoading(false);
+              showNotification('Error al desactivar: ' + error.message, 'error');
+            })
+            .desactivarTerapeuta(nombre);
+        }
       }
     })
     .withFailureHandler(function(error) {
       showLoading(false);
-      showNotification('Error al desactivar: ' + error.message, 'error');
+      showNotification('Error al eliminar: ' + error.message, 'error');
     })
-    .desactivarTerapeuta(nombre);
+    .eliminarTerapeuta(nombre);
 }
 
 // ===========================
@@ -6053,7 +6080,7 @@ function validateFullBackupStructure(data) {
   return data &&
          data.backupInfo &&
          data.backupInfo.type === 'full_backup' &&
-         data.backupInfo.date;
+         (data.backupInfo.createdAt || data.backupInfo.date);
 }
 
 /**
