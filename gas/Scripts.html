@@ -1731,6 +1731,9 @@ function updatePackagesList() {
  */
 function updateGroupsList() {
   const container = document.getElementById('grupos-list-container');
+  const counter = document.getElementById('grupos-counter');
+
+  if (counter) counter.textContent = gruposActivos.length + ' grupo' + (gruposActivos.length !== 1 ? 's' : '');
 
   if (gruposActivos.length === 0) {
     container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay grupos registrados</p>';
@@ -1740,11 +1743,11 @@ function updateGroupsList() {
   container.innerHTML = gruposActivos.map(g => {
     const ninos = g.ninos || [];
     return `
-      <div class="group-item">
+      <div class="group-item border rounded-lg p-4 bg-gray-50 dark:bg-gray-700">
         <div class="flex justify-between items-start">
           <div>
             <p class="font-medium text-gray-800 dark:text-white">${g.nombre}</p>
-            <p class="text-sm text-gray-500">${ninos.length} ninos - ${g.porcentajeAporte}% aporte</p>
+            <p class="text-sm text-gray-500">${ninos.length} Niño${ninos.length !== 1 ? 's' : ''} - ${g.porcentajeAporte}% aporte</p>
           </div>
           <div class="flex items-center space-x-2">
             <button onclick="editGroup(${g.id})" class="text-blue-500 hover:text-blue-700" title="Editar grupo">
@@ -1761,6 +1764,8 @@ function updateGroupsList() {
       </div>
     `;
   }).join('');
+
+  lucide.createIcons();
 }
 
 /**
@@ -2294,7 +2299,7 @@ function addChildInput() {
   const newRow = document.createElement('div');
   newRow.className = 'flex items-center space-x-2 p-2 bg-gray-50 dark:bg-gray-700 rounded';
   newRow.innerHTML = `
-    <input type="text" placeholder="Nombre del nino" class="flex-1 p-2 border rounded-md text-sm dark:bg-gray-600 dark:border-gray-500 child-name">
+    <input type="text" placeholder="Nombre del niño" class="flex-1 p-2 border rounded-md text-sm dark:bg-gray-600 dark:border-gray-500 child-name">
     <input type="number" placeholder="Valor" class="w-28 p-2 border rounded-md text-sm dark:bg-gray-600 dark:border-gray-500 child-value" min="0">
     <button type="button" onclick="this.parentElement.remove()" class="text-red-500 hover:text-red-700 p-1">
       <i data-lucide="trash-2" class="w-4 h-4"></i>
@@ -2928,130 +2933,7 @@ function deletePackage(id) {
  * Edita un grupo existente - abre el modal de edicion
  */
 function editGroup(id) {
-  const group = gruposActivos.find(g => g.id == id);
-  if (!group) {
-    showNotification('Grupo no encontrado', 'error');
-    return;
-  }
-
-  // Llenar el modal con datos del grupo
-  document.getElementById('edit-group-id').value = group.id;
-  document.getElementById('edit-group-name').value = group.nombre || '';
-  document.getElementById('edit-group-percentage').value = group.porcentajeAporte || 30;
-  const titleEl = document.getElementById('edit-group-title');
-  if (titleEl) titleEl.textContent = group.nombre;
-
-  // Renderizar lista de ninos
-  updateEditGroupChildrenList(group.ninos || []);
-
-  // Mostrar modal
-  document.getElementById('edit-group-modal').classList.remove('hidden');
-}
-
-/**
- * Cierra el modal de edicion de grupo
- */
-function closeEditGroupModal() {
-  document.getElementById('edit-group-modal').classList.add('hidden');
-}
-
-/**
- * Actualiza la lista de ninos en el modal de edicion de grupo
- */
-function updateEditGroupChildrenList(ninos) {
-  const container = document.getElementById('edit-group-children-list');
-  if (!container) return;
-
-  if (ninos.length === 0) {
-    container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay ninos en este grupo</p>';
-    return;
-  }
-
-  container.innerHTML = ninos.map((n, i) => `
-    <div class="flex items-center justify-between p-2 bg-white dark:bg-gray-600 rounded border dark:border-gray-500">
-      <span class="text-sm font-medium">${n.nombre || n}</span>
-      <button onclick="removeChildFromGroup(${i})" class="text-red-500 hover:text-red-700 p-1" title="Quitar nino">
-        <i data-lucide="x" class="w-4 h-4"></i>
-      </button>
-    </div>
-  `).join('');
-  lucide.createIcons();
-}
-
-/**
- * Agrega un nino al grupo actual en edicion
- */
-function addChildToCurrentGroup() {
-  const nameInput = document.getElementById('new-child-name');
-  const name = nameInput.value.trim();
-  if (!name) {
-    showNotification('Ingrese un nombre', 'warning');
-    return;
-  }
-
-  const groupId = document.getElementById('edit-group-id').value;
-  const group = gruposActivos.find(g => g.id == groupId);
-  if (!group) return;
-
-  if (!group.ninos) group.ninos = [];
-  group.ninos.push({ nombre: name });
-  nameInput.value = '';
-  updateEditGroupChildrenList(group.ninos);
-}
-
-/**
- * Remueve un nino del grupo actual en edicion
- */
-function removeChildFromGroup(index) {
-  const groupId = document.getElementById('edit-group-id').value;
-  const group = gruposActivos.find(g => g.id == groupId);
-  if (!group || !group.ninos) return;
-
-  group.ninos.splice(index, 1);
-  updateEditGroupChildrenList(group.ninos);
-}
-
-/**
- * Guarda cambios del grupo editado
- */
-function saveGroupChanges() {
-  const groupId = document.getElementById('edit-group-id').value;
-  const nombre = document.getElementById('edit-group-name').value.trim();
-  const porcentaje = parseInt(document.getElementById('edit-group-percentage').value) || 30;
-
-  if (!nombre) {
-    showNotification('El nombre del grupo es obligatorio', 'warning');
-    return;
-  }
-
-  const group = gruposActivos.find(g => g.id == groupId);
-  if (!group) {
-    showNotification('Grupo no encontrado', 'error');
-    return;
-  }
-
-  showLoading(true);
-
-  google.script.run
-    .withSuccessHandler(function(result) {
-      showLoading(false);
-      if (result.success) {
-        showNotification('Grupo actualizado', 'success');
-        // Actualizar datos locales
-        group.nombre = nombre;
-        group.porcentajeAporte = porcentaje;
-        updateGroupsList();
-        updateGroupSelects();
-        closeEditGroupModal();
-      } else {
-        showNotification(result.message, 'error');
-      }
-    })
-    .withFailureHandler(function(error) {
-      showLoading(false);
-      showNotification('Error al guardar grupo: ' + error.message, 'error');
-    })
-    .actualizarGrupo(groupId, { nombre: nombre, porcentajeAporte: porcentaje, ninos: group.ninos });
+  openEditGroupModal(id);
 }
 
 /**
@@ -3060,6 +2942,8 @@ function saveGroupChanges() {
 function deleteGroup(id) {
   if (!confirm('¿Eliminar este grupo?')) return;
 
+  var groupId = typeof id === 'string' ? parseInt(id) : id;
+
   showLoading(true);
 
   google.script.run
@@ -3067,9 +2951,11 @@ function deleteGroup(id) {
       showLoading(false);
       if (result.success) {
         showNotification('Grupo eliminado', 'success');
-        gruposActivos = gruposActivos.filter(g => g.id !== id);
+        gruposActivos = gruposActivos.filter(g => g.id != groupId);
         updateGroupsList();
         updateGroupSelects();
+        // Cerrar modal de edicion si esta abierto
+        closeEditGroupModal();
       } else {
         showNotification(result.message, 'error');
       }
@@ -3078,7 +2964,7 @@ function deleteGroup(id) {
       showLoading(false);
       showNotification('Error al eliminar grupo: ' + error.message, 'error');
     })
-    .eliminarGrupo(id);
+    .eliminarGrupo(groupId);
 }
 
 /**
@@ -3895,7 +3781,7 @@ function generateDynamicObservations(terapeuta) {
     var valorPorTerapeuta = Math.floor(totalValue / therapistCount);
 
     observaciones.push(
-      groupName + ': ' + presentCount + ' ninos presentes. ' +
+      groupName + ': ' + presentCount + ' niños presentes. ' +
       formatCurrency(totalValue) + ' / ' + therapistCount + ' = ' +
       formatCurrency(valorPorTerapeuta) + ' p/terapeuta'
     );
@@ -5091,12 +4977,14 @@ function createGroup() {
     .withSuccessHandler(function(result) {
       showLoading(false);
       if (result.success) {
-        showNotification('Grupo creado correctamente', 'success');
+        showNotification('Grupo creado - Agregue los niños', 'success');
         document.getElementById('new-group-name').value = '';
         document.getElementById('new-group-percentage').value = '30';
         gruposActivos.push(result.data);
         updateGroupsList();
         updateGroupSelects();
+        // Abrir modal de edicion para agregar niños inmediatamente
+        openEditGroupModal(result.data.id);
       } else {
         showNotification('Error: ' + result.message, 'error');
       }
@@ -5483,7 +5371,7 @@ function onGroupSelectChange() {
         </div>
       </div>
     </div>
-  `).join('') || '<p class="text-gray-500 text-center">No hay ninos en este grupo</p>';
+  `).join('') || '<p class="text-gray-500 text-center">No hay niños en este grupo</p>';
 
   // Agregar event listeners a los elementos dinamicos
   document.querySelectorAll('.group-therapist-checkbox').forEach(cb => {
@@ -5602,7 +5490,7 @@ function registerGroupSession() {
 
   const presentes = asistencia.filter(a => a.presente);
   if (presentes.length === 0) {
-    showNotification('Marque al menos un nino como presente', 'error');
+    showNotification('Marque al menos un niño como presente', 'error');
     return;
   }
 
@@ -5685,7 +5573,7 @@ function updateEditGroupChildrenList() {
   const ninos = currentEditingGroup?.ninos || [];
 
   if (ninos.length === 0) {
-    container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay ninos en este grupo</p>';
+    container.innerHTML = '<p class="text-gray-500 text-center py-4">No hay niños en este grupo</p>';
     return;
   }
 
@@ -5707,7 +5595,7 @@ function updateEditGroupChildrenList() {
 function addChildToCurrentGroup() {
   const nombre = document.getElementById('new-child-name').value.trim();
   if (!nombre) {
-    showNotification('Ingrese el nombre del nino', 'error');
+    showNotification('Ingrese el nombre del niño', 'error');
     return;
   }
 
@@ -5715,6 +5603,15 @@ function addChildToCurrentGroup() {
 
   if (!currentEditingGroup.ninos) {
     currentEditingGroup.ninos = [];
+  }
+
+  // Verificar duplicados (igual que sistema original)
+  var existe = currentEditingGroup.ninos.some(function(n) {
+    return n.nombre.toLowerCase() === nombre.toLowerCase();
+  });
+  if (existe) {
+    showNotification('Este niño ya está en el grupo', 'error');
+    return;
   }
 
   currentEditingGroup.ninos.push({ nombre: nombre, valor: 0 });
@@ -5745,18 +5642,22 @@ function saveGroupChanges() {
     return;
   }
 
+  // Capturar datos antes de cerrar modal (closeEditGroupModal anula currentEditingGroup)
+  var grupoId = currentEditingGroup.id;
+  var ninosGuardados = (currentEditingGroup.ninos || []).slice();
+
   showLoading(true);
   google.script.run
     .withSuccessHandler(function(result) {
       showLoading(false);
       if (result.success) {
         showNotification('Grupo actualizado correctamente', 'success');
-        closeEditGroupModal();
-        // Actualizar en memoria
-        const idx = gruposActivos.findIndex(g => g.id == currentEditingGroup.id);
+        // Actualizar en memoria ANTES de cerrar modal
+        var idx = gruposActivos.findIndex(g => g.id == grupoId);
         if (idx >= 0) {
-          gruposActivos[idx] = { ...gruposActivos[idx], nombre: nombre, porcentajeAporte: porcentaje, ninos: currentEditingGroup.ninos };
+          gruposActivos[idx] = { ...gruposActivos[idx], nombre: nombre, porcentajeAporte: porcentaje, ninos: ninosGuardados };
         }
+        closeEditGroupModal();
         updateGroupsList();
         updateGroupSelects();
       } else {
@@ -5767,10 +5668,10 @@ function saveGroupChanges() {
       showLoading(false);
       showNotification('Error: ' + error.message, 'error');
     })
-    .actualizarGrupo(currentEditingGroup.id, {
+    .actualizarGrupo(grupoId, {
       nombre: nombre,
       porcentajeAporte: porcentaje,
-      ninos: currentEditingGroup.ninos
+      ninos: ninosGuardados
     });
 }
 
@@ -6403,7 +6304,7 @@ function generateRendicionHTML() {
         transfers.push({
           destinatario: 'NeuroTEA',
           monto: child.transferencia,
-          concepto: 'Pago de sesion grupal de ' + (child.nombre || 'Nino') + ' - "' + groupName + '"'
+          concepto: 'Pago de sesion grupal de ' + (child.nombre || 'Niño') + ' - "' + groupName + '"'
         });
       }
     });
