@@ -584,6 +584,17 @@ google.script.run
 
 ## Historial de Cambios
 
+### v1.5.0 (2026-01-27)
+- feat: Deteccion de conflictos al importar datos del dia (replica sistema original)
+- feat: Nueva funcion `validateDayDataStructure()` para validar estructura de archivo antes de importar
+- feat: Nueva funcion `validateFullBackupStructure()` para validar estructura de backup completo
+- feat: Nueva funcion `detectDataConflicts()` para detectar datos existentes vs importados (sesiones, grupales, egresos)
+- feat: Nueva funcion `showConflictResolutionDialog()` con dialogo modal de fusion/sobrescritura/cancelar
+- feat: Nueva funcion `executeDayDataImport()` que ejecuta importacion con modo elegido
+- fix: `importDayData()` ahora detecta conflictos antes de enviar al backend
+- fix: `importFullBackup()` ahora valida estructura del archivo antes de restaurar
+- fix: `importData()` (deprecada) actualizada con validacion y deteccion de conflictos
+
 ### v1.4.0 (2026-01-27)
 - fix: Corregido calculo de saldo en caja y cuenta NeuroTEA en Dashboard (faltaban confirmaciones)
 - feat: Nuevas funciones `calcularSaldoCajaLocal()` y `calcularCuentaNeuroTEALocal()` para calculos dinamicos en frontend

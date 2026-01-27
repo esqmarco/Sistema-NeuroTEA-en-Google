@@ -4894,16 +4894,15 @@ function exportDayData() {
 }
 
 /**
- * Importa datos
+ * Importa datos (deprecada - redirige a importDayData o importFullBackup segun tipo)
  */
 function importData() {
-  // Esta funcion esta deprecada. Usar importDayData() o importFullBackup()
-  const fileInput = document.getElementById('import-day-file') || document.getElementById('restore-backup-file');
+  var fileInput = document.getElementById('import-day-file') || document.getElementById('restore-backup-file');
   if (!fileInput) {
     showNotification('Elemento de archivo no encontrado', 'error');
     return;
   }
-  const file = fileInput.files ? fileInput.files[0] : null;
+  var file = fileInput.files ? fileInput.files[0] : null;
 
   if (!file) {
     showNotification('Seleccione un archivo', 'warning');
@@ -4911,19 +4910,24 @@ function importData() {
   }
 
   // Password protection
-  const password = prompt('Ingrese la contrasena para importar datos:');
+  var password = prompt('Ingrese la contrasena para importar datos:');
   if (password !== '280208') {
     showNotification('Contrasena incorrecta', 'error');
     return;
   }
 
-  const reader = new FileReader();
+  var reader = new FileReader();
   reader.onload = function(e) {
     try {
-      const data = JSON.parse(e.target.result);
+      var data = JSON.parse(e.target.result);
 
       if (data.backupInfo && data.backupInfo.type === 'full_backup') {
-        if (!confirm('¿Restaurar backup completo? Esto reemplazara TODOS los datos.')) return;
+        // Validar estructura
+        if (!validateFullBackupStructure(data)) {
+          showNotification('El archivo no tiene estructura valida de backup completo', 'error');
+          return;
+        }
+        if (!confirm('Restaurar backup completo? Esto reemplazara TODOS los datos.')) return;
 
         showLoading(true);
         google.script.run
@@ -4943,24 +4947,28 @@ function importData() {
           .restaurarBackupCompleto(data);
 
       } else if (data.exportInfo && data.exportInfo.type === 'day_data') {
-        const mode = confirm('¿Sobrescribir datos existentes del dia? (Cancelar para fusionar)') ? 'overwrite' : 'merge';
+        // Validar estructura
+        if (!validateDayDataStructure(data)) {
+          showNotification('El archivo no tiene estructura valida de datos del dia', 'error');
+          return;
+        }
 
-        showLoading(true);
-        google.script.run
-          .withSuccessHandler(function(result) {
-            showLoading(false);
-            if (result.success) {
-              showNotification('Datos importados', 'success');
-              loadDateData(data.exportInfo.fecha);
-            } else {
-              showNotification(result.message, 'error');
-            }
-          })
-          .withFailureHandler(function(error) {
-            showLoading(false);
-            showNotification('Error al importar: ' + error.message, 'error');
-          })
-          .importarDatosDia(data, mode);
+        var fecha = data.exportInfo.fecha;
+
+        // Detectar conflictos
+        var existingData = {
+          sesiones: (fecha === fechaActual) ? sesiones : [],
+          sesionesGrupales: (fecha === fechaActual) ? sesionesGrupales : [],
+          egresos: (fecha === fechaActual) ? egresos : []
+        };
+
+        var conflicts = detectDataConflicts(existingData, data);
+
+        if (conflicts.hasConflicts) {
+          showConflictResolutionDialog(fecha, data, conflicts);
+        } else {
+          executeDayDataImport(fecha, data, 'merge');
+        }
 
       } else {
         showNotification('Formato de archivo no reconocido', 'error');
@@ -5876,11 +5884,11 @@ function createFullBackup() {
 }
 
 /**
- * Importar backup completo
+ * Importar backup completo (con validacion de estructura)
  */
 function importFullBackup() {
-  const fileInput = document.getElementById('restore-backup-file');
-  const file = fileInput.files[0];
+  var fileInput = document.getElementById('restore-backup-file');
+  var file = fileInput.files[0];
 
   if (!file) {
     showNotification('Seleccione un archivo', 'error');
@@ -5888,7 +5896,7 @@ function importFullBackup() {
   }
 
   // Password protection
-  const password = prompt('Ingrese la contrasena para restaurar el backup:');
+  var password = prompt('Ingrese la contrasena para restaurar el backup:');
   if (password !== '280208') {
     showNotification('Contrasena incorrecta', 'error');
     return;
@@ -5902,10 +5910,17 @@ function importFullBackup() {
     return;
   }
 
-  const reader = new FileReader();
+  var reader = new FileReader();
   reader.onload = function(e) {
     try {
-      const data = JSON.parse(e.target.result);
+      var data = JSON.parse(e.target.result);
+
+      // Validar estructura del backup
+      if (!validateFullBackupStructure(data)) {
+        showNotification('El archivo no tiene la estructura valida para backup completo', 'error');
+        return;
+      }
+
       showLoading(true);
 
       google.script.run
@@ -5913,7 +5928,7 @@ function importFullBackup() {
           showLoading(false);
           if (result.success) {
             showNotification('Backup restaurado correctamente. Recargando...', 'success');
-            setTimeout(() => location.reload(), 2000);
+            setTimeout(function() { location.reload(); }, 2000);
           } else {
             showNotification('Error: ' + result.message, 'error');
           }
@@ -5931,11 +5946,11 @@ function importFullBackup() {
 }
 
 /**
- * Importar datos del dia
+ * Importar datos del dia (con deteccion de conflictos)
  */
 function importDayData() {
-  const fileInput = document.getElementById('import-day-file');
-  const file = fileInput.files[0];
+  var fileInput = document.getElementById('import-day-file');
+  var file = fileInput.files[0];
 
   if (!file) {
     showNotification('Seleccione un archivo', 'error');
@@ -5943,38 +5958,281 @@ function importDayData() {
   }
 
   // Password protection
-  const password = prompt('Ingrese la contrasena para importar datos:');
+  var password = prompt('Ingrese la contrasena para importar datos:');
   if (password !== '280208') {
     showNotification('Contrasena incorrecta', 'error');
     return;
   }
 
-  const reader = new FileReader();
+  var reader = new FileReader();
   reader.onload = function(e) {
     try {
-      const data = JSON.parse(e.target.result);
-      showLoading(true);
+      var data = JSON.parse(e.target.result);
 
-      google.script.run
-        .withSuccessHandler(function(result) {
-          showLoading(false);
-          if (result.success) {
-            showNotification('Datos importados correctamente', 'success');
-            loadDateData(fechaActual);
-          } else {
-            showNotification('Error: ' + result.message, 'error');
-          }
-        })
-        .withFailureHandler(function(error) {
-          showLoading(false);
-          showNotification('Error: ' + error.message, 'error');
-        })
-        .importarDatosDia(data);
+      // Validar estructura del archivo
+      if (!validateDayDataStructure(data)) {
+        showNotification('El archivo no tiene la estructura valida para datos del dia', 'error');
+        return;
+      }
+
+      var fecha = data.exportInfo.fecha;
+
+      // Detectar conflictos antes de importar
+      if (fecha === fechaActual) {
+        // Usar datos ya cargados en memoria para la fecha actual
+        var conflicts = detectDataConflicts({
+          sesiones: sesiones,
+          sesionesGrupales: sesionesGrupales,
+          egresos: egresos
+        }, data);
+
+        if (conflicts.hasConflicts) {
+          showConflictResolutionDialog(fecha, data, conflicts);
+        } else {
+          executeDayDataImport(fecha, data, 'merge');
+        }
+      } else {
+        // Cargar datos de la fecha destino para detectar conflictos
+        showLoading(true);
+        google.script.run
+          .withSuccessHandler(function(result) {
+            showLoading(false);
+            if (result.success) {
+              var existingData = result.data;
+              var conflicts = detectDataConflicts({
+                sesiones: existingData.sesiones || [],
+                sesionesGrupales: existingData.sesionesGrupales || [],
+                egresos: existingData.egresos || []
+              }, data);
+
+              if (conflicts.hasConflicts) {
+                showConflictResolutionDialog(fecha, data, conflicts);
+              } else {
+                executeDayDataImport(fecha, data, 'merge');
+              }
+            } else {
+              // No se pudieron cargar datos, proceder con merge (modo seguro)
+              executeDayDataImport(fecha, data, 'merge');
+            }
+          })
+          .withFailureHandler(function(error) {
+            showLoading(false);
+            // En caso de error, proceder con merge como fallback
+            executeDayDataImport(fecha, data, 'merge');
+          })
+          .cargarDatosFecha(fecha);
+      }
+
     } catch (error) {
       showNotification('Error al leer el archivo: ' + error.message, 'error');
     }
   };
   reader.readAsText(file);
+}
+
+/**
+ * Valida la estructura de un archivo de datos del dia
+ * @param {Object} data - Datos parseados del archivo JSON
+ * @returns {boolean} - true si la estructura es valida
+ */
+function validateDayDataStructure(data) {
+  return data &&
+         data.exportInfo &&
+         data.exportInfo.type === 'day_data' &&
+         data.exportInfo.fecha &&
+         Array.isArray(data.sessions) &&
+         Array.isArray(data.egresos);
+}
+
+/**
+ * Valida la estructura de un archivo de backup completo
+ * @param {Object} data - Datos parseados del archivo JSON
+ * @returns {boolean} - true si la estructura es valida
+ */
+function validateFullBackupStructure(data) {
+  return data &&
+         data.backupInfo &&
+         data.backupInfo.type === 'full_backup' &&
+         data.backupInfo.date;
+}
+
+/**
+ * Detecta conflictos entre datos existentes y datos a importar
+ * @param {Object} existingData - Datos existentes {sesiones, sesionesGrupales, egresos}
+ * @param {Object} importData - Datos del archivo a importar
+ * @returns {Object} - Resultado con hasConflicts, detalles por tipo
+ */
+function detectDataConflicts(existingData, importData) {
+  var conflicts = {
+    hasConflicts: false,
+    sessions: false,
+    groupSessions: false,
+    egresos: false,
+    details: []
+  };
+
+  var existingSesiones = existingData.sesiones || [];
+  var existingGrupales = existingData.sesionesGrupales || [];
+  var existingEgresos = existingData.egresos || [];
+
+  var importSesiones = importData.sessions || [];
+  var importGrupales = importData.groupSessions || [];
+  var importEgresos = importData.egresos || [];
+
+  // Verificar conflictos en sesiones individuales
+  if (existingSesiones.length > 0 && importSesiones.length > 0) {
+    conflicts.hasConflicts = true;
+    conflicts.sessions = true;
+    conflicts.details.push(existingSesiones.length + ' sesiones existentes vs ' + importSesiones.length + ' en el archivo');
+  }
+
+  // Verificar conflictos en sesiones grupales
+  if (existingGrupales.length > 0 && importGrupales.length > 0) {
+    conflicts.hasConflicts = true;
+    conflicts.groupSessions = true;
+    conflicts.details.push(existingGrupales.length + ' sesiones grupales existentes vs ' + importGrupales.length + ' en el archivo');
+  }
+
+  // Verificar conflictos en egresos
+  if (existingEgresos.length > 0 && importEgresos.length > 0) {
+    conflicts.hasConflicts = true;
+    conflicts.egresos = true;
+    conflicts.details.push(existingEgresos.length + ' egresos existentes vs ' + importEgresos.length + ' en el archivo');
+  }
+
+  return conflicts;
+}
+
+/**
+ * Muestra dialogo de resolucion de conflictos al importar datos del dia
+ * Permite al usuario elegir: fusionar, sobrescribir o cancelar
+ * @param {string} fecha - Fecha de los datos
+ * @param {Object} importData - Datos a importar
+ * @param {Object} conflicts - Resultado de detectDataConflicts()
+ */
+function showConflictResolutionDialog(fecha, importData, conflicts) {
+  // Guardar datos temporalmente para los handlers del dialogo
+  window.tempImportData = importData;
+  window.tempImportFecha = fecha;
+
+  // Remover dialogo previo si existe
+  var existing = document.getElementById('conflict-dialog');
+  if (existing) {
+    document.body.removeChild(existing);
+  }
+
+  var dialog = document.createElement('div');
+  dialog.id = 'conflict-dialog';
+  dialog.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+
+  var detailsHtml = conflicts.details.map(function(d) {
+    return '<li class="flex items-start"><span class="mr-2 text-red-500">&#8226;</span><span>' + d + '</span></li>';
+  }).join('');
+
+  dialog.innerHTML =
+    '<div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">' +
+      '<h3 class="text-lg font-bold mb-4 text-red-600 dark:text-red-400">Conflictos Detectados</h3>' +
+      '<p class="text-sm text-gray-600 dark:text-gray-400 mb-3">' +
+        'Ya existen datos para la fecha <strong>' + fecha + '</strong>:' +
+      '</p>' +
+      '<ul class="text-sm mb-4 space-y-1 text-gray-700 dark:text-gray-300">' +
+        detailsHtml +
+      '</ul>' +
+      '<p class="text-sm font-medium mb-4 text-gray-800 dark:text-gray-200">Como desea proceder?</p>' +
+      '<div class="space-y-2">' +
+        '<button id="conflict-merge-btn" class="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 text-sm font-medium">' +
+          'Fusionar (Combinar ambos datos)' +
+        '</button>' +
+        '<button id="conflict-overwrite-btn" class="w-full bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 text-sm font-medium">' +
+          'Sobrescribir (Reemplazar existentes)' +
+        '</button>' +
+        '<button id="conflict-cancel-btn" class="w-full bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 text-sm font-medium">' +
+          'Cancelar' +
+        '</button>' +
+      '</div>' +
+      '<p class="text-xs text-gray-500 dark:text-gray-500 mt-3">' +
+        'Fusionar: agrega datos nuevos sin borrar existentes. Sobrescribir: elimina datos del dia y los reemplaza.' +
+      '</p>' +
+    '</div>';
+
+  document.body.appendChild(dialog);
+
+  // Event listeners con addEventListener (no inline onclick)
+  document.getElementById('conflict-merge-btn').addEventListener('click', function() {
+    closeConflictDialog();
+    executeDayDataImport(window.tempImportFecha, window.tempImportData, 'merge');
+    cleanupConflictTemp();
+  });
+
+  document.getElementById('conflict-overwrite-btn').addEventListener('click', function() {
+    closeConflictDialog();
+    executeDayDataImport(window.tempImportFecha, window.tempImportData, 'overwrite');
+    cleanupConflictTemp();
+  });
+
+  document.getElementById('conflict-cancel-btn').addEventListener('click', function() {
+    closeConflictDialog();
+    cleanupConflictTemp();
+    showNotification('Importacion cancelada', 'info');
+  });
+
+  // Cerrar con click en overlay
+  dialog.addEventListener('click', function(e) {
+    if (e.target === dialog) {
+      closeConflictDialog();
+      cleanupConflictTemp();
+      showNotification('Importacion cancelada', 'info');
+    }
+  });
+}
+
+/**
+ * Cierra el dialogo de conflictos
+ */
+function closeConflictDialog() {
+  var dialog = document.getElementById('conflict-dialog');
+  if (dialog) {
+    document.body.removeChild(dialog);
+  }
+}
+
+/**
+ * Limpia datos temporales del dialogo de conflictos
+ */
+function cleanupConflictTemp() {
+  delete window.tempImportData;
+  delete window.tempImportFecha;
+}
+
+/**
+ * Ejecuta la importacion de datos del dia al backend
+ * @param {string} fecha - Fecha de los datos
+ * @param {Object} importData - Datos a importar
+ * @param {string} mode - Modo: 'merge' o 'overwrite'
+ */
+function executeDayDataImport(fecha, importData, mode) {
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        var modeLabel = mode === 'overwrite' ? 'sobrescritura' : 'fusion';
+        showNotification('Datos importados correctamente (modo: ' + modeLabel + ')', 'success');
+        // Recargar datos de la fecha importada
+        loadDateData(fecha);
+        // Limpiar input de archivo
+        var fileInput = document.getElementById('import-day-file');
+        if (fileInput) fileInput.value = '';
+      } else {
+        showNotification('Error: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error al importar: ' + error.message, 'error');
+    })
+    .importarDatosDia(importData, mode);
 }
 
 /**
