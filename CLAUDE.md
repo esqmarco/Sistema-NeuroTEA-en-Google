@@ -524,7 +524,7 @@ Backend devuelve objetos con estas propiedades (verificar en TODOS los .gs):
 - `terapeutasJSON` (array), `cantidadTerapeutas`, `cantidadPresentes`
 - `valorTotal`, `porcentajeAporte`, `aporteNeurotea`, `honorariosTotales`
 - `honorariosPorTerapeuta`, `residuoHonorarios`, `efectivo`
-- `transferenciaNeurotea`, `creadoEn`
+- `transferenciaNeurotea`, `transferenciaTerapeuta`, `creadoEn`
 
 **Regla**: El frontend DEBE usar exactamente estos nombres de propiedades al renderizar datos.
 
@@ -703,6 +703,16 @@ google.script.run
 ```
 
 ## Historial de Cambios
+
+### v1.7.0 (2026-01-28)
+- feat: Nueva funcion `updateSheetColumns()` para agregar columnas faltantes a hojas existentes
+- feat: Nueva funcion `reorderSheetColumns()` para reordenar columnas al orden esperado
+- feat: Campo `transferenciaTerapeuta` agregado a sesiones grupales (3 tipos de pago como sesiones individuales)
+- fix: Rendicion ahora incluye transferencias a terapeuta de sesiones grupales
+- fix: Transferencias pendientes incluyen sesiones grupales con transferencia a terapeuta
+- fix: Saldo caja local no cuenta sesiones con usaCredito (evita doble conteo)
+- fix: Cuenta NeuroTEA local no cuenta sesiones con usaCredito
+- docs: Actualizada lista de propiedades de sesion grupal (agregado transferenciaTerapeuta)
 
 ### v1.6.0 (2026-01-27)
 - docs: Agregada REGLA CRITICA de autorizacion obligatoria del usuario antes de cambios de codigo
