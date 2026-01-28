@@ -84,72 +84,13 @@ function include(filename) {
 /**
  * Inicializa el Spreadsheet con todas las hojas necesarias
  * Ejecutar UNA VEZ al configurar el sistema
+ * Usa ESQUEMA_HOJAS como fuente unica de verdad
  */
 function initializeSpreadsheet() {
   const ss = getSpreadsheet();
 
-  // Definir estructura de hojas
-  const sheets = [
-    {
-      name: 'Terapeutas',
-      headers: ['id', 'nombre', 'activo', 'creadoEn', 'actualizadoEn']
-    },
-    {
-      name: 'Sesiones',
-      headers: ['id', 'fecha', 'terapeuta', 'paciente', 'efectivo', 'transferenciaNeurotea', 'transferenciaTerapeuta', 'valorSesion', 'aporteNeurotea', 'honorarios', 'tipoAporte', 'usaCredito', 'paqueteId', 'creditosRestantes', 'creadoEn']
-    },
-    {
-      name: 'SesionesGrupales',
-      headers: ['id', 'fecha', 'grupoId', 'grupoNombre', 'asistenciaJSON', 'terapeutasJSON', 'cantidadTerapeutas', 'cantidadPresentes', 'valorTotal', 'porcentajeAporte', 'aporteNeurotea', 'honorariosTotales', 'honorariosPorTerapeuta', 'residuoHonorarios', 'efectivo', 'transferenciaNeurotea', 'transferenciaTerapeuta', 'creadoEn']
-    },
-    {
-      name: 'Egresos',
-      headers: ['id', 'fecha', 'tipo', 'concepto', 'monto', 'terapeuta', 'creadoEn']
-    },
-    {
-      name: 'Confirmaciones',
-      headers: ['id', 'fecha', 'terapeuta', 'tipo', 'tipoOpcion', 'flujoJSON', 'estadoCongeladoJSON', 'timestamp']
-    },
-    {
-      name: 'Paquetes',
-      headers: ['id', 'fechaCompra', 'paciente', 'terapeuta', 'sesionesTotal', 'sesionesRestantes', 'valorTotal', 'efectivo', 'transferenciaNeurotea', 'transferenciaTerapeuta', 'aporteNeurotea', 'tipoAporte', 'activo', 'creadoEn']
-    },
-    {
-      name: 'HistorialPaquetes',
-      headers: ['id', 'fechaCompra', 'fechaCompletado', 'paciente', 'terapeuta', 'sesionesTotal', 'valorTotal', 'efectivo', 'transferenciaNeurotea', 'aporteNeurotea']
-    },
-    {
-      name: 'Grupos',
-      headers: ['id', 'nombre', 'porcentajeAporte', 'ninosJSON', 'valorMaximoTotal', 'estado', 'creadoEn', 'actualizadoEn']
-    },
-    {
-      name: 'Creditos',
-      headers: ['id', 'paciente', 'terapeuta', 'paqueteId', 'total', 'restante', 'fechaCompra', 'creadoEn']
-    },
-    {
-      name: 'SaldosIniciales',
-      headers: ['fecha', 'efectivo', 'actualizadoEn']
-    },
-    {
-      name: 'HistorialSaldos',
-      headers: ['id', 'fecha', 'mensaje', 'timestamp']
-    },
-    {
-      name: 'EstadosTransferencia',
-      headers: ['id', 'confirmado', 'timestamp']
-    },
-    {
-      name: 'Configuracion',
-      headers: ['clave', 'valor', 'descripcion', 'actualizadoEn']
-    },
-    {
-      name: 'Autorizaciones',
-      headers: ['correo', 'nombre', 'fechaAgregado']
-    }
-  ];
-
-  // Crear cada hoja si no existe
-  sheets.forEach(sheetConfig => {
+  // Crear cada hoja si no existe (usa ESQUEMA_HOJAS definido globalmente)
+  ESQUEMA_HOJAS.forEach(sheetConfig => {
     let sheet = ss.getSheetByName(sheetConfig.name);
 
     if (!sheet) {
@@ -260,10 +201,221 @@ function getFechaActual() {
 }
 
 /**
+ * Esquema esperado de todas las hojas del sistema
+ * Fuente unica de verdad para la estructura de datos
+ */
+const ESQUEMA_HOJAS = [
+  {
+    name: 'Terapeutas',
+    headers: ['id', 'nombre', 'activo', 'creadoEn', 'actualizadoEn']
+  },
+  {
+    name: 'Sesiones',
+    headers: ['id', 'fecha', 'terapeuta', 'paciente', 'efectivo', 'transferenciaNeurotea', 'transferenciaTerapeuta', 'valorSesion', 'aporteNeurotea', 'honorarios', 'tipoAporte', 'usaCredito', 'paqueteId', 'creditosRestantes', 'creadoEn']
+  },
+  {
+    name: 'SesionesGrupales',
+    headers: ['id', 'fecha', 'grupoId', 'grupoNombre', 'asistenciaJSON', 'terapeutasJSON', 'cantidadTerapeutas', 'cantidadPresentes', 'valorTotal', 'porcentajeAporte', 'aporteNeurotea', 'honorariosTotales', 'honorariosPorTerapeuta', 'residuoHonorarios', 'efectivo', 'transferenciaNeurotea', 'transferenciaTerapeuta', 'creadoEn']
+  },
+  {
+    name: 'Egresos',
+    headers: ['id', 'fecha', 'tipo', 'concepto', 'monto', 'terapeuta', 'creadoEn']
+  },
+  {
+    name: 'Confirmaciones',
+    headers: ['id', 'fecha', 'terapeuta', 'tipo', 'tipoOpcion', 'flujoJSON', 'estadoCongeladoJSON', 'timestamp']
+  },
+  {
+    name: 'Paquetes',
+    headers: ['id', 'fechaCompra', 'paciente', 'terapeuta', 'sesionesTotal', 'sesionesRestantes', 'valorTotal', 'efectivo', 'transferenciaNeurotea', 'transferenciaTerapeuta', 'aporteNeurotea', 'tipoAporte', 'activo', 'creadoEn']
+  },
+  {
+    name: 'HistorialPaquetes',
+    headers: ['id', 'fechaCompra', 'fechaCompletado', 'paciente', 'terapeuta', 'sesionesTotal', 'valorTotal', 'efectivo', 'transferenciaNeurotea', 'aporteNeurotea']
+  },
+  {
+    name: 'Grupos',
+    headers: ['id', 'nombre', 'porcentajeAporte', 'ninosJSON', 'valorMaximoTotal', 'estado', 'creadoEn', 'actualizadoEn']
+  },
+  {
+    name: 'Creditos',
+    headers: ['id', 'paciente', 'terapeuta', 'paqueteId', 'total', 'restante', 'fechaCompra', 'creadoEn']
+  },
+  {
+    name: 'SaldosIniciales',
+    headers: ['fecha', 'efectivo', 'actualizadoEn']
+  },
+  {
+    name: 'HistorialSaldos',
+    headers: ['id', 'fecha', 'mensaje', 'timestamp']
+  },
+  {
+    name: 'EstadosTransferencia',
+    headers: ['id', 'confirmado', 'timestamp']
+  },
+  {
+    name: 'Configuracion',
+    headers: ['clave', 'valor', 'descripcion', 'actualizadoEn']
+  },
+  {
+    name: 'Autorizaciones',
+    headers: ['correo', 'nombre', 'fechaAgregado']
+  }
+];
+
+/**
+ * Verifica y corrige automaticamente el esquema de todas las hojas
+ * Se ejecuta automaticamente al cargar datos iniciales
+ * @returns {Object} - Resultado de la verificacion
+ */
+function verificarYCorregirEsquema() {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'esquema_verificado_' + new Date().toDateString();
+
+  // Verificar si ya se ejecuto hoy (optimizacion)
+  if (cache.get(cacheKey)) {
+    return { verificado: true, cached: true };
+  }
+
+  const ss = getSpreadsheet();
+  const cambios = [];
+
+  ESQUEMA_HOJAS.forEach(config => {
+    const sheet = ss.getSheetByName(config.name);
+    if (!sheet) {
+      Logger.log('Esquema: Hoja no encontrada - ' + config.name);
+      return;
+    }
+
+    const lastCol = sheet.getLastColumn();
+
+    // Caso 1: Hoja sin columnas (vacia)
+    if (lastCol === 0) {
+      sheet.getRange(1, 1, 1, config.headers.length).setValues([config.headers]);
+      aplicarFormatoEncabezados(sheet, config.headers.length);
+      cambios.push({ hoja: config.name, accion: 'inicializada' });
+      return;
+    }
+
+    // Caso 2: Verificar columnas existentes
+    const headersActuales = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const columnasFaltantes = [];
+    const columnasEnOrdenIncorrecto = [];
+
+    // Encontrar columnas faltantes
+    config.headers.forEach((headerEsperado, indexEsperado) => {
+      const indexActual = headersActuales.indexOf(headerEsperado);
+      if (indexActual === -1) {
+        columnasFaltantes.push({ nombre: headerEsperado, posicion: indexEsperado });
+      } else if (indexActual !== indexEsperado) {
+        columnasEnOrdenIncorrecto.push(headerEsperado);
+      }
+    });
+
+    // Si no hay problemas, continuar
+    if (columnasFaltantes.length === 0 && columnasEnOrdenIncorrecto.length === 0) {
+      return;
+    }
+
+    // Hay columnas faltantes o en orden incorrecto - corregir
+    const lastRow = sheet.getLastRow();
+
+    if (lastRow <= 1) {
+      // Solo encabezados, sin datos - reemplazar directamente
+      sheet.getRange(1, 1, 1, config.headers.length).setValues([config.headers]);
+      // Limpiar columnas extra si las hay
+      if (lastCol > config.headers.length) {
+        sheet.deleteColumns(config.headers.length + 1, lastCol - config.headers.length);
+      }
+      aplicarFormatoEncabezados(sheet, config.headers.length);
+      cambios.push({
+        hoja: config.name,
+        accion: 'encabezados_actualizados',
+        columnasFaltantes: columnasFaltantes.map(c => c.nombre)
+      });
+    } else {
+      // Hay datos - reorganizar preservando datos
+      const todosLosDatos = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+      const datosReorganizados = reorganizarDatosConNuevoEsquema(todosLosDatos, headersActuales, config.headers);
+
+      // Limpiar y reescribir
+      sheet.clear();
+      sheet.getRange(1, 1, datosReorganizados.length, config.headers.length).setValues(datosReorganizados);
+      aplicarFormatoEncabezados(sheet, config.headers.length);
+
+      cambios.push({
+        hoja: config.name,
+        accion: 'reorganizada',
+        columnasFaltantes: columnasFaltantes.map(c => c.nombre),
+        columnasReordenadas: columnasEnOrdenIncorrecto
+      });
+    }
+
+    Logger.log('Esquema corregido: ' + config.name + ' - Faltantes: ' + columnasFaltantes.map(c => c.nombre).join(', '));
+  });
+
+  // Marcar como verificado por hoy
+  cache.put(cacheKey, 'true', 21600); // 6 horas
+
+  if (cambios.length > 0) {
+    Logger.log('Esquema auto-corregido: ' + JSON.stringify(cambios));
+  }
+
+  return { verificado: true, cambios: cambios };
+}
+
+/**
+ * Reorganiza datos existentes para coincidir con nuevo esquema
+ * @param {Array} datos - Datos actuales incluyendo encabezados
+ * @param {Array} headersActuales - Encabezados actuales
+ * @param {Array} headersNuevos - Encabezados esperados
+ * @returns {Array} - Datos reorganizados
+ */
+function reorganizarDatosConNuevoEsquema(datos, headersActuales, headersNuevos) {
+  return datos.map((fila, filaIndex) => {
+    if (filaIndex === 0) {
+      // Primera fila = nuevos encabezados
+      return headersNuevos;
+    }
+
+    // Filas de datos - mapear valores a nuevas posiciones
+    const nuevaFila = headersNuevos.map(header => {
+      const indexAnterior = headersActuales.indexOf(header);
+      if (indexAnterior >= 0 && indexAnterior < fila.length) {
+        return fila[indexAnterior];
+      }
+      return ''; // Columna nueva, valor vacio
+    });
+
+    return nuevaFila;
+  });
+}
+
+/**
+ * Aplica formato estandar a los encabezados de una hoja
+ * @param {Sheet} sheet - Hoja a formatear
+ * @param {number} numColumnas - Numero de columnas
+ */
+function aplicarFormatoEncabezados(sheet, numColumnas) {
+  const headerRange = sheet.getRange(1, 1, 1, numColumnas);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#4A90E2');
+  headerRange.setFontColor('#FFFFFF');
+  sheet.setFrozenRows(1);
+}
+
+/**
  * Carga todos los datos iniciales para el frontend
  * @returns {Object} - Datos iniciales del sistema
  */
 function cargarDatosIniciales() {
+  // AUTO-CORRECCION: Verificar y corregir esquema antes de cargar datos
+  try {
+    verificarYCorregirEsquema();
+  } catch (e) {
+    Logger.log('Error en verificacion de esquema: ' + e.message);
+  }
+
   const fecha = getFechaActual();
   const data = {
     fechaActual: fecha,
@@ -485,161 +637,31 @@ function limpiarDiaCompleto(fecha) {
 }
 
 /**
- * Actualiza las columnas de todas las hojas existentes
- * Agrega columnas faltantes sin borrar datos existentes
- * Ejecutar cuando se agreguen nuevas columnas al sistema
+ * Actualiza las columnas de todas las hojas existentes (LEGACY)
+ * Esta funcion ahora es un wrapper de verificarYCorregirEsquema()
+ * Se mantiene para compatibilidad con usuarios que ya la usan
  * @returns {Object} - Resultado con detalles de cambios
  */
 function updateSheetColumns() {
-  const ss = getSpreadsheet();
-  const changes = [];
+  // Limpiar cache para forzar verificacion
+  const cache = CacheService.getScriptCache();
+  cache.remove('esquema_verificado_' + new Date().toDateString());
 
-  // Definir estructura esperada de hojas (misma que initializeSpreadsheet)
-  const sheets = [
-    {
-      name: 'Terapeutas',
-      headers: ['id', 'nombre', 'activo', 'creadoEn', 'actualizadoEn']
-    },
-    {
-      name: 'Sesiones',
-      headers: ['id', 'fecha', 'terapeuta', 'paciente', 'efectivo', 'transferenciaNeurotea', 'transferenciaTerapeuta', 'valorSesion', 'aporteNeurotea', 'honorarios', 'tipoAporte', 'usaCredito', 'paqueteId', 'creditosRestantes', 'creadoEn']
-    },
-    {
-      name: 'SesionesGrupales',
-      headers: ['id', 'fecha', 'grupoId', 'grupoNombre', 'asistenciaJSON', 'terapeutasJSON', 'cantidadTerapeutas', 'cantidadPresentes', 'valorTotal', 'porcentajeAporte', 'aporteNeurotea', 'honorariosTotales', 'honorariosPorTerapeuta', 'residuoHonorarios', 'efectivo', 'transferenciaNeurotea', 'transferenciaTerapeuta', 'creadoEn']
-    },
-    {
-      name: 'Egresos',
-      headers: ['id', 'fecha', 'tipo', 'concepto', 'monto', 'terapeuta', 'creadoEn']
-    },
-    {
-      name: 'Confirmaciones',
-      headers: ['id', 'fecha', 'terapeuta', 'tipo', 'tipoOpcion', 'flujoJSON', 'estadoCongeladoJSON', 'timestamp']
-    },
-    {
-      name: 'Paquetes',
-      headers: ['id', 'fechaCompra', 'paciente', 'terapeuta', 'sesionesTotal', 'sesionesRestantes', 'valorTotal', 'efectivo', 'transferenciaNeurotea', 'transferenciaTerapeuta', 'aporteNeurotea', 'tipoAporte', 'activo', 'creadoEn']
-    },
-    {
-      name: 'HistorialPaquetes',
-      headers: ['id', 'fechaCompra', 'fechaCompletado', 'paciente', 'terapeuta', 'sesionesTotal', 'valorTotal', 'efectivo', 'transferenciaNeurotea', 'aporteNeurotea']
-    },
-    {
-      name: 'Grupos',
-      headers: ['id', 'nombre', 'porcentajeAporte', 'ninosJSON', 'valorMaximoTotal', 'estado', 'creadoEn', 'actualizadoEn']
-    },
-    {
-      name: 'Creditos',
-      headers: ['id', 'paciente', 'terapeuta', 'paqueteId', 'total', 'restante', 'fechaCompra', 'creadoEn']
-    },
-    {
-      name: 'SaldosIniciales',
-      headers: ['fecha', 'efectivo', 'actualizadoEn']
-    },
-    {
-      name: 'HistorialSaldos',
-      headers: ['id', 'fecha', 'mensaje', 'timestamp']
-    },
-    {
-      name: 'EstadosTransferencia',
-      headers: ['id', 'confirmado', 'timestamp']
-    },
-    {
-      name: 'Configuracion',
-      headers: ['clave', 'valor', 'descripcion', 'actualizadoEn']
-    },
-    {
-      name: 'Autorizaciones',
-      headers: ['correo', 'nombre', 'fechaAgregado']
-    }
-  ];
+  // Usar la funcion principal de verificacion
+  const resultado = verificarYCorregirEsquema();
 
-  sheets.forEach(sheetConfig => {
-    const sheet = ss.getSheetByName(sheetConfig.name);
-    if (!sheet) {
-      Logger.log('Hoja no encontrada: ' + sheetConfig.name);
-      return; // Saltar si la hoja no existe
-    }
-
-    // Obtener encabezados actuales
-    const lastCol = sheet.getLastColumn();
-    if (lastCol === 0) {
-      // Hoja vacia, agregar todos los encabezados
-      sheet.getRange(1, 1, 1, sheetConfig.headers.length).setValues([sheetConfig.headers]);
-      changes.push({
-        sheet: sheetConfig.name,
-        action: 'initialized',
-        columns: sheetConfig.headers
-      });
-      return;
-    }
-
-    const currentHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-    const missingColumns = [];
-
-    // Encontrar columnas faltantes y su posicion correcta
-    sheetConfig.headers.forEach((expectedHeader, expectedIndex) => {
-      if (!currentHeaders.includes(expectedHeader)) {
-        missingColumns.push({
-          name: expectedHeader,
-          expectedPosition: expectedIndex + 1 // Posicion base 1
-        });
-      }
-    });
-
-    if (missingColumns.length === 0) {
-      Logger.log('Hoja ' + sheetConfig.name + ': todas las columnas presentes');
-      return;
-    }
-
-    // Agregar columnas faltantes en la posicion correcta
-    // Procesar de derecha a izquierda para no afectar posiciones
-    missingColumns.sort((a, b) => b.expectedPosition - a.expectedPosition);
-
-    missingColumns.forEach(col => {
-      // Calcular posicion real considerando columnas ya existentes
-      let insertPosition = col.expectedPosition;
-
-      // Ajustar si la posicion es mayor que las columnas actuales
-      const totalCols = sheet.getLastColumn();
-      if (insertPosition > totalCols + 1) {
-        insertPosition = totalCols + 1;
-      }
-
-      // Insertar columna
-      sheet.insertColumnAfter(insertPosition - 1 > 0 ? insertPosition - 1 : 1);
-
-      // Ajustar posicion si insertamos al inicio
-      if (insertPosition === 1) {
-        sheet.getRange(1, 1).setValue(col.name);
-      } else {
-        sheet.getRange(1, insertPosition).setValue(col.name);
-      }
-
-      Logger.log('Hoja ' + sheetConfig.name + ': agregada columna "' + col.name + '" en posicion ' + insertPosition);
-    });
-
-    // Reordenar encabezados para que coincidan con el orden esperado
-    reorderSheetColumns(sheet, sheetConfig.headers);
-
-    changes.push({
-      sheet: sheetConfig.name,
-      action: 'updated',
-      addedColumns: missingColumns.map(c => c.name)
-    });
-  });
-
-  Logger.log('Actualizacion de columnas completada: ' + JSON.stringify(changes));
+  Logger.log('updateSheetColumns ejecutado via verificarYCorregirEsquema: ' + JSON.stringify(resultado));
 
   return {
     success: true,
-    message: changes.length > 0 ? 'Columnas actualizadas' : 'Todas las columnas ya estaban presentes',
-    changes: changes
+    message: resultado.cambios && resultado.cambios.length > 0 ? 'Columnas actualizadas' : 'Todas las columnas ya estaban presentes',
+    changes: resultado.cambios || []
   };
 }
 
 /**
- * Reordena las columnas de una hoja para que coincidan con el orden esperado
+ * LEGACY: Reordena las columnas de una hoja
+ * Ahora usa reorganizarDatosConNuevoEsquema internamente
  * @param {Sheet} sheet - Hoja a reordenar
  * @param {Array<string>} expectedHeaders - Orden esperado de encabezados
  */
@@ -662,22 +684,9 @@ function reorderSheetColumns(sheet, expectedHeaders) {
 
   if (inOrder) return;
 
-  // Obtener todos los datos
+  // Obtener todos los datos y reorganizar
   const allData = sheet.getDataRange().getValues();
-
-  // Crear mapeo de columna actual a nueva posicion
-  const newData = allData.map(row => {
-    const newRow = [];
-    expectedHeaders.forEach(header => {
-      const oldIndex = currentHeaders.indexOf(header);
-      if (oldIndex >= 0) {
-        newRow.push(row[oldIndex]);
-      } else {
-        newRow.push(''); // Columna nueva, valor vacio
-      }
-    });
-    return newRow;
-  });
+  const newData = reorganizarDatosConNuevoEsquema(allData, currentHeaders, expectedHeaders);
 
   // Limpiar hoja y escribir datos reordenados
   sheet.clear();
@@ -685,12 +694,18 @@ function reorderSheetColumns(sheet, expectedHeaders) {
     sheet.getRange(1, 1, newData.length, expectedHeaders.length).setValues(newData);
   }
 
-  // Aplicar formato a encabezados
-  const headerRange = sheet.getRange(1, 1, 1, expectedHeaders.length);
-  headerRange.setFontWeight('bold');
-  headerRange.setBackground('#4A90E2');
-  headerRange.setFontColor('#FFFFFF');
-  sheet.setFrozenRows(1);
+  aplicarFormatoEncabezados(sheet, expectedHeaders.length);
+}
+
+/**
+ * Fuerza la verificacion del esquema ignorando el cache
+ * Util para ejecutar manualmente desde el editor de Apps Script
+ * @returns {Object} - Resultado de la verificacion
+ */
+function forzarVerificacionEsquema() {
+  const cache = CacheService.getScriptCache();
+  cache.remove('esquema_verificado_' + new Date().toDateString());
+  return verificarYCorregirEsquema();
 }
 
 /**
