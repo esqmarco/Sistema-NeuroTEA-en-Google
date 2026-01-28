@@ -5421,7 +5421,9 @@ function onGroupSelectChange() {
   // Llenar lista de ninos
   const ninos = grupo.ninos || [];
   const attendanceList = document.getElementById('group-attendance-list');
-  attendanceList.innerHTML = ninos.map(nino => `
+  attendanceList.innerHTML = ninos.map(nino => {
+    const valorNino = nino.valor || 0;
+    return `
     <div class="border rounded p-3 bg-white dark:bg-gray-600">
       <div class="flex items-center justify-between mb-2">
         <label class="flex items-center space-x-2">
@@ -5432,19 +5434,20 @@ function onGroupSelectChange() {
       <div class="grid grid-cols-3 gap-2">
         <div>
           <label class="text-xs text-gray-500">Valor</label>
-          <input type="number" class="child-value w-full p-1 border rounded text-sm" data-child="${nino.nombre}" value="${nino.valor || 0}" min="0">
+          <input type="number" class="child-value w-full p-1 border rounded text-sm bg-gray-100 dark:bg-gray-500" data-child="${nino.nombre}" value="${valorNino}" min="0" readonly>
         </div>
         <div>
-          <label class="text-xs text-gray-500">Efectivo</label>
-          <input type="number" class="child-cash w-full p-1 border rounded text-sm" data-child="${nino.nombre}" value="0" min="0">
+          <label class="text-xs text-green-600 dark:text-green-400 font-medium">Efectivo</label>
+          <input type="number" class="child-cash w-full p-1 border-2 border-green-400 rounded text-sm bg-green-50 dark:bg-green-900/30 focus:border-green-500 focus:ring-green-500" data-child="${nino.nombre}" value="0" min="0">
         </div>
         <div>
-          <label class="text-xs text-gray-500">Transf. NeuroTEA</label>
-          <input type="number" class="child-transfer w-full p-1 border rounded text-sm" data-child="${nino.nombre}" value="0" min="0">
+          <label class="text-xs text-blue-600 dark:text-blue-400 font-medium">Transf. NeuroTEA</label>
+          <input type="number" class="child-transfer w-full p-1 border-2 border-blue-400 rounded text-sm bg-blue-50 dark:bg-blue-900/30 focus:border-blue-500 focus:ring-blue-500" data-child="${nino.nombre}" value="${valorNino}" min="0">
         </div>
       </div>
     </div>
-  `).join('') || '<p class="text-gray-500 text-center">No hay niños en este grupo</p>';
+  `;
+  }).join('') || '<p class="text-gray-500 text-center">No hay niños en este grupo</p>';
 
   // Agregar event listeners a los elementos dinamicos (niños)
   document.querySelectorAll('.child-attendance-checkbox').forEach(cb => {
@@ -5500,22 +5503,15 @@ function updateGroupSessionTotals() {
   document.getElementById('group-total-cash').textContent = formatCurrency(totalCash);
   document.getElementById('group-total-transfer-neurotea').textContent = formatCurrency(totalTransfer);
 
-  // Mostrar advertencia si totales de pago no coinciden con valor
+  // Calcular total de pagos
   const totalPagos = totalCash + totalTransfer;
-  const warningEl = document.getElementById('group-payment-warning');
-  if (warningEl) {
-    if (childrenCount > 0 && totalPagos !== totalValue) {
-      warningEl.classList.remove('hidden');
-      warningEl.textContent = 'El total de pagos (' + formatCurrency(totalPagos) + ') no coincide con el valor de la sesion (' + formatCurrency(totalValue) + ')';
-    } else {
-      warningEl.classList.add('hidden');
-    }
-  }
 
   // Habilitar/deshabilitar boton de registro
+  // Requisitos: al menos 1 niño presente, al menos 1 terapeuta, y pagos = valor
   const registerBtn = document.getElementById('register-group-btn');
   if (registerBtn) {
-    registerBtn.disabled = childrenCount === 0 || terapeutasSeleccionados === 0;
+    const pagosCompletos = totalPagos === totalValue;
+    registerBtn.disabled = childrenCount === 0 || terapeutasSeleccionados === 0 || !pagosCompletos;
   }
 }
 
