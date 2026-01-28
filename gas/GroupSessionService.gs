@@ -249,11 +249,17 @@ const GroupSessionService = {
     const aporteProporcional = Math.floor(session.aporteNeurotea / cantidadTerapeutas);
     const residuoAporte = session.aporteNeurotea - (aporteProporcional * cantidadTerapeutas);
 
+    // Transferencia a terapeuta proporcional
+    const transferenciaTerapeutaTotal = session.transferenciaTerapeuta || 0;
+    const transferenciaTerapeutaProporcional = Math.floor(transferenciaTerapeutaTotal / cantidadTerapeutas);
+    const residuoTransferencia = transferenciaTerapeutaTotal - (transferenciaTerapeutaProporcional * cantidadTerapeutas);
+
     return {
       terapeuta: terapeuta,
       honorarios: honorarios,
       valorProporcional: valorProporcional + (isFirst ? residuoValor : 0),
       aporteProporcional: aporteProporcional + (isFirst ? residuoAporte : 0),
+      transferenciaTerapeutaProporcional: transferenciaTerapeutaProporcional + (isFirst ? residuoTransferencia : 0),
       recibeResiduo: isFirst
     };
   },
