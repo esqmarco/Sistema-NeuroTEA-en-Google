@@ -100,7 +100,7 @@ function initializeSpreadsheet() {
     },
     {
       name: 'SesionesGrupales',
-      headers: ['id', 'fecha', 'grupoId', 'grupoNombre', 'asistenciaJSON', 'terapeutasJSON', 'cantidadTerapeutas', 'cantidadPresentes', 'valorTotal', 'porcentajeAporte', 'aporteNeurotea', 'honorariosTotales', 'honorariosPorTerapeuta', 'residuoHonorarios', 'efectivo', 'transferenciaNeurotea', 'creadoEn']
+      headers: ['id', 'fecha', 'grupoId', 'grupoNombre', 'asistenciaJSON', 'terapeutasJSON', 'cantidadTerapeutas', 'cantidadPresentes', 'valorTotal', 'porcentajeAporte', 'aporteNeurotea', 'honorariosTotales', 'honorariosPorTerapeuta', 'residuoHonorarios', 'efectivo', 'transferenciaNeurotea', 'transferenciaTerapeuta', 'creadoEn']
     },
     {
       name: 'Egresos',
