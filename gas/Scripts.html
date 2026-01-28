@@ -5577,16 +5577,32 @@ function updateEditGroupChildrenList() {
     return;
   }
 
-  container.innerHTML = ninos.map(nino => `
-    <div class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-600 rounded">
-      <span>${nino.nombre}</span>
-      <button onclick="removeChildFromGroup('${nino.nombre}')" class="text-red-500 hover:text-red-700">
-        <i data-lucide="x" class="w-4 h-4"></i>
-      </button>
-    </div>
-  `).join('');
+  container.innerHTML = ninos.map(function(nino, i) {
+    return '<div class="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-600 rounded">' +
+      '<span class="flex-1 text-sm font-medium">' + nino.nombre + '</span>' +
+      '<div class="flex items-center gap-1">' +
+        '<label class="text-xs text-gray-500">Gs</label>' +
+        '<input type="number" class="child-group-value w-24 p-1 border rounded text-sm dark:bg-gray-500 dark:border-gray-400" ' +
+          'data-index="' + i + '" value="' + (nino.valor || 0) + '" min="0" ' +
+          'onchange="updateChildValue(' + i + ', this.value)">' +
+      '</div>' +
+      '<button onclick="removeChildFromGroup(\'' + nino.nombre + '\')" class="text-red-500 hover:text-red-700 p-1">' +
+        '<i data-lucide="x" class="w-4 h-4"></i>' +
+      '</button>' +
+    '</div>';
+  }).join('');
 
   lucide.createIcons();
+}
+
+/**
+ * Actualiza el valor de un niño en el grupo en edicion
+ */
+function updateChildValue(index, value) {
+  if (!currentEditingGroup || !currentEditingGroup.ninos) return;
+  if (index >= 0 && index < currentEditingGroup.ninos.length) {
+    currentEditingGroup.ninos[index].valor = parseInt(value) || 0;
+  }
 }
 
 /**
@@ -5594,6 +5610,9 @@ function updateEditGroupChildrenList() {
  */
 function addChildToCurrentGroup() {
   const nombre = document.getElementById('new-child-name').value.trim();
+  const valorInput = document.getElementById('new-child-value');
+  const valor = parseInt(valorInput?.value) || 0;
+
   if (!nombre) {
     showNotification('Ingrese el nombre del niño', 'error');
     return;
@@ -5614,8 +5633,9 @@ function addChildToCurrentGroup() {
     return;
   }
 
-  currentEditingGroup.ninos.push({ nombre: nombre, valor: 0 });
+  currentEditingGroup.ninos.push({ nombre: nombre, valor: valor });
   document.getElementById('new-child-name').value = '';
+  if (valorInput) valorInput.value = '';
   updateEditGroupChildrenList();
 }
 
@@ -5641,6 +5661,14 @@ function saveGroupChanges() {
     showNotification('Ingrese el nombre del grupo', 'error');
     return;
   }
+
+  // Sincronizar precios desde los inputs del DOM antes de guardar
+  document.querySelectorAll('.child-group-value').forEach(function(input) {
+    var idx = parseInt(input.dataset.index);
+    if (currentEditingGroup.ninos && idx >= 0 && idx < currentEditingGroup.ninos.length) {
+      currentEditingGroup.ninos[idx].valor = parseInt(input.value) || 0;
+    }
+  });
 
   // Capturar datos antes de cerrar modal (closeEditGroupModal anula currentEditingGroup)
   var grupoId = currentEditingGroup.id;
