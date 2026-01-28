@@ -5287,7 +5287,10 @@ function clearHistorialSaldo() {
 /**
  * Abrir modal de sesion grupal
  */
+var selectedGroupTherapists = []; // Terapeutas seleccionadas para la sesion grupal
+
 function openGroupSessionModal() {
+  selectedGroupTherapists = []; // Reset al abrir
   document.getElementById('group-session-modal').classList.remove('hidden');
   updateGroupSelects();
   lucide.createIcons();
@@ -5297,6 +5300,7 @@ function openGroupSessionModal() {
  * Cerrar modal de sesion grupal
  */
 function closeGroupSessionModal() {
+  selectedGroupTherapists = []; // Reset al cerrar
   document.getElementById('group-session-modal').classList.add('hidden');
   document.getElementById('group-select').value = '';
   document.getElementById('group-therapists-section').classList.add('hidden');
@@ -5313,6 +5317,78 @@ function closeGroupSessionModal() {
     modoPagoDia.checked = true;
     togglePaymentMode();
   }
+}
+
+/**
+ * Renderiza el selector de terapeutas (dropdown + chips)
+ */
+function renderGroupTherapistsSelector() {
+  const container = document.getElementById('group-therapists-list');
+  if (!container) return;
+
+  // Filtrar terapeutas disponibles (no seleccionadas aun)
+  var availableTherapists = terapeutas.filter(function(t) {
+    return selectedGroupTherapists.indexOf(t.nombre) === -1;
+  });
+
+  var html = '<div class="flex gap-2 mb-3">' +
+    '<select id="group-therapist-select" class="flex-1 p-2 border rounded-md dark:bg-gray-600 dark:border-gray-500 text-sm">' +
+      '<option value="">-- Seleccionar terapeuta --</option>' +
+      availableTherapists.map(function(t) {
+        return '<option value="' + t.nombre + '">' + t.nombre + '</option>';
+      }).join('') +
+    '</select>' +
+    '<button type="button" onclick="addTherapistToGroupSession()" class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-md text-sm"' +
+      (availableTherapists.length === 0 ? ' disabled' : '') + '>' +
+      '<i data-lucide="plus" class="w-4 h-4 inline"></i> Agregar' +
+    '</button>' +
+  '</div>';
+
+  // Chips de terapeutas seleccionadas
+  if (selectedGroupTherapists.length > 0) {
+    html += '<div class="flex flex-wrap gap-2 mb-2">';
+    selectedGroupTherapists.forEach(function(nombre) {
+      html += '<span class="inline-flex items-center bg-blue-100 dark:bg-blue-800/40 text-blue-800 dark:text-blue-200 px-3 py-1 rounded-full text-sm">' +
+        nombre +
+        '<button type="button" onclick="removeTherapistFromGroupSession(\'' + nombre + '\')" class="ml-2 hover:text-red-500">' +
+          '<i data-lucide="x" class="w-3 h-3"></i>' +
+        '</button>' +
+      '</span>';
+    });
+    html += '</div>';
+    html += '<p class="text-xs text-gray-500">' + selectedGroupTherapists.length + ' terapeuta(s) asignada(s) - Honorarios se dividirán en partes iguales</p>';
+  } else {
+    html += '<p class="text-xs text-gray-400 italic">No hay terapeutas asignadas a esta sesión</p>';
+  }
+
+  container.innerHTML = html;
+  lucide.createIcons();
+}
+
+/**
+ * Agregar terapeuta a la sesion grupal
+ */
+function addTherapistToGroupSession() {
+  var select = document.getElementById('group-therapist-select');
+  if (!select || !select.value) return;
+
+  var nombre = select.value;
+  if (selectedGroupTherapists.indexOf(nombre) === -1) {
+    selectedGroupTherapists.push(nombre);
+    renderGroupTherapistsSelector();
+    updateGroupSessionTotals();
+  }
+}
+
+/**
+ * Quitar terapeuta de la sesion grupal
+ */
+function removeTherapistFromGroupSession(nombre) {
+  selectedGroupTherapists = selectedGroupTherapists.filter(function(t) {
+    return t !== nombre;
+  });
+  renderGroupTherapistsSelector();
+  updateGroupSessionTotals();
 }
 
 /**
@@ -5336,14 +5412,11 @@ function onGroupSelectChange() {
   document.getElementById('group-attendance-section').classList.remove('hidden');
   document.getElementById('group-values-section').classList.remove('hidden');
 
-  // Llenar lista de terapeutas con checkboxes
-  const therapistsList = document.getElementById('group-therapists-list');
-  therapistsList.innerHTML = terapeutas.map(t => `
-    <label class="flex items-center space-x-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-600 rounded">
-      <input type="checkbox" class="group-therapist-checkbox" value="${t.nombre}">
-      <span>${t.nombre}</span>
-    </label>
-  `).join('');
+  // Resetear terapeutas seleccionadas al cambiar de grupo
+  selectedGroupTherapists = [];
+
+  // Renderizar dropdown + chips para terapeutas
+  renderGroupTherapistsSelector();
 
   // Llenar lista de ninos
   const ninos = grupo.ninos || [];
@@ -5373,10 +5446,7 @@ function onGroupSelectChange() {
     </div>
   `).join('') || '<p class="text-gray-500 text-center">No hay niños en este grupo</p>';
 
-  // Agregar event listeners a los elementos dinamicos
-  document.querySelectorAll('.group-therapist-checkbox').forEach(cb => {
-    cb.addEventListener('change', updateGroupSessionTotals);
-  });
+  // Agregar event listeners a los elementos dinamicos (niños)
   document.querySelectorAll('.child-attendance-checkbox').forEach(cb => {
     cb.addEventListener('change', updateGroupSessionTotals);
   });
@@ -5398,8 +5468,8 @@ function updateGroupSessionTotals() {
   const grupo = gruposActivos.find(g => g.id == grupoId);
   if (!grupo) return;
 
-  // Contar terapeutas seleccionados
-  const terapeutasSeleccionados = document.querySelectorAll('.group-therapist-checkbox:checked').length;
+  // Contar terapeutas seleccionadas (desde array global)
+  const terapeutasSeleccionados = selectedGroupTherapists.length;
 
   // Calcular totales de ninos presentes
   let childrenCount = 0;
@@ -5461,9 +5531,8 @@ function registerGroupSession() {
     return;
   }
 
-  // Obtener terapeutas seleccionados
-  const therapistCheckboxes = document.querySelectorAll('.group-therapist-checkbox:checked');
-  const terapeutasSeleccionados = Array.from(therapistCheckboxes).map(cb => cb.value);
+  // Obtener terapeutas seleccionadas (desde array global)
+  const terapeutasSeleccionados = selectedGroupTherapists.slice();
 
   if (terapeutasSeleccionados.length === 0) {
     showNotification('Seleccione al menos una terapeuta', 'error');
