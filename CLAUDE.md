@@ -704,6 +704,14 @@ google.script.run
 
 ## Historial de Cambios
 
+### v1.7.1 (2026-01-28)
+- fix: Transferencias de paquetes a terapeuta ahora aparecen en pestana Transferencias
+- fix: `TransferService.getPendientes()` ahora incluye paquetes con `transferenciaTerapeuta > 0`
+- fix: `PackageService.moveToHistory()` ahora guarda `transferenciaTerapeuta` en historial
+- fix: `cleanupPackageTransferState()` ahora limpia estados de transferencia a terapeuta y NeuroTEA
+- fix: Estructura de hoja `HistorialPaquetes` actualizada con campos `transferenciaTerapeuta` y `creditoId`
+- docs: Actualizado historial de cambios
+
 ### v1.7.0 (2026-01-28)
 - feat: Nueva funcion `updateSheetColumns()` para agregar columnas faltantes a hojas existentes
 - feat: Nueva funcion `reorderSheetColumns()` para reordenar columnas al orden esperado
