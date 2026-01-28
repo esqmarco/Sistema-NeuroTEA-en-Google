@@ -50,14 +50,19 @@ const RendicionService = {
     let honorariosGrupales = 0;
     let aporteGrupal = 0;
     let valorGrupal = 0;
+    let transferenciaGrupal = 0;
 
     sesionesGrupales.forEach(gs => {
       if (gs.therapistShare) {
         honorariosGrupales += gs.therapistShare.honorarios || 0;
         aporteGrupal += gs.therapistShare.aporteProporcional || 0;
         valorGrupal += gs.therapistShare.valorProporcional || 0;
+        transferenciaGrupal += gs.therapistShare.transferenciaTerapeutaProporcional || 0;
       }
     });
+
+    // Sumar transferencias grupales al total
+    transferenciaATerapeuta += transferenciaGrupal;
 
     // Calcular totales de paquetes (aportan al dia de compra)
     let honorariosPaquetes = 0;

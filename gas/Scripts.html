@@ -17,7 +17,7 @@ let egresos = [];
 let paquetesActivos = [];
 let paquetesFecha = [];  // Paquetes comprados en la fecha actual
 let gruposActivos = [];
-let confirmaciones = {};
+let confirmaciones = [];
 let estadosTransferencia = {};
 let saldoInicial = 0;
 let config = {};
@@ -138,7 +138,7 @@ function loadDateData(fecha) {
         sesionesGrupales = data.sesionesGrupales || [];
         egresos = data.egresos || [];
         paquetesFecha = data.paquetesFecha || [];
-        confirmaciones = data.confirmaciones || {};
+        confirmaciones = data.confirmaciones || [];
         estadosTransferencia = data.estadosTransferencia || {};
         saldoInicial = data.saldoInicial || 0;
 
@@ -927,7 +927,9 @@ function updateSessionsList() {
               '<div>Valor Total: ' + formatCurrency(gs.valorTotal) + '</div>' +
               '<div>Aporte NeuroTEA: ' + formatCurrency(gs.aporteNeurotea) + ' ' + formatContributionIndicator(gs) + '</div>' +
               '<div>Hon. c/Terapeuta: ' + formatCurrency(gs.honorariosPorTerapeuta) + '</div>' +
-              '<div>Efectivo: ' + formatCurrency(gs.efectivo || 0) + '</div>' +
+              '<div class="text-green-600">Efectivo: ' + formatCurrency(gs.efectivo || 0) + '</div>' +
+              '<div class="text-purple-600">Transf. Terapeuta: ' + formatCurrency(gs.transferenciaTerapeuta || 0) + '</div>' +
+              '<div class="text-blue-600">Transf. NeuroTEA: ' + formatCurrency(gs.transferenciaNeurotea || 0) + '</div>' +
             '</div>' +
           '</div>';
         }).join('');
@@ -1244,8 +1246,12 @@ function updateSummaryView() {
 function calcularSaldoCajaLocal() {
   let saldo = saldoInicial || 0;
 
-  // Sumar efectivo de sesiones
-  sesiones.forEach(s => { saldo += s.efectivo || 0; });
+  // Sumar efectivo de sesiones (excluir las que usan credito)
+  sesiones.forEach(s => {
+    if (!s.usaCredito) {
+      saldo += s.efectivo || 0;
+    }
+  });
 
   // Sumar efectivo de sesiones grupales
   sesionesGrupales.forEach(gs => { saldo += gs.efectivo || 0; });
@@ -1280,8 +1286,12 @@ function calcularSaldoCajaLocal() {
 function calcularCuentaNeuroTEALocal() {
   let saldo = 0;
 
-  // Sumar transferencias a NeuroTEA de sesiones
-  sesiones.forEach(s => { saldo += s.transferenciaNeurotea || 0; });
+  // Sumar transferencias a NeuroTEA de sesiones (excluir las que usan credito)
+  sesiones.forEach(s => {
+    if (!s.usaCredito) {
+      saldo += s.transferenciaNeurotea || 0;
+    }
+  });
 
   // Sumar transferencias de sesiones grupales
   sesionesGrupales.forEach(gs => { saldo += gs.transferenciaNeurotea || 0; });
