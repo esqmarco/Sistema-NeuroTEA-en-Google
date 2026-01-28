@@ -217,6 +217,7 @@ const PackageService = {
       valorTotal: pkg.valorTotal,
       efectivo: pkg.efectivo,
       transferenciaNeurotea: pkg.transferenciaNeurotea,
+      transferenciaTerapeuta: pkg.transferenciaTerapeuta,
       aporteNeurotea: pkg.aporteNeurotea,
       // Guardar info del credito para posible restauracion
       creditoId: creditoId

@@ -231,7 +231,7 @@ const ESQUEMA_HOJAS = [
   },
   {
     name: 'HistorialPaquetes',
-    headers: ['id', 'fechaCompra', 'fechaCompletado', 'paciente', 'terapeuta', 'sesionesTotal', 'valorTotal', 'efectivo', 'transferenciaNeurotea', 'aporteNeurotea']
+    headers: ['id', 'fechaCompra', 'fechaCompletado', 'paciente', 'terapeuta', 'sesionesTotal', 'valorTotal', 'efectivo', 'transferenciaNeurotea', 'transferenciaTerapeuta', 'aporteNeurotea', 'creditoId']
   },
   {
     name: 'Grupos',

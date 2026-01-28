@@ -165,10 +165,19 @@ const TransferService = {
    * @param {number} packageId - ID del paquete
    */
   cleanupPackageTransferState: function(packageId) {
-    const transferId = `package_${packageId}_transfer`;
+    // Limpiar transferencia a NeuroTEA
+    const transferIdNeurotea = `package_${packageId}_neurotea`;
     try {
-      Database.delete(SHEETS.ESTADOS_TRANSFERENCIA, transferId);
-      Logger.log('Estado de transferencia de paquete eliminado: ' + transferId);
+      Database.delete(SHEETS.ESTADOS_TRANSFERENCIA, transferIdNeurotea);
+      Logger.log('Estado de transferencia de paquete (NeuroTEA) eliminado: ' + transferIdNeurotea);
+    } catch (e) {
+      // Ignorar si no existe
+    }
+    // Limpiar transferencia a Terapeuta
+    const transferIdTherapist = `package_${packageId}_therapist`;
+    try {
+      Database.delete(SHEETS.ESTADOS_TRANSFERENCIA, transferIdTherapist);
+      Logger.log('Estado de transferencia de paquete (Terapeuta) eliminado: ' + transferIdTherapist);
     } catch (e) {
       // Ignorar si no existe
     }
@@ -275,6 +284,21 @@ const TransferService = {
           paciente: p.paciente || 'Sin nombre',
           monto: p.transferenciaNeurotea,
           confirmado: estado2 ? estado2.confirmed : false,
+          fecha: fecha,
+          isGrupal: false
+        });
+      }
+      // Transferencia a Terapeuta de paquetes
+      if (p.transferenciaTerapeuta > 0) {
+        var transferIdTherapist = 'package_' + p.id + '_therapist';
+        transferencias.push({
+          id: transferIdTherapist,
+          tipo: 'A Terapeuta',
+          destinatario: p.terapeuta,
+          concepto: 'Pago de paquete con ' + p.terapeuta,
+          paciente: p.paciente || 'Sin nombre',
+          monto: p.transferenciaTerapeuta,
+          confirmado: false,
           fecha: fecha,
           isGrupal: false
         });
