@@ -87,11 +87,13 @@ const GroupSessionService = {
 
     // Calcular efectivo y transferencias
     let efectivoTotal = 0;
-    let transferenciaTotal = 0;
+    let transferenciaNeuroTEATotal = 0;
+    let transferenciaTerapeutaTotal = 0;
     sessionData.asistencia.forEach(a => {
       if (a.presente) {
         efectivoTotal += parseInt(a.efectivo) || 0;
-        transferenciaTotal += parseInt(a.transferencia) || 0;
+        transferenciaNeuroTEATotal += parseInt(a.transferenciaNeurotea) || 0;
+        transferenciaTerapeutaTotal += parseInt(a.transferenciaTerapeuta) || 0;
       }
     });
 
@@ -111,7 +113,8 @@ const GroupSessionService = {
       honorariosPorTerapeuta: honorariosPorTerapeuta,
       residuoHonorarios: residuoHonorarios,
       efectivo: efectivoTotal,
-      transferenciaNeurotea: transferenciaTotal,
+      transferenciaNeurotea: transferenciaNeuroTEATotal,
+      transferenciaTerapeuta: transferenciaTerapeutaTotal,
       creadoEn: getTimestamp()
     };
 
@@ -141,7 +144,7 @@ const GroupSessionService = {
 
     // Limpiar estados de transferencia de cada niño presente
     const asistencia = session.asistenciaJSON || [];
-    TransferService.cleanupGroupSessionTransferStates(id, asistencia);
+    TransferService.cleanupGroupSessionTransferStates(id, asistencia, terapeutas);
 
     Database.delete(SHEETS.SESIONES_GRUPALES, id);
     return resultado(true, null, 'Sesion grupal eliminada');
@@ -163,7 +166,7 @@ const GroupSessionService = {
 
       // Limpiar estados de transferencia de cada nino presente
       const asistencia = session.asistenciaJSON || session.asistencia || [];
-      TransferService.cleanupGroupSessionTransferStates(session.id, asistencia);
+      TransferService.cleanupGroupSessionTransferStates(session.id, asistencia, terapeutas);
     });
 
     const deleted = Database.deleteByColumn(SHEETS.SESIONES_GRUPALES, 'fecha', fecha);
@@ -191,7 +194,8 @@ const GroupSessionService = {
     const presentes = asistencia.filter(a => a.presente);
     const valorTotal = presentes.reduce((sum, a) => sum + (a.valor || 0), 0);
     const efectivoTotal = presentes.reduce((sum, a) => sum + (a.efectivo || 0), 0);
-    const transferenciaTotal = presentes.reduce((sum, a) => sum + (a.transferencia || 0), 0);
+    const transferenciaNeuroTEATotal = presentes.reduce((sum, a) => sum + (a.transferenciaNeurotea || 0), 0);
+    const transferenciaTerapeutaTotal = presentes.reduce((sum, a) => sum + (a.transferenciaTerapeuta || 0), 0);
 
     // Recalcular aporte y honorarios
     const aporteNeurotea = Math.round(valorTotal * porcentajeAporte / 100);
@@ -212,7 +216,8 @@ const GroupSessionService = {
       honorariosPorTerapeuta: honorariosPorTerapeuta,
       residuoHonorarios: residuoHonorarios,
       efectivo: efectivoTotal,
-      transferenciaNeurotea: transferenciaTotal
+      transferenciaNeurotea: transferenciaNeuroTEATotal,
+      transferenciaTerapeuta: transferenciaTerapeutaTotal
     };
 
     Database.update(SHEETS.SESIONES_GRUPALES, id, updateData);
@@ -267,7 +272,8 @@ const GroupSessionService = {
       totalAporteNeurotea: sessions.reduce((sum, s) => sum + (s.aporteNeurotea || 0), 0),
       totalHonorarios: sessions.reduce((sum, s) => sum + (s.honorariosTotales || 0), 0),
       totalEfectivo: sessions.reduce((sum, s) => sum + (s.efectivo || 0), 0),
-      totalTransferencia: sessions.reduce((sum, s) => sum + (s.transferenciaNeurotea || 0), 0),
+      totalTransferenciaNeurotea: sessions.reduce((sum, s) => sum + (s.transferenciaNeurotea || 0), 0),
+      totalTransferenciaTerapeuta: sessions.reduce((sum, s) => sum + (s.transferenciaTerapeuta || 0), 0),
       totalNinosAtendidos: sessions.reduce((sum, s) => sum + (s.cantidadPresentes || 0), 0)
     };
   },

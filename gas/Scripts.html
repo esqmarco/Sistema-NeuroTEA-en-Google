@@ -5431,7 +5431,7 @@ function onGroupSelectChange() {
           <span class="font-medium">${nino.nombre}</span>
         </label>
       </div>
-      <div class="grid grid-cols-3 gap-2">
+      <div class="grid grid-cols-4 gap-2">
         <div>
           <label class="text-xs text-gray-500">Valor</label>
           <input type="number" class="child-value w-full p-1 border rounded text-sm bg-gray-100 dark:bg-gray-500" data-child="${nino.nombre}" value="${valorNino}" min="0" readonly>
@@ -5441,8 +5441,12 @@ function onGroupSelectChange() {
           <input type="number" class="child-cash w-full p-1 border-2 border-green-400 rounded text-sm bg-green-50 dark:bg-green-900/30 focus:border-green-500 focus:ring-green-500" data-child="${nino.nombre}" value="0" min="0">
         </div>
         <div>
+          <label class="text-xs text-purple-600 dark:text-purple-400 font-medium">Transf. Terapeuta</label>
+          <input type="number" class="child-transfer-therapist w-full p-1 border-2 border-purple-400 rounded text-sm bg-purple-50 dark:bg-purple-900/30 focus:border-purple-500 focus:ring-purple-500" data-child="${nino.nombre}" value="0" min="0">
+        </div>
+        <div>
           <label class="text-xs text-blue-600 dark:text-blue-400 font-medium">Transf. NeuroTEA</label>
-          <input type="number" class="child-transfer w-full p-1 border-2 border-blue-400 rounded text-sm bg-blue-50 dark:bg-blue-900/30 focus:border-blue-500 focus:ring-blue-500" data-child="${nino.nombre}" value="${valorNino}" min="0">
+          <input type="number" class="child-transfer-neurotea w-full p-1 border-2 border-blue-400 rounded text-sm bg-blue-50 dark:bg-blue-900/30 focus:border-blue-500 focus:ring-blue-500" data-child="${nino.nombre}" value="${valorNino}" min="0">
         </div>
       </div>
     </div>
@@ -5453,7 +5457,7 @@ function onGroupSelectChange() {
   document.querySelectorAll('.child-attendance-checkbox').forEach(cb => {
     cb.addEventListener('change', updateGroupSessionTotals);
   });
-  document.querySelectorAll('.child-value, .child-cash, .child-transfer').forEach(input => {
+  document.querySelectorAll('.child-value, .child-cash, .child-transfer-therapist, .child-transfer-neurotea').forEach(input => {
     input.addEventListener('input', updateGroupSessionTotals);
   });
 
@@ -5478,7 +5482,8 @@ function updateGroupSessionTotals() {
   let childrenCount = 0;
   let totalValue = 0;
   let totalCash = 0;
-  let totalTransfer = 0;
+  let totalTransferTherapist = 0;
+  let totalTransferNeurotea = 0;
 
   document.querySelectorAll('.child-attendance-checkbox').forEach(cb => {
     if (cb.checked) {
@@ -5486,7 +5491,8 @@ function updateGroupSessionTotals() {
       const childName = cb.dataset.child;
       totalValue += parseNumber(document.querySelector(`.child-value[data-child="${childName}"]`)?.value);
       totalCash += parseNumber(document.querySelector(`.child-cash[data-child="${childName}"]`)?.value);
-      totalTransfer += parseNumber(document.querySelector(`.child-transfer[data-child="${childName}"]`)?.value);
+      totalTransferTherapist += parseNumber(document.querySelector(`.child-transfer-therapist[data-child="${childName}"]`)?.value);
+      totalTransferNeurotea += parseNumber(document.querySelector(`.child-transfer-neurotea[data-child="${childName}"]`)?.value);
     }
   });
 
@@ -5501,10 +5507,11 @@ function updateGroupSessionTotals() {
   document.getElementById('group-neurotea-value').textContent = formatCurrency(aporteNeurotea);
   document.getElementById('group-therapist-fee').textContent = formatCurrency(honorariosPorTerapeuta);
   document.getElementById('group-total-cash').textContent = formatCurrency(totalCash);
-  document.getElementById('group-total-transfer-neurotea').textContent = formatCurrency(totalTransfer);
+  document.getElementById('group-total-transfer-therapist').textContent = formatCurrency(totalTransferTherapist);
+  document.getElementById('group-total-transfer-neurotea').textContent = formatCurrency(totalTransferNeurotea);
 
   // Calcular total de pagos
-  const totalPagos = totalCash + totalTransfer;
+  const totalPagos = totalCash + totalTransferTherapist + totalTransferNeurotea;
 
   // Habilitar/deshabilitar boton de registro
   // Requisitos: al menos 1 niño presente, al menos 1 terapeuta, y pagos = valor
@@ -5542,14 +5549,16 @@ function registerGroupSession() {
     const presente = cb.checked;
     const valor = parseFloat(document.querySelector(`.child-value[data-child="${childName}"]`).value) || 0;
     const efectivo = parseFloat(document.querySelector(`.child-cash[data-child="${childName}"]`).value) || 0;
-    const transferencia = parseFloat(document.querySelector(`.child-transfer[data-child="${childName}"]`).value) || 0;
+    const transferenciaTerapeuta = parseFloat(document.querySelector(`.child-transfer-therapist[data-child="${childName}"]`).value) || 0;
+    const transferenciaNeurotea = parseFloat(document.querySelector(`.child-transfer-neurotea[data-child="${childName}"]`).value) || 0;
 
     asistencia.push({
       nombre: childName,
       presente: presente,
       valor: valor,
       efectivo: efectivo,
-      transferencia: transferencia
+      transferenciaTerapeuta: transferenciaTerapeuta,
+      transferenciaNeurotea: transferenciaNeurotea
     });
   });
 
@@ -5562,7 +5571,8 @@ function registerGroupSession() {
   // Calcular totales
   const valorTotal = presentes.reduce((sum, a) => sum + a.valor, 0);
   const totalEfectivo = presentes.reduce((sum, a) => sum + a.efectivo, 0);
-  const totalTransferencia = presentes.reduce((sum, a) => sum + a.transferencia, 0);
+  const totalTransferenciaTerapeuta = presentes.reduce((sum, a) => sum + a.transferenciaTerapeuta, 0);
+  const totalTransferenciaNeurotea = presentes.reduce((sum, a) => sum + a.transferenciaNeurotea, 0);
   const aporteNeurotea = Math.round(valorTotal * (grupo.porcentajeAporte / 100));
   const honorariosTotales = valorTotal - aporteNeurotea;
   const honorariosPorTerapeuta = Math.floor(honorariosTotales / terapeutasSeleccionados.length);
@@ -5597,7 +5607,8 @@ function registerGroupSession() {
       honorariosTotales: honorariosTotales,
       honorariosPorTerapeuta: honorariosPorTerapeuta,
       efectivo: totalEfectivo,
-      transferenciaNeurotea: totalTransferencia
+      transferenciaNeurotea: totalTransferenciaNeurotea,
+      transferenciaTerapeuta: totalTransferenciaTerapeuta
     });
 }
 
