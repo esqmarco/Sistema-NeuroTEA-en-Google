@@ -63,7 +63,8 @@ const Database = {
    */
   getByColumn: function(sheetName, column, value) {
     const allRecords = this.getAll(sheetName);
-    return allRecords.filter(record => record[column] === value);
+    // Usar == para permitir coercion de tipos (string "123" == number 123)
+    return allRecords.filter(record => record[column] == value);
   },
 
   /**
