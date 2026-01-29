@@ -668,7 +668,8 @@ function updateAllViews() {
     { name: 'GroupsList', fn: updateGroupsList },
     { name: 'GroupSelects', fn: updateGroupSelects },
     { name: 'AdminView', fn: updateAdminView },
-    { name: 'SaldoBadge', fn: updateSaldoBadge }
+    { name: 'SaldoBadge', fn: updateSaldoBadge },
+    { name: 'PackageHistoryCounter', fn: updatePackageHistoryCounter }
   ];
 
   viewUpdaters.forEach(updater => {
@@ -5004,6 +5005,8 @@ function registerCreditSession() {
           .withSuccessHandler(function(packages) {
             paquetesActivos = packages || [];
             updatePackagesList();
+            // Actualizar contador de historial (por si se completo el paquete)
+            updatePackageHistoryCounter();
           })
           .getPaquetesActivos();
       } else {
