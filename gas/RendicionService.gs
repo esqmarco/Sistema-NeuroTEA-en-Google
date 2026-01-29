@@ -362,26 +362,84 @@ const RendicionService = {
     // Obtener estado actual para congelar
     const status = this.calculateTherapistStatus(terapeuta, fecha);
 
-    // Preparar flujo segun tipo de opcion
+    // Verificar fondos insuficientes
+    if (status.estado === ESTADOS_RENDICION.FONDOS_INSUFICIENTES) {
+      return resultado(false, null, 'No hay fondos suficientes para realizar el pago');
+    }
+
+    // Preparar flujo - usar valores del frontend si vienen, sino calcular segun estado
+    const tipoOpcion = opcionPago.tipoOpcion || 'exacto';
     const flujo = {
-      efectivoUsado: opcionPago.efectivoUsado ?? 0,
-      bancoUsado: opcionPago.bancoUsado ?? 0,
-      vueltoEfectivo: opcionPago.vueltoEfectivo ?? 0,
-      vueltoTransferencia: opcionPago.vueltoTransferencia ?? 0,
-      efectivoRecibido: opcionPago.efectivoRecibido ?? 0,
-      tipoOpcion: opcionPago.tipoOpcion
+      efectivoUsado: 0,
+      bancoUsado: 0,
+      vueltoEfectivo: 0,
+      vueltoTransferencia: 0,
+      efectivoRecibido: 0,
+      tipoOpcion: tipoOpcion
     };
+
+    // Si el frontend paso valores explicitos, usarlos
+    // Si no, calcular segun el estado del terapeuta (replica logica version LOCAL)
+    const tieneValoresExplicitos = (opcionPago.efectivoUsado > 0 || opcionPago.bancoUsado > 0 ||
+                                     opcionPago.efectivoRecibido > 0 || opcionPago.vueltoEfectivo > 0 ||
+                                     opcionPago.vueltoTransferencia > 0);
+
+    if (tieneValoresExplicitos) {
+      // Usar valores del frontend
+      flujo.efectivoUsado = opcionPago.efectivoUsado ?? 0;
+      flujo.bancoUsado = opcionPago.bancoUsado ?? 0;
+      flujo.vueltoEfectivo = opcionPago.vueltoEfectivo ?? 0;
+      flujo.vueltoTransferencia = opcionPago.vueltoTransferencia ?? 0;
+      flujo.efectivoRecibido = opcionPago.efectivoRecibido ?? 0;
+    } else {
+      // Calcular valores segun estado (logica de version LOCAL)
+      switch (status.estado) {
+        case ESTADOS_RENDICION.DAR_EFECTIVO:
+          switch (tipoOpcion) {
+            case 'exacto':
+              flujo.efectivoUsado = status.neuroteaLeDebe;
+              break;
+            case 'transferir':
+              flujo.bancoUsado = status.neuroteaLeDebe;
+              break;
+            // Casos con vuelto requieren valores del frontend (ya manejados arriba)
+          }
+          break;
+
+        case ESTADOS_RENDICION.DAR_Y_TRANSFERIR:
+          // Usar todo el efectivo disponible + transferir la diferencia
+          flujo.efectivoUsado = status.saldoCajaActual;
+          flujo.bancoUsado = status.neuroteaLeDebe - status.saldoCajaActual;
+          break;
+
+        case ESTADOS_RENDICION.TRANSFERIR:
+          flujo.bancoUsado = status.neuroteaLeDebe;
+          break;
+
+        case ESTADOS_RENDICION.TERAPEUTA_DEBE_DAR:
+          flujo.efectivoRecibido = status.terapeutaDebe;
+          break;
+
+        case ESTADOS_RENDICION.SALDADO:
+          // No hay movimiento de dinero
+          break;
+      }
+    }
 
     // Crear confirmacion
     const confirmacion = Database.insert(SHEETS.CONFIRMACIONES, {
       fecha: fecha,
       terapeuta: terapeuta,
       tipo: status.estado,
-      tipoOpcion: opcionPago.tipoOpcion,
+      tipoOpcion: tipoOpcion,
       flujoJSON: flujo,
       estadoCongeladoJSON: status,
       timestamp: getTimestamp()
     });
+
+    Logger.log('Pago confirmado: ' + terapeuta + ' - ' + status.estado +
+               ' - Efectivo: ' + flujo.efectivoUsado + ', Banco: ' + flujo.bancoUsado +
+               ', Recibido: ' + flujo.efectivoRecibido);
 
     return resultado(true, confirmacion, 'Pago confirmado exitosamente');
   },
