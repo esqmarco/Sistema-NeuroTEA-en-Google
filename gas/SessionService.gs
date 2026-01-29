@@ -244,6 +244,76 @@ function registrarSesion(sessionData) {
 }
 
 /**
+ * Registra una sesion usando creditos de un paquete (para frontend)
+ * El paciente ya pago el paquete, solo se descuenta el credito
+ * @param {Object} data - {fecha, terapeuta, paciente, paqueteId}
+ * @returns {Object} - Resultado con creditos restantes
+ */
+function registrarSesionConCredito(data) {
+  try {
+    // Validaciones
+    if (!data.terapeuta) {
+      return resultado(false, null, 'El terapeuta es requerido');
+    }
+    if (!data.paciente) {
+      return resultado(false, null, 'El paciente es requerido');
+    }
+    if (!data.paqueteId) {
+      return resultado(false, null, 'El ID del paquete es requerido');
+    }
+
+    // Usar credito del paquete (esto actualiza el credito y mueve a historial si es necesario)
+    const creditResult = PackageService.useCredit(data.paqueteId, data.terapeuta, data.paciente);
+    if (!creditResult.success) {
+      return resultado(false, null, creditResult.message || 'Error al usar credito');
+    }
+
+    // Registrar sesion con valores en 0 (ya fue pagado en el paquete)
+    const sessionData = {
+      fecha: data.fecha || getFechaActual(),
+      terapeuta: data.terapeuta,
+      paciente: data.paciente,
+      efectivo: 0,
+      transferenciaNeurotea: 0,
+      transferenciaTerapeuta: 0,
+      valorSesion: 0,
+      aporteNeurotea: 0,
+      honorarios: 0,
+      tipoAporte: '30',
+      usaCredito: true,
+      paqueteId: data.paqueteId,
+      creditosRestantes: creditResult.data?.restante || 0
+    };
+
+    const sessionResult = Database.insert(SHEETS.SESIONES, {
+      fecha: sessionData.fecha,
+      terapeuta: sessionData.terapeuta,
+      paciente: sessionData.paciente,
+      efectivo: 0,
+      transferenciaNeurotea: 0,
+      transferenciaTerapeuta: 0,
+      valorSesion: 0,
+      aporteNeurotea: 0,
+      honorarios: 0,
+      tipoAporte: '30',
+      usaCredito: true,
+      paqueteId: data.paqueteId,
+      creditosRestantes: creditResult.data?.restante || 0,
+      creadoEn: getTimestamp()
+    });
+
+    return resultado(true, {
+      session: sessionResult,
+      restante: creditResult.data?.restante || 0
+    }, 'Sesion con credito registrada exitosamente');
+
+  } catch (error) {
+    Logger.log('Error en registrarSesionConCredito: ' + error.message);
+    return resultado(false, null, error.message);
+  }
+}
+
+/**
  * Obtiene sesiones por fecha (para frontend)
  */
 function getSesionesPorFecha(fecha) {

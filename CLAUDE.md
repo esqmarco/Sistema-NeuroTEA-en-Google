@@ -704,6 +704,17 @@ google.script.run
 
 ## Historial de Cambios
 
+### v1.7.2 (2026-01-29)
+- fix: Boton de registrar ahora se habilita correctamente al seleccionar paciente con credito
+- fix: `updateCreditInfo()` ahora llama a `validateRegisterButton()` despues de seleccionar paciente
+- fix: `registerSession()` ahora detecta modo de registro y llama a funcion correcta
+- feat: Nueva funcion `registerCreditSession()` para registrar sesiones usando creditos
+- feat: Nueva funcion backend `registrarSesionConCredito()` que usa creditos y mueve a historial
+- fix: Visualizacion de paquetes activos ahora muestra desglose completo (efectivo, transf. terap., transf. NeuroTEA)
+- fix: Toggle de confirmacion de transferencias ahora funciona con un solo clic (feedback instantaneo)
+- feat: Nueva funcion `updateTransferStatusButton()` para actualizar boton sin recargar vista
+- docs: Actualizado historial de cambios
+
 ### v1.7.1 (2026-01-28)
 - fix: Transferencias de paquetes a terapeuta ahora aparecen en pestana Transferencias
 - fix: `TransferService.getPendientes()` ahora incluye paquetes con `transferenciaTerapeuta > 0`

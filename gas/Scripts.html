@@ -537,6 +537,9 @@ function updateCreditInfo(paciente, paquetesJSON) {
     if (paqueteSelectorSection) paqueteSelectorSection.style.display = 'none';
     if (selectedPaqueteInput) selectedPaqueteInput.value = '';
   }
+
+  // Validar boton de registro despues de actualizar info de credito
+  validateRegisterButton();
 }
 
 /**
@@ -1517,20 +1520,49 @@ function toggleTransferGroup(destinationName) {
 
 /**
  * Toggle estado de confirmacion individual de transferencia
+ * Actualiza el boton inmediatamente (como el sistema original)
  */
 function toggleTransferConfirmation(transferId) {
+  // Encontrar el boton y obtener estado actual
+  const button = document.querySelector('[onclick*="' + transferId + '"]');
+  if (!button) return;
+
+  const wasConfirmed = button.classList.contains('confirmed');
+  const newConfirmed = !wasConfirmed;
+
+  // Actualizar boton inmediatamente (feedback instantaneo)
+  updateTransferStatusButton(button, newConfirmed);
+
+  // Llamar al backend para persistir el cambio
   google.script.run
     .withSuccessHandler(function(result) {
-      if (result.success) {
-        updateTransfersView();
-      } else {
+      if (!result.success) {
+        // Si falla, revertir el cambio visual
+        updateTransferStatusButton(button, wasConfirmed);
         showNotification('Error: ' + result.message, 'error');
       }
     })
     .withFailureHandler(function(error) {
+      // Si falla, revertir el cambio visual
+      updateTransferStatusButton(button, wasConfirmed);
       showNotification('Error: ' + error.message, 'error');
     })
     .toggleTransferencia(transferId);
+}
+
+/**
+ * Actualiza visualmente el boton de estado de transferencia
+ */
+function updateTransferStatusButton(button, isConfirmed) {
+  if (!button) return;
+
+  if (isConfirmed) {
+    button.className = 'transfer-status-btn confirmed';
+    button.innerHTML = '<span class="status-icon">&#10003;</span> Confirmado';
+  } else {
+    button.className = 'transfer-status-btn pending';
+    button.innerHTML = '<span class="status-icon">&#10060;</span> Pendiente';
+  }
 }
 
 /**
@@ -1699,7 +1731,7 @@ function updateTherapistsList() {
 }
 
 /**
- * Actualiza lista de paquetes
+ * Actualiza lista de paquetes (igual al sistema original)
  */
 function updatePackagesList() {
   const container = document.getElementById('active-packages-container');
@@ -1710,30 +1742,64 @@ function updatePackagesList() {
   }
 
   container.innerHTML = paquetesActivos.map(p => {
-    const progress = ((p.sesionesTotal - p.sesionesRestantes) / p.sesionesTotal) * 100;
+    const usadas = p.sesionesTotal - p.sesionesRestantes;
+    const shortId = p.id ? p.id.toString().slice(-3) : '000';
+    const fecha = p.creadoEn ? new Date(p.creadoEn).toLocaleTimeString('es-PY', {hour: '2-digit', minute: '2-digit'}) : '';
+    const efectivo = p.efectivo || 0;
+    const transfTerap = p.transferenciaTerapeuta || 0;
+    const transfNeurotea = p.transferenciaNeurotea || 0;
+
     return `
-      <div class="package-item">
-        <div class="flex justify-between items-start">
+      <div class="package-item bg-white dark:bg-gray-800 border rounded-lg p-4 mb-3 shadow-sm">
+        <div class="flex justify-between items-start mb-3">
           <div>
-            <p class="font-medium text-gray-800 dark:text-white">${p.paciente}</p>
-            <p class="text-sm text-gray-500">${p.terapeuta}</p>
+            <p class="font-semibold text-gray-800 dark:text-white text-lg">${p.paciente}</p>
+            <p class="text-sm text-gray-500">Terapeuta: ${p.terapeuta}</p>
           </div>
-          <div class="text-right">
-            <p class="text-sm font-medium">${p.sesionesRestantes}/${p.sesionesTotal} restantes</p>
-            <p class="text-xs text-gray-500">${formatCurrency(p.valorTotal)}</p>
+          <div class="text-right text-xs text-gray-400">
+            <p>ID: ${shortId}-vqe</p>
+            <p>${fecha}</p>
           </div>
         </div>
-        <div class="package-progress">
-          <div class="package-progress-bar" style="width: ${progress}%"></div>
+
+        <div class="grid grid-cols-2 gap-4 mb-3 text-sm">
+          <div>
+            <span class="text-gray-500">Sesiones:</span>
+            <p class="font-medium">${usadas}/${p.sesionesTotal} usadas</p>
+          </div>
+          <div>
+            <span class="text-gray-500">Restantes:</span>
+            <p class="font-medium text-green-600">${p.sesionesRestantes}</p>
+          </div>
         </div>
-        <div class="mt-2 flex justify-end">
-          <button onclick="deletePackage(${p.id})" class="text-red-500 hover:text-red-700 text-sm">
-            <i data-lucide="trash-2" class="w-4 h-4 inline"></i> Eliminar
+
+        <div class="grid grid-cols-3 gap-2 mb-3 text-xs">
+          <div>
+            <span class="text-gray-500">Efectivo:</span>
+            <p class="font-medium text-blue-600">${formatCurrency(efectivo)}</p>
+          </div>
+          <div>
+            <span class="text-gray-500">Transf. Terap.:</span>
+            <p class="font-medium ${transfTerap > 0 ? 'text-purple-600' : 'text-gray-400'}">${formatCurrency(transfTerap)}</p>
+          </div>
+          <div>
+            <span class="text-gray-500">Transf. NeuroTEA:</span>
+            <p class="font-medium ${transfNeurotea > 0 ? 'text-blue-600' : 'text-gray-400'}">${formatCurrency(transfNeurotea)}</p>
+          </div>
+        </div>
+
+        <div class="flex justify-between items-center pt-2 border-t">
+          <p class="font-bold text-green-600">Total del Paquete: ${formatCurrency(p.valorTotal)}</p>
+          <button onclick="deletePackage(${p.id})" class="text-red-500 hover:text-red-700 p-1" title="Eliminar paquete">
+            <i data-lucide="trash-2" class="w-5 h-5"></i>
           </button>
         </div>
       </div>
     `;
   }).join('');
+
+  // Recrear iconos
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 /**
@@ -4810,8 +4876,19 @@ function downloadJSON(data, filename) {
 
 /**
  * Registrar sesion (wrapper para boton)
+ * Detecta el modo de registro y llama a la funcion correspondiente
  */
 function registerSession() {
+  // Detectar modo de registro
+  const modoRegistro = document.querySelector('input[name="modo-registro"]:checked')?.value;
+
+  // Si es modo credito, usar funcion especializada
+  if (modoRegistro === 'usar-credito') {
+    registerCreditSession();
+    return;
+  }
+
+  // Modo pago del dia (por defecto)
   const terapeuta = document.getElementById('therapist-select').value;
   const paciente = document.getElementById('patient-name').value.trim();
   const efectivo = parseFloat(document.getElementById('cash-to-neurotea').value) || 0;
@@ -4886,6 +4963,62 @@ function registerSession() {
       aporteNeurotea: aporteNeurotea,
       honorarios: honorarios,
       tipoAporte: tipoAporte
+    });
+}
+
+/**
+ * Registrar sesion usando creditos disponibles
+ * El paciente ya pago por adelantado, solo se descuenta el credito
+ */
+function registerCreditSession() {
+  const terapeuta = document.getElementById('therapist-select').value;
+  const paciente = document.getElementById('patient-name').value.trim();
+  const paqueteId = document.getElementById('selected-paquete-id')?.value;
+
+  // Validaciones
+  if (!terapeuta) {
+    showNotification('Seleccione un terapeuta', 'error');
+    return;
+  }
+  if (!paciente) {
+    showNotification('Seleccione un paciente con creditos', 'error');
+    return;
+  }
+  if (!paqueteId) {
+    showNotification('No se pudo identificar el paquete de creditos', 'error');
+    return;
+  }
+
+  showLoading(true);
+
+  // Registrar sesion con credito (valores en 0, ya fue pagado)
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showLoading(false);
+      if (result.success) {
+        showNotification('Sesion con credito registrada. Creditos restantes: ' + (result.data?.restante || 0), 'success');
+        resetSessionForm();
+        loadDateData(fechaActual);
+        // Recargar paquetes activos por si se completo
+        google.script.run
+          .withSuccessHandler(function(packages) {
+            paquetesActivos = packages || [];
+            updatePackagesList();
+          })
+          .getPaquetesActivos();
+      } else {
+        showNotification('Error: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .registrarSesionConCredito({
+      fecha: fechaActual,
+      terapeuta: terapeuta,
+      paciente: paciente,
+      paqueteId: parseInt(paqueteId)
     });
 }
 
