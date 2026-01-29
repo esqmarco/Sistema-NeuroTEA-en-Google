@@ -1462,10 +1462,6 @@ function updateTransfersView() {
         const colorClass = isNeuroTEA ? 'blue' : 'purple';
         const sanitizedName = destinatario.replace(/[^a-zA-Z0-9]/g, '_');
 
-        // Contar pendientes y confirmados
-        const confirmedCount = destinationTransfers.filter(function(t) { return t.confirmado; }).length;
-        const pendingCount = transferCount - confirmedCount;
-
         return '<div class="mb-4 border rounded-md bg-white dark:bg-gray-800 overflow-hidden">' +
           '<div class="bg-' + colorClass + '-50 dark:bg-' + colorClass + '-900 p-4 cursor-pointer hover:bg-' + colorClass + '-100 dark:hover:bg-' + colorClass + '-800 transition-colors" ' +
             'onclick="toggleTransferGroup(\'' + destinatario.replace(/'/g, "\\'") + '\')">' +
@@ -1475,7 +1471,6 @@ function updateTransfersView() {
                 'Transferencias a ' + destinatario +
               '</h4>' +
               '<div class="flex items-center space-x-2">' +
-                (isNeuroTEA ? '<span class="confirmed-count">' + confirmedCount + '</span>/<span class="pending-count">' + pendingCount + '</span> ' : '') +
                 '<span class="text-sm text-' + colorClass + '-600 dark:text-' + colorClass + '-300">' +
                   transferCount + ' transferencia' + (transferCount !== 1 ? 's' : '') + ' - ' + formatCurrency(totalAmount) +
                 '</span>' +
