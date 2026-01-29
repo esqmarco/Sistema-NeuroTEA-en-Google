@@ -222,6 +222,7 @@ function setupEventListeners() {
   // Validacion del boton registrar - escuchar cambios en campos relevantes
   safeAddListener('therapist-select', 'change', function() {
     validateRegisterButton();
+    checkTherapistHasCredits(); // Habilitar/deshabilitar "Usar credito" segun si terapeuta tiene creditos
     var modo = document.querySelector('input[name="modo-registro"]:checked');
     if (modo && modo.value === 'usar-credito') {
       updateAvailablePatients();
@@ -728,6 +729,9 @@ function updateTherapistSelects() {
 
   // Actualizar checkboxes de terapeutas para sesiones grupales
   updateGroupTherapistCheckboxes();
+
+  // Verificar si el terapeuta seleccionado tiene creditos disponibles
+  checkTherapistHasCredits();
 }
 
 /**
@@ -2359,6 +2363,44 @@ function checkPatientCredits() {
       console.warn('Error verificando creditos:', error);
     })
     .verificarCreditos(paciente, terapeuta);
+}
+
+/**
+ * Verifica si la terapeuta tiene CUALQUIER credito activo
+ * Se llama al cambiar terapeuta para habilitar/deshabilitar el radio "Usar credito"
+ */
+function checkTherapistHasCredits() {
+  const terapeuta = document.getElementById('therapist-select').value;
+  const modoUsarCredito = document.getElementById('modo-usar-credito');
+
+  if (!terapeuta || !modoUsarCredito) {
+    if (modoUsarCredito) modoUsarCredito.disabled = true;
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(function(creditos) {
+      // Filtrar creditos de esta terapeuta
+      const creditosTerapeuta = creditos.filter(c => c.terapeuta === terapeuta && c.restante > 0);
+
+      if (creditosTerapeuta.length > 0) {
+        // Tiene creditos - habilitar opcion
+        modoUsarCredito.disabled = false;
+      } else {
+        // No tiene creditos - deshabilitar opcion
+        modoUsarCredito.disabled = true;
+        // Si estaba seleccionado, cambiar a pago-dia
+        if (modoUsarCredito.checked) {
+          document.getElementById('modo-pago-dia').checked = true;
+          togglePaymentMode();
+        }
+      }
+    })
+    .withFailureHandler(function(error) {
+      console.warn('Error verificando creditos de terapeuta:', error);
+      if (modoUsarCredito) modoUsarCredito.disabled = true;
+    })
+    .getCreditosActivos();
 }
 
 /**
