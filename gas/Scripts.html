@@ -278,8 +278,17 @@ function setupEventListeners() {
  */
 function validateRegisterButton() {
   const btn = document.getElementById('register-btn');
-  const therapist = document.getElementById('therapist-select').value;
-  const patient = document.getElementById('patient-name').value.trim();
+  const therapistSelect = document.getElementById('therapist-select');
+  const patientInput = document.getElementById('patient-name');
+
+  // Validar que los elementos existen
+  if (!btn || !therapistSelect || !patientInput) {
+    console.warn('validateRegisterButton: Elementos del formulario no encontrados');
+    return;
+  }
+
+  const therapist = therapistSelect.value;
+  const patient = patientInput.value.trim();
   const modoRegistro = document.querySelector('input[name="modo-registro"]:checked')?.value;
 
   let isValid = false;
@@ -292,9 +301,13 @@ function validateRegisterButton() {
     isValid = therapist && patient;
   } else {
     // Para pago del dia, necesita terapeuta, paciente y al menos un valor de pago
-    const cash = parseInt(document.getElementById('cash-to-neurotea').value) || 0;
-    const transferNeurotea = parseInt(document.getElementById('transfer-to-neurotea').value) || 0;
-    const transferTerapeuta = parseInt(document.getElementById('transfer-to-therapist').value) || 0;
+    const cashEl = document.getElementById('cash-to-neurotea');
+    const transferNeuroEl = document.getElementById('transfer-to-neurotea');
+    const transferTerapEl = document.getElementById('transfer-to-therapist');
+
+    const cash = parseInt(cashEl?.value) || 0;
+    const transferNeurotea = parseInt(transferNeuroEl?.value) || 0;
+    const transferTerapeuta = parseInt(transferTerapEl?.value) || 0;
     const totalPago = cash + transferNeurotea + transferTerapeuta;
 
     isValid = therapist && patient && totalPago > 0;
@@ -5044,6 +5057,9 @@ function registerCreditSession() {
             updatePackagesList();
             // Actualizar contador de historial (por si se completo el paquete)
             updatePackageHistoryCounter();
+          })
+          .withFailureHandler(function(error) {
+            console.warn('Error al recargar paquetes activos:', error.message);
           })
           .getPaquetesActivos();
       } else {

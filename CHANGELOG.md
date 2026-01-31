@@ -8,6 +8,26 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ---
 
+## [1.7.3] - 2026-01-31
+
+### Corregido
+- `validateRegisterButton()` ahora valida null en getElementById antes de usar elementos
+- Agregado `withFailureHandler` faltante en llamada anidada a `getPaquetesActivos()` (línea 5041)
+
+### Eliminado
+- 13 funciones helper no utilizadas en `Helpers.gs`:
+  - `parseCurrency()`, `formatDateShort()`, `getLocalDateString()`, `isValidDate()`
+  - `daysBetween()`, `capitalize()`, `generateFileName()`, `isEmpty()`
+  - `groupBy()`, `sumField()`, `sortBy()`, `deepClone()`, `logSaldoChange()`
+
+### Documentación
+- Nuevo documento `docs/PRD.md` con requerimientos del producto
+- Nuevo documento `docs/LECCIONES_APRENDIDAS.md` con errores a evitar
+- Hooks mejorados en `.claude/settings.json` para verificación pre/post edición
+- Actualizado `CLAUDE.md` con referencias a nueva documentación
+
+---
+
 ## [1.7.2] - 2026-01-29
 
 ### Agregado

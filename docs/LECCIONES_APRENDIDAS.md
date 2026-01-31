@@ -29,7 +29,7 @@ if (btn) {
 
 **Impacto**: La interfaz deja de responder sin mensaje de error visible.
 
-**Ubicaciones conocidas**: Scripts.html líneas 281, 295-297, 320-322, 336, 343-345
+**Estado**: ✅ `validateRegisterButton()` corregido en v1.7.3 (2026-01-31)
 
 ---
 
@@ -106,24 +106,16 @@ if (String(record.id) === String(inputId)) { ... }
 
 **Problema**: Funciones que nunca se usan pero permanecen en el código.
 
-**Funciones identificadas como código muerto** (Helpers.gs):
-- `capitalize()` - Nunca usada
-- `deepClone()` - Nunca usada
-- `daysBetween()` - Nunca usada
-- `formatDateShort()` - Nunca usada
-- `generateFileName()` - Nunca usada
-- `getLocalDateString()` - Nunca usada
-- `isEmpty()` - Nunca usada
-- `groupBy()` - Nunca usada
-- `isValidDate()` - Nunca usada
-- `logSaldoChange()` - Nunca usada
-- `parseCurrency()` - Nunca usada
-- `sortBy()` - Nunca usada
-- `sumField()` - Nunca usada
+**Estado**: ✅ CORREGIDO en v1.7.3 (2026-01-31)
 
-**Impacto**: Aumenta tamaño del código, confunde a desarrolladores nuevos.
+Se eliminaron 13 funciones helper no utilizadas de `Helpers.gs`:
+- `capitalize()`, `deepClone()`, `daysBetween()`, `formatDateShort()`
+- `generateFileName()`, `getLocalDateString()`, `isEmpty()`, `groupBy()`
+- `isValidDate()`, `logSaldoChange()`, `parseCurrency()`, `sortBy()`, `sumField()`
 
-**Recomendación**: Eliminar o documentar propósito futuro.
+**Lección aprendida**: Revisar periódicamente el código para identificar funciones no utilizadas.
+
+**Recomendación**: Antes de agregar funciones "por si acaso", verificar que realmente se necesitan.
 
 ---
 
@@ -293,9 +285,11 @@ GAS tiene particularidades:
 
 ### 5.2 Olvidar withFailureHandler
 
-**95.7%** de las llamadas tienen ambos handlers. El 4.3% restante son bugs potenciales.
+**Estado**: ✅ Corregido en v1.7.3 (2026-01-31)
 
-Ubicación conocida sin handler: Línea 5041 - `getPaquetesActivos()` anidado.
+La llamada anidada a `getPaquetesActivos()` ahora tiene ambos handlers.
+
+**Lección**: Siempre agregar `.withFailureHandler()` a todas las llamadas `google.script.run`.
 
 ---
 
@@ -307,13 +301,13 @@ Ubicación conocida sin handler: Línea 5041 - `getPaquetesActivos()` anidado.
 
 ## 6. Métricas de Calidad Objetivo
 
-| Métrica | Objetivo | Actual |
+| Métrica | Objetivo | Actual (v1.7.3) |
 |---------|----------|--------|
 | Cobertura frontend/backend | 100% | 100% ✓ |
-| Handlers de error | 100% | 95.7% |
+| Handlers de error | 100% | 100% ✓ |
 | IDs consistentes | 100% | 100% ✓ |
-| Código muerto | 0% | ~15% |
-| Errores críticos | 0 | 1 |
+| Código muerto | 0% | 0% ✓ |
+| Errores críticos | 0 | 0 ✓ |
 
 ---
 
