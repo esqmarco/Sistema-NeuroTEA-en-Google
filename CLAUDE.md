@@ -659,13 +659,36 @@ Antes de confirmar que una tarea esta completa:
 | Eliminar Sesion | Sesiones + Creditos + Transferencias | Todo revertido y limpiado |
 | Confirmar Rendicion | Rendicion + Confirmaciones | Estado congelado guardado |
 
+### Documentacion Relacionada
+
+Antes de realizar cambios, LEER estos documentos:
+
+| Documento | Ubicacion | Proposito |
+|-----------|-----------|-----------|
+| **CLAUDE.md** | `/CLAUDE.md` | Instrucciones del proyecto (este archivo) |
+| **CHANGELOG.md** | `/CHANGELOG.md` | Historial de cambios recientes |
+| **LECCIONES_APRENDIDAS.md** | `/docs/LECCIONES_APRENDIDAS.md` | Errores a evitar |
+| **PRD.md** | `/docs/PRD.md` | Requerimientos del producto |
+| **SKILL.md** | `/.claude/skills/verify-system/SKILL.md` | Skill de verificacion |
+
 ### Hooks Automaticos Configurados
 
 El proyecto tiene hooks en `.claude/settings.json` que:
 
-1. **PreToolUse (Edit/Write)**: Recuerda al agente que debe pedir autorizacion al usuario antes de modificar archivos de codigo (.gs, .html). No bloquea la edicion pero emite advertencia visible.
-2. **PostToolUse (Edit/Write)**: Verifica balance de llaves `{}` despues de cada edicion en archivos .gs y .html
-3. **Stop**: Ejecuta verificacion de IDs al terminar la sesion (IDs usados en JS que no existen en HTML)
+1. **PreToolUse (Edit/Write)**:
+   - Muestra checklist de documentos a leer antes de editar
+   - Recuerda pedir autorizacion al usuario
+   - Lista recordatorios de patrones seguros (null checks, handlers, etc.)
+
+2. **PostToolUse (Edit/Write)**:
+   - Verifica balance de llaves `{}` despues de cada edicion
+   - Muestra acciones post-edicion requeridas
+   - Recuerda ejecutar `/verify-system` y probar flujos
+
+3. **Stop**:
+   - Ejecuta verificacion final de IDs al terminar la sesion
+   - Filtra IDs dinamicos conocidos (chevron-, sessions-, tab-, transfers-, conflict-)
+   - Muestra recordatorios de documentacion
 
 Si un hook reporta advertencias, DEBE corregirse antes de continuar.
 
