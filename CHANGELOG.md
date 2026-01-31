@@ -8,6 +8,27 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ---
 
+## [1.7.4] - 2026-01-31
+
+### Agregado
+- **Validaciones de fondos antes de confirmar pagos** - Replica sistema original
+  - DAR EFECTIVO: Bloquea si saldo en caja < monto a dar
+  - TRANSFERIR: Bloquea si saldo en cuenta NeuroTEA < monto
+  - Vuelto en efectivo: Bloquea si saldo en caja < efectivo a entregar
+  - Vuelto por transferencia: Bloquea si saldo en cuenta < vuelto
+  - DAR Y TRANSFERIR: Bloquea si fondos totales insuficientes
+- **Vueltos por transferencia en lista de Transferencias**
+  - Los vueltos ahora aparecen como "Vuelto de Terapeuta" hacia NeuroTEA
+  - Se pueden confirmar igual que otras transferencias
+  - Implementado en `TransferService.getPendientes()`
+- Validación de aporte ≤ total en paquetes
+- Validación máximo 20 sesiones por paquete
+
+### Verificado
+- Límite de 20 terapeutas ya existía (`CONFIG.MAX_THERAPISTS`)
+
+---
+
 ## [1.7.3] - 2026-01-31
 
 ### Corregido

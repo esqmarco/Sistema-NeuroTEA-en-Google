@@ -3405,8 +3405,42 @@ function confirmPaymentTransfer(terapeuta) {
  * Confirma pago mixto (efectivo + transferencia)
  */
 function confirmPaymentMixed(terapeuta) {
-  if (!confirm(`¿Confirmar pago mixto (efectivo + transferencia) a ${terapeuta}?`)) return;
-  executePaymentConfirmation(terapeuta, { tipoOpcion: 'dar-transferir' });
+  // Validar fondos disponibles para pago mixto
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result.success) {
+        showNotification('Error: ' + result.message, 'error');
+        return;
+      }
+      const status = result.data;
+      const montoTotal = status.neuroteaLeDebe;
+      const saldoCaja = calcularSaldoCajaLocal();
+      const saldoCuenta = calcularCuentaNeuroTEALocal();
+      const diferencia = montoTotal - saldoCaja;
+
+      // Validar que hay suficiente en cuenta para la diferencia
+      if (saldoCuenta < diferencia) {
+        alert('No hay suficiente saldo en Cuenta NeuroTEA para completar el pago.\n\n' +
+              'Total a pagar: ' + formatCurrency(montoTotal) + '\n' +
+              'Efectivo disponible: ' + formatCurrency(saldoCaja) + '\n' +
+              'Necesario transferir: ' + formatCurrency(diferencia) + '\n' +
+              'Disponible en cuenta: ' + formatCurrency(saldoCuenta) + '\n\n' +
+              'No es posible realizar esta operacion.');
+        return;
+      }
+
+      if (!confirm('¿Confirmar pago mixto a ' + terapeuta + '?\n\n' +
+                   'Efectivo: ' + formatCurrency(saldoCaja) + '\n' +
+                   'Transferencia: ' + formatCurrency(diferencia) + '\n' +
+                   'Total: ' + formatCurrency(montoTotal))) {
+        return;
+      }
+      executePaymentConfirmation(terapeuta, { tipoOpcion: 'dar-transferir' });
+    })
+    .withFailureHandler(function(error) {
+      showNotification('Error: ' + error.message, 'error');
+    })
+    .getEstadoTerapeuta(terapeuta, fechaActual);
 }
 
 /**
@@ -3463,11 +3497,36 @@ function handlePaymentOption(terapeuta, opcion) {
   if (!opcion) return;
 
   if (opcion === 'exacto') {
-    if (!confirm('Dar exacto en efectivo a ' + terapeuta + '?')) {
-      updateRendicionView();
-      return;
-    }
-    executePaymentConfirmation(terapeuta, { tipoOpcion: 'exacto' });
+    // Validar que hay suficiente efectivo en caja
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (!result.success) {
+          showNotification('Error: ' + result.message, 'error');
+          return;
+        }
+        const status = result.data;
+        const montoADar = status.neuroteaLeDebe;
+        const saldoCaja = calcularSaldoCajaLocal();
+
+        if (saldoCaja < montoADar) {
+          alert('No hay suficiente efectivo en caja.\n\n' +
+                'Necesario: ' + formatCurrency(montoADar) + '\n' +
+                'Disponible: ' + formatCurrency(saldoCaja) + '\n\n' +
+                'Por favor use otra opcion de pago.');
+          updateRendicionView();
+          return;
+        }
+
+        if (!confirm('Dar exacto en efectivo a ' + terapeuta + '?\n\nMonto: ' + formatCurrency(montoADar))) {
+          updateRendicionView();
+          return;
+        }
+        executePaymentConfirmation(terapeuta, { tipoOpcion: 'exacto' });
+      })
+      .withFailureHandler(function(error) {
+        showNotification('Error: ' + error.message, 'error');
+      })
+      .getEstadoTerapeuta(terapeuta, fechaActual);
   } else if (opcion === 'vuelto' || opcion === 'vuelto-efectivo') {
     google.script.run
       .withSuccessHandler(function(result) {
@@ -3490,6 +3549,32 @@ function handlePaymentOption(terapeuta, opcion) {
           return;
         }
         const vuelto = monto - montoADar;
+
+        // Validar fondos segun tipo de vuelto
+        if (opcion === 'vuelto-efectivo') {
+          // Vuelto en efectivo: validar saldo en caja
+          const saldoCaja = calcularSaldoCajaLocal();
+          if (saldoCaja < monto) {
+            alert('No hay suficiente efectivo en caja para dar el vuelto.\n\n' +
+                  'Efectivo a entregar: ' + formatCurrency(monto) + '\n' +
+                  'Saldo en caja: ' + formatCurrency(saldoCaja) + '\n\n' +
+                  'Por favor use otra opcion de pago.');
+            updateRendicionView();
+            return;
+          }
+        } else {
+          // Vuelto por transferencia: validar saldo en cuenta NeuroTEA
+          const saldoCuenta = calcularCuentaNeuroTEALocal();
+          if (saldoCuenta < vuelto) {
+            alert('No hay suficiente saldo en Cuenta NeuroTEA para transferir el vuelto.\n\n' +
+                  'Vuelto necesario: ' + formatCurrency(vuelto) + '\n' +
+                  'Disponible en cuenta: ' + formatCurrency(saldoCuenta) + '\n\n' +
+                  'Por favor use otra opcion de pago.');
+            updateRendicionView();
+            return;
+          }
+        }
+
         executePaymentConfirmation(terapeuta, {
           tipoOpcion: opcion,
           efectivoUsado: monto,
@@ -3502,11 +3587,36 @@ function handlePaymentOption(terapeuta, opcion) {
       })
       .getEstadoTerapeuta(terapeuta, fechaActual);
   } else if (opcion === 'transferir') {
-    if (!confirm('Transferir desde cuenta NeuroTEA a ' + terapeuta + '?')) {
-      updateRendicionView();
-      return;
-    }
-    executePaymentConfirmation(terapeuta, { tipoOpcion: 'transferir' });
+    // Validar que hay suficiente saldo en cuenta NeuroTEA
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (!result.success) {
+          showNotification('Error: ' + result.message, 'error');
+          return;
+        }
+        const status = result.data;
+        const montoATransferir = status.neuroteaLeDebe;
+        const saldoCuenta = calcularCuentaNeuroTEALocal();
+
+        if (saldoCuenta < montoATransferir) {
+          alert('No hay suficiente saldo en Cuenta NeuroTEA para transferir.\n\n' +
+                'Necesario: ' + formatCurrency(montoATransferir) + '\n' +
+                'Disponible: ' + formatCurrency(saldoCuenta) + '\n\n' +
+                'Por favor use otra opcion de pago.');
+          updateRendicionView();
+          return;
+        }
+
+        if (!confirm('Transferir desde cuenta NeuroTEA a ' + terapeuta + '?\n\nMonto: ' + formatCurrency(montoATransferir))) {
+          updateRendicionView();
+          return;
+        }
+        executePaymentConfirmation(terapeuta, { tipoOpcion: 'transferir' });
+      })
+      .withFailureHandler(function(error) {
+        showNotification('Error: ' + error.message, 'error');
+      })
+      .getEstadoTerapeuta(terapeuta, fechaActual);
   } else if (opcion === 'efectivo') {
     confirmPaymentTherapistGives(terapeuta, 'efectivo');
   } else if (opcion === 'transferencia') {
