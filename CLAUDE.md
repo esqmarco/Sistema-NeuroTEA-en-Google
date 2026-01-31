@@ -727,6 +727,21 @@ google.script.run
 
 ## Historial de Cambios
 
+### v1.7.4 (2026-01-31)
+- feat: Validaciones de fondos antes de confirmar pago (4 casos)
+  - DAR EFECTIVO: valida saldo en caja >= monto
+  - TRANSFERIR: valida saldo en cuenta NeuroTEA >= monto
+  - Vuelto en efectivo: valida saldo en caja >= monto a entregar
+  - Vuelto por transferencia: valida saldo en cuenta >= vuelto
+  - DAR Y TRANSFERIR: valida fondos totales suficientes
+- feat: Vueltos por transferencia ahora aparecen en lista de Transferencias Pendientes
+  - Tipo: "Vuelto de Terapeuta"
+  - Destinatario: "NeuroTEA"
+  - Se pueden confirmar como cualquier otra transferencia
+- feat: Validacion aporte <= total en paquetes (backend)
+- feat: Validacion maximo 20 sesiones por paquete (backend)
+- fix: Limite de 20 terapeutas ya existia en CONFIG.MAX_THERAPISTS
+
 ### v1.7.3 (2026-01-31)
 - fix: Iconos de editar/eliminar ahora aparecen inmediatamente al agregar terapeuta o egreso
 - fix: Agregado `lucide.createIcons()` a `updateTherapistsList()` y `updateEgresosList()`

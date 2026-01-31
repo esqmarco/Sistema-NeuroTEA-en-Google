@@ -184,6 +184,68 @@ function updateList() {
 
 ---
 
+### 1.8 Validación de Fondos Antes de Operaciones Financieras
+
+**Problema**: Permitir operaciones financieras sin validar que hay fondos suficientes.
+
+```javascript
+// ❌ INCORRECTO - No valida fondos
+function confirmPaymentTransfer(terapeuta) {
+  if (!confirm('Transferir a ' + terapeuta + '?')) return;
+  executePaymentConfirmation(terapeuta, { tipoOpcion: 'transferir' });
+}
+
+// ✅ CORRECTO - Valida fondos antes de permitir
+function confirmPaymentTransfer(terapeuta) {
+  // Obtener monto y validar saldo
+  const status = getEstadoTerapeuta(terapeuta);
+  const saldoCuenta = calcularCuentaNeuroTEALocal();
+
+  if (saldoCuenta < status.neuroteaLeDebe) {
+    alert('No hay suficiente saldo en Cuenta NeuroTEA.\n\n' +
+          'Necesario: ' + formatCurrency(status.neuroteaLeDebe) + '\n' +
+          'Disponible: ' + formatCurrency(saldoCuenta));
+    return;
+  }
+
+  // Solo entonces permitir confirmar
+  if (!confirm('Transferir a ' + terapeuta + '?')) return;
+  executePaymentConfirmation(terapeuta, { tipoOpcion: 'transferir' });
+}
+```
+
+**Impacto**: Pagos confirmados sin fondos reales, saldos negativos virtuales.
+
+**Estado**: ✅ CORREGIDO en v1.7.4 (2026-01-31)
+- `handlePaymentOption()` - Valida fondos para DAR EFECTIVO, TRANSFERIR, vueltos
+- `confirmPaymentMixed()` - Valida fondos para DAR Y TRANSFERIR
+
+**Casos validados:**
+| Tipo de Pago | Validación |
+|--------------|------------|
+| DAR EFECTIVO | Saldo caja ≥ monto |
+| TRANSFERIR | Saldo cuenta ≥ monto |
+| Vuelto efectivo | Saldo caja ≥ efectivo a entregar |
+| Vuelto transferencia | Saldo cuenta ≥ vuelto |
+| DAR Y TRANSFERIR | Saldo cuenta ≥ diferencia |
+
+**Lección aprendida**: SIEMPRE validar fondos disponibles antes de permitir operaciones financieras.
+
+---
+
+### 1.9 Vueltos por Transferencia en Lista de Transferencias
+
+**Problema**: Los vueltos por transferencia no aparecen en la lista de transferencias pendientes, haciendo invisible dinero que debe ingresar.
+
+**Sistema Original**: Muestra vueltos como "Vuelto de Terapeuta" hacia NeuroTEA.
+
+**Estado**: ✅ CORREGIDO en v1.7.4 (2026-01-31)
+- `TransferService.getPendientes()` ahora incluye vueltos de confirmaciones
+
+**Lección aprendida**: Toda transferencia pendiente debe ser visible en la UI, incluyendo vueltos por transferencia de confirmaciones de rendición.
+
+---
+
 ## 2. Patrones de Diseño Recomendados
 
 ### 2.1 Patrón de Respuesta Estándar

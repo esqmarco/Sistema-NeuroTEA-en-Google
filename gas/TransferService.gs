@@ -364,6 +364,29 @@ const TransferService = {
       });
     });
 
+    // Agregar vueltos por transferencia de confirmaciones de rendicion
+    // (cuando NeuroTEA da efectivo con vuelto por transferencia, la terapeuta debe transferir el vuelto)
+    const confirmaciones = RendicionService.getConfirmaciones(fecha);
+    confirmaciones.forEach(function(conf) {
+      const flujo = conf.flujoJSON || conf.flujo || {};
+      if (flujo.vueltoTransferencia > 0) {
+        var transferIdVuelto = 'vuelto_' + conf.terapeuta + '_' + fecha;
+        var estadoVuelto = TransferService.getEstado(transferIdVuelto);
+
+        transferencias.push({
+          id: transferIdVuelto,
+          tipo: 'Vuelto de Terapeuta',
+          destinatario: 'NeuroTEA',
+          concepto: 'Vuelto de ' + conf.terapeuta + ' por pago en efectivo',
+          paciente: 'Vuelto por transferencia',
+          monto: flujo.vueltoTransferencia,
+          confirmado: estadoVuelto ? estadoVuelto.confirmed : false,
+          fecha: fecha,
+          isGrupal: false
+        });
+      }
+    });
+
     return transferencias;
   },
 

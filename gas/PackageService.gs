@@ -70,6 +70,16 @@ const PackageService = {
       aporteNeurotea = Math.round(valorTotal * porcentaje / 100);
     }
 
+    // Validar que el aporte no sea mayor al total del paquete
+    if (aporteNeurotea > valorTotal) {
+      return resultado(false, null, 'El aporte a NeuroTEA no puede ser mayor al valor total del paquete');
+    }
+
+    // Validar cantidad de sesiones (maximo 20)
+    if (packageData.sesionesTotal > 20) {
+      return resultado(false, null, 'La cantidad maxima de sesiones por paquete es 20');
+    }
+
     // Preparar datos del paquete
     const pkg = {
       fechaCompra: packageData.fecha || getFechaActual(),
