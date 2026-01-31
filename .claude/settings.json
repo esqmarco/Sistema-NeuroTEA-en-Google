@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'FILE=\"$CLAUDE_FILE_PATH\"; if [[ \"$FILE\" =~ \\.(gs|html)$ ]]; then echo \"AUTORIZACION REQUERIDA: Antes de modificar $FILE, debes describir el cambio propuesto al usuario y esperar su aprobacion explicita. Si el usuario ya aprobo este cambio, puedes continuar.\" >&2; fi'"
+            "command": "bash -c 'FILE=\"$CLAUDE_FILE_PATH\"; if [[ \"$FILE\" =~ \\.(gs|html)$ ]]; then echo \"\" >&2; echo \"========================================\" >&2; echo \"ANTES DE MODIFICAR CODIGO - CHECKLIST\" >&2; echo \"========================================\" >&2; echo \"\" >&2; echo \"1. DOCUMENTOS A LEER (si no lo hiciste):\" >&2; echo \"   - CLAUDE.md (instrucciones del proyecto)\" >&2; echo \"   - CHANGELOG.md (cambios recientes)\" >&2; echo \"   - docs/LECCIONES_APRENDIDAS.md (errores a evitar)\" >&2; echo \"\" >&2; echo \"2. AUTORIZACION REQUERIDA:\" >&2; echo \"   Archivo: $FILE\" >&2; echo \"   Debes describir el cambio y esperar aprobacion explicita.\" >&2; echo \"   Si ya tienes aprobacion, puedes continuar.\" >&2; echo \"\" >&2; echo \"3. RECUERDA:\" >&2; echo \"   - Verificar null en getElementById()\" >&2; echo \"   - Usar withFailureHandler en google.script.run\" >&2; echo \"   - No crear codigo muerto\" >&2; echo \"========================================\" >&2; fi'"
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'FILE=\"$CLAUDE_FILE_PATH\"; if [[ \"$FILE\" =~ \\.(gs|html)$ ]]; then OPEN=$(grep -o \"{\" \"$FILE\" 2>/dev/null | wc -l); CLOSE=$(grep -o \"}\" \"$FILE\" 2>/dev/null | wc -l); if [ \"$OPEN\" -ne \"$CLOSE\" ]; then echo \"ADVERTENCIA: Llaves desbalanceadas en $FILE (abiertas: $OPEN, cerradas: $CLOSE)\" >&2; fi; fi'"
+            "command": "bash -c 'FILE=\"$CLAUDE_FILE_PATH\"; if [[ \"$FILE\" =~ \\.(gs|html)$ ]]; then echo \"\" >&2; echo \"========================================\" >&2; echo \"DESPUES DE MODIFICAR CODIGO - VERIFICAR\" >&2; echo \"========================================\" >&2; OPEN=$(grep -o \"{\" \"$FILE\" 2>/dev/null | wc -l); CLOSE=$(grep -o \"}\" \"$FILE\" 2>/dev/null | wc -l); if [ \"$OPEN\" -ne \"$CLOSE\" ]; then echo \"ERROR: Llaves desbalanceadas en $FILE\" >&2; echo \"  Abiertas: $OPEN | Cerradas: $CLOSE\" >&2; else echo \"OK: Llaves balanceadas ($OPEN/{/$CLOSE})\" >&2; fi; echo \"\" >&2; echo \"ACCIONES POST-EDICION:\" >&2; echo \"1. Ejecutar /verify-system para verificacion completa\" >&2; echo \"2. Probar el flujo afectado en TODAS las pestanas\" >&2; echo \"3. Verificar consola del navegador (F12)\" >&2; echo \"4. Actualizar CHANGELOG.md si es cambio significativo\" >&2; echo \"========================================\" >&2; fi'"
           }
         ]
       }
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'echo \"=== Verificacion Final ===\"; cd /home/user/Sistema-NeuroTEA-en-Google && JS_IDS=$(grep -oE \"getElementById\\([\\x27\\\"]([^\\x27\\\"]+)[\\x27\\\"]\\)\" gas/Scripts.html 2>/dev/null | sed \"s/.*getElementById([\\x27\\\"]//;s/[\\x27\\\"].*)//\" | sort -u); HTML_IDS=$(grep -oE \"id=\\\"([^\\\"]+)\\\"\" gas/Index.html 2>/dev/null | sed \"s/id=\\\"//;s/\\\"//\" | sort -u); MISSING=$(comm -23 <(echo \"$JS_IDS\") <(echo \"$HTML_IDS\") 2>/dev/null | head -5); if [ -n \"$MISSING\" ]; then echo \"IDs usados en JS pero no en HTML:\"; echo \"$MISSING\"; fi'"
+            "command": "bash -c 'echo \"\" >&2; echo \"========================================\" >&2; echo \"VERIFICACION FINAL DE SESION\" >&2; echo \"========================================\" >&2; cd /home/user/Sistema-NeuroTEA-en-Google 2>/dev/null || exit 0; echo \"\" >&2; echo \"1. VERIFICACION DE IDs HTML vs JS:\" >&2; JS_IDS=$(grep -oE \"getElementById\\([\\x27\\\"]([^\\x27\\\"]+)[\\x27\\\"]\\)\" gas/Scripts.html 2>/dev/null | sed \"s/.*getElementById([\\x27\\\"]//;s/[\\x27\\\"].*)//\" | sort -u); HTML_IDS=$(grep -oE \"id=\\\"([^\\\"]+)\\\"\" gas/Index.html 2>/dev/null | sed \"s/id=\\\"//;s/\\\"//\" | sort -u); MISSING=$(comm -23 <(echo \"$JS_IDS\") <(echo \"$HTML_IDS\") 2>/dev/null | grep -v \"^chevron-\" | grep -v \"^sessions-\" | grep -v \"^tab-\" | grep -v \"^transfers-\" | grep -v \"^conflict-\" | head -5); if [ -n \"$MISSING\" ]; then echo \"   ADVERTENCIA - IDs en JS sin HTML (no dinamicos):\" >&2; echo \"$MISSING\" | sed \"s/^/   - /\" >&2; else echo \"   OK: Todos los IDs estaticos existen\" >&2; fi; echo \"\" >&2; echo \"2. RECORDATORIOS:\" >&2; echo \"   - Actualizar CHANGELOG.md con cambios\" >&2; echo \"   - Documentar lecciones aprendidas si aplica\" >&2; echo \"   - Commit con mensaje descriptivo\" >&2; echo \"========================================\" >&2'"
           }
         ]
       }
