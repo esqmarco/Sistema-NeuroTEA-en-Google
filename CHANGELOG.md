@@ -13,12 +13,24 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ### Corregido
 - `validateRegisterButton()` ahora valida null en getElementById antes de usar elementos
 - Agregado `withFailureHandler` faltante en llamada anidada a `getPaquetesActivos()` (línea 5041)
+- **Iconos de editar/eliminar ahora aparecen inmediatamente** al agregar terapeuta o egreso
+  - Agregado `lucide.createIcons()` a `updateTherapistsList()` y `updateEgresosList()`
+- **Saldo en caja ahora se actualiza correctamente** después de confirmar/revertir rendición
+  - `executePaymentConfirmation()` y `revertConfirmation()` ahora usan `loadDateData()` para recargar confirmaciones
+  - Causa raíz: el array global `confirmaciones` no se recargaba después de confirmar un pago
 
 ### Eliminado
 - 13 funciones helper no utilizadas en `Helpers.gs`:
   - `parseCurrency()`, `formatDateShort()`, `getLocalDateString()`, `isValidDate()`
   - `daysBetween()`, `capitalize()`, `generateFileName()`, `isEmpty()`
   - `groupBy()`, `sumField()`, `sortBy()`, `deepClone()`, `logSaldoChange()`
+
+### Verificado (Auditoría)
+- Cálculos de saldo en caja: frontend y backend son idénticos
+- Cálculos de cuenta NeuroTEA: frontend y backend son idénticos
+- Todos los tipos de confirmación funcionan correctamente:
+  - SALDADO, DAR EFECTIVO, DAR Y TRANSFERIR, TRANSFERIR, LA TERAPEUTA DEBE DAR
+- Flujos de vuelto (efectivo y transferencia) verificados
 
 ### Documentación
 - Nuevo documento `docs/PRD.md` con requerimientos del producto
