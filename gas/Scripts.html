@@ -3436,8 +3436,8 @@ function executePaymentConfirmation(terapeuta, opcionPago) {
       showLoading(false);
       if (result.success) {
         showNotification('Pago confirmado exitosamente', 'success');
-        updateRendicionView();
-        updateSummaryView();
+        // Recargar todos los datos para actualizar confirmaciones y saldos
+        loadDateData(fechaActual);
       } else {
         showNotification(result.message, 'error');
       }
@@ -3574,8 +3574,8 @@ function revertConfirmation(terapeuta) {
       showLoading(false);
       if (result.success) {
         showNotification('Confirmacion revertida', 'success');
-        updateRendicionView();
-        updateSummaryView();
+        // Recargar todos los datos para actualizar confirmaciones y saldos
+        loadDateData(fechaActual);
       } else {
         showNotification(result.message, 'error');
       }

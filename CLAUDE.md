@@ -727,6 +727,15 @@ google.script.run
 
 ## Historial de Cambios
 
+### v1.7.3 (2026-01-31)
+- fix: Iconos de editar/eliminar ahora aparecen inmediatamente al agregar terapeuta o egreso
+- fix: Agregado `lucide.createIcons()` a `updateTherapistsList()` y `updateEgresosList()`
+- fix: Saldo en caja ahora se actualiza correctamente despues de confirmar/revertir rendicion
+- fix: `executePaymentConfirmation()` y `revertConfirmation()` ahora usan `loadDateData()` para recargar confirmaciones
+- docs: Auditoria completa de calculos de saldo - verificado que frontend y backend son identicos
+- docs: Verificados todos los tipos de confirmacion (SALDADO, DAR EFECTIVO, DAR Y TRANSFERIR, TRANSFERIR, LA TERAPEUTA DEBE DAR)
+- docs: Verificados flujos de vuelto (efectivo y transferencia)
+
 ### v1.7.2 (2026-01-29)
 - fix: Boton de registrar ahora se habilita correctamente al seleccionar paciente con credito
 - fix: `updateCreditInfo()` ahora llama a `validateRegisterButton()` despues de seleccionar paciente

@@ -1,7 +1,7 @@
 # Lecciones Aprendidas y Errores a Evitar
 ## Sistema NeuroTEA en Google Apps Script
 
-**Última actualización**: 2026-01-31
+**Última actualización**: 2026-01-31 (v1.7.3)
 
 Este documento recopila las lecciones aprendidas durante el desarrollo y los errores que NO deben repetirse.
 
@@ -116,6 +116,71 @@ Se eliminaron 13 funciones helper no utilizadas de `Helpers.gs`:
 **Lección aprendida**: Revisar periódicamente el código para identificar funciones no utilizadas.
 
 **Recomendación**: Antes de agregar funciones "por si acaso", verificar que realmente se necesitan.
+
+---
+
+### 1.6 Iconos Lucide No Renderizados Después de Actualizar DOM
+
+**Problema**: Al insertar HTML dinámicamente con iconos Lucide (`<i data-lucide="edit">`), los iconos no se renderizan porque Lucide necesita procesar los nuevos elementos.
+
+```javascript
+// ❌ INCORRECTO - Iconos quedan vacíos
+function updateList() {
+  container.innerHTML = items.map(i => `
+    <button><i data-lucide="edit"></i></button>
+  `).join('');
+}
+
+// ✅ CORRECTO - Llamar lucide.createIcons() después
+function updateList() {
+  container.innerHTML = items.map(i => `
+    <button><i data-lucide="edit"></i></button>
+  `).join('');
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+```
+
+**Impacto**: Botones de acción aparecen vacíos hasta refrescar la página.
+
+**Estado**: ✅ CORREGIDO en v1.7.3 (2026-01-31)
+- `updateTherapistsList()` - agregado `lucide.createIcons()`
+- `updateEgresosList()` - agregado `lucide.createIcons()`
+
+**Lección aprendida**: SIEMPRE llamar `lucide.createIcons()` después de insertar HTML con iconos Lucide.
+
+---
+
+### 1.7 Datos Globales No Recargados Después de Operaciones
+
+**Problema**: Después de una operación backend exitosa (confirmar pago, eliminar registro), los arrays globales del frontend no se recargan con los nuevos datos.
+
+```javascript
+// ❌ INCORRECTO - Usa datos locales desactualizados
+.withSuccessHandler(function(result) {
+  if (result.success) {
+    updateRendicionView();   // Usa array 'confirmaciones' viejo
+    updateSummaryView();     // Calcula saldo con datos viejos
+  }
+})
+
+// ✅ CORRECTO - Recargar todos los datos
+.withSuccessHandler(function(result) {
+  if (result.success) {
+    loadDateData(fechaActual);  // Recarga TODOS los datos del backend
+  }
+})
+```
+
+**Impacto**: Los cálculos de saldo muestran valores incorrectos hasta refrescar la página.
+
+**Estado**: ✅ CORREGIDO en v1.7.3 (2026-01-31)
+- `executePaymentConfirmation()` - ahora usa `loadDateData()`
+- `revertConfirmation()` - ahora usa `loadDateData()`
+
+**Lección aprendida**: Después de operaciones que modifican datos, SIEMPRE recargar los datos completos con `loadDateData()` en lugar de actualizar vistas individualmente.
+
+**Regla**: Si una operación modifica la base de datos, el frontend debe recargar los datos afectados antes de recalcular.
 
 ---
 
